@@ -80,6 +80,13 @@ def position_rows():
     return list(_read_snapshot().get("positions", []))
 
 
+def positions_from_no_data():
+    """True when the last snapshot's empty position list came from a 查無資料 answer (the worker takes
+    that as flat only with no margin in use; see president_worker.read_account). manager/flatten asks:
+    an empty list like that never wipes a book that still holds rows."""
+    return bool(_read_snapshot().get("positions_no_data"))
+
+
 def bot_position_rows(now=None, book_months=None):
     """The held rows the bot trades on (lib/president_contracts.bot_rows) —
     what the reconciler reads, what flatten reads and what the order lib

@@ -92,6 +92,7 @@ function tabBound(fn) { const T = CS.loaded; return (...a) => (!T ? fn(...a) : T
 
 function tabMake(sid, o) {
   const el = document.createElement("div"); el.className = "chat-thread"; el.hidden = true;
+  if (typeof chatRO !== "undefined" && chatRO) chatRO.observe(el);   // 內容長高時黏底補捲(app.js chatRO)
   $("chat-scroll").appendChild(el);
   const T = { sid, el, st: tabNewState(sid), title: (o && o.title) || "", origin: (o && o.origin) || "desktop", queued: false, unread: null, scrollTop: 0,
     composer: { text: "", files: [] }, drawn: !(o && o.lazy), dead: false, closed: false, startedAt: 0, tickSec: 0 };
@@ -439,6 +440,7 @@ function tabsHint() {
 function tabsAdd(T) { CS.freeze = null; T.closed = false; if (!CS.order.includes(T.sid)) CS.order.push(T.sid); tabsSave(); tabsPaint(); }
 function tabsDestroy(T) {
   T.dead = true; T.el.remove(); CS.tabs.delete(T.sid);
+  if (typeof chatRO !== "undefined" && chatRO) chatRO.unobserve(T.el);   // tabMake 掛上的,不放的話關掉的對話一直留在記憶體
   if (T.st && T.st.SUG && T.st.SUG.timer) clearTimeout(T.st.SUG.timer);
 }
 /* 關分頁:從列上拿掉,不刪、不停(spec §2 關分頁);回覆中的照跑,跑完才收。關的是選中的那個 → 選它右邊的,沒有就左邊;最後一個 → 換一個新的空分頁 */

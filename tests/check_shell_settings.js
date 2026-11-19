@@ -427,7 +427,7 @@ let M = mdlOptions(D, "claude", true);
 // e2e 0.1.8 #100 #101:電腦版看得到 Blave 餘額、切到 Blave AI 之後講明會從餘額扣款(設計師第五批 c)。餘額怎麼讀、怎麼取整、讀不到畫什麼在 tests/check_shell_balance.js
 { const cut = (n) => { const i = src.indexOf("function " + n + "("); let d = 0; for (let k = src.indexOf("{", i); k < src.length; k++) { if (src[k] === "{") d++; else if (src[k] === "}" && --d === 0) return src.slice(i, k + 1); } throw new Error("no " + n); };
   ok("① 帳號與方案:Blave 餘額在最上面那一組裡(狀態點之前);沒登入整列不出;讀不到畫「—」、title 與 aria-label 用 plan.balNa", /if \(hasToken\) \{\s*const n = balNow\(\), row = el\("div", "plan-bal"\), val = el\("span", "v" \+ \(n \? "" : " na"\), n \? n \+ " TWD" : "—"\);\s*if \(!n\) \{ val\.title = t\("plan\.balNa"\); val\.setAttribute\("aria-label", t\("plan\.balNa"\)\); \}\s*row\.append\(el\("span", "l", t\("plan\.bal"\)\), val\); id\.append\(row\);\s*\}/.test(src)
-    && src.indexOf('row = el("div", "plan-bal")') < src.indexOf('if (V.st) { const stEl = el("span", "plan-st "') && /\.plan-bal \.v \{ font-size: 13px; color: var\(--ink\); font-variant-numeric: tabular-nums; \}/.test(css) && !/plan-bal[^}]*mono/.test(css));
+    && src.indexOf('row = el("div", "plan-bal")') < src.indexOf('if (S) { const stEl = el("span", "plan-st "') && /\.plan-bal \.v \{ font-size: 13px; color: var\(--ink\); font-variant-numeric: tabular-nums; \}/.test(css) && !/plan-bal[^}]*mono/.test(css));
   ok("② 模型選單底部:引擎是 Blave AI 才出(連同分隔線);讀不到餘額只出規則那半句;打開選單與回合結束重讀", /const on = cur === "blave", n = on \? balNow\(\) : null;\s*\$\("mp-bill-div"\)\.hidden = !on; \$\("mp-bill"\)\.hidden = !on;/.test(src) && /\$\("mp-bill-sep"\)\.hidden = !n; \$\("mp-bill-bal"\)\.hidden = !n;/.test(src)
     && /<p class="mp-note" id="mp-note" aria-live="polite"><\/p>\s*<!--[^>]*-->\s*<div class="mp-div" id="mp-bill-div" hidden><\/div>\s*<p class="mp-note mp-bill" id="mp-bill" hidden>/.test(html)
     && /if \(cur === "blave" && hasToken\) balLoad\(\);/.test(cut("mpOpen")) && /\n  if \(cur === "blave" && hasToken\) balLoad\(\);/.test(src) && /\.mp-bill \.b \{ white-space: nowrap;/.test(css));
@@ -686,7 +686,7 @@ ok("隱私:分類排最後、開關是 role=switch + aria-checked、即時生效
 // 會收的組(0.1.39):PRIV_COLLECT 從原文 eval 出來,組 id、句數、順序逐一對;舊的 priv.collect.<n> 一條都不能留
 const PRIV_COLLECT_V = eval(src.match(/const PRIV_COLLECT = [^\n]*;/)[0].replace(/^const PRIV_COLLECT = /, "(").replace(/;$/, ")"));
 const POS = (L, k) => { const m = PO[L].match(new RegExp('msgid "' + k.replace(/\./g, "\\.") + '"\nmsgstr "([^"]*)"')); return m ? m[1] : null; };
-const PRIV_SHAPE = [["step", 4], ["strat", 5], ["feat", 9], ["stuck", 9], ["auth", 5], ["meta", 5], ["acct", 2]];
+const PRIV_SHAPE = [["step", 4], ["strat", 5], ["feat", 10], ["stuck", 9], ["auth", 5], ["meta", 5], ["acct", 2]];
 const PRIV_GROUPS_OK = JSON.stringify(PRIV_COLLECT_V) === JSON.stringify(PRIV_SHAPE.map(([g, n]) => ["priv.c." + g + ".h", Array.from({ length: n }, (_, i) => "priv.c." + g + "." + (i + 1))]))
   && PRIV_COLLECT_V.every(([h, ks]) => [h, ...ks].every((k) => POS(0, k) && POS(1, k)))
   && PO.every((x) => !/msgid "priv\.collect\.\d+"/.test(x)) && !/priv\.collect\.\d/.test(src)
@@ -758,7 +758,7 @@ ok("隱私:會收分 7 組(0.1.39 設計稽核 §C,Wei 核准;0.1.45 拿掉策�
 const PRIV_ZH = {
   step: ["做到哪一步", "首次開啟、每日開啟、登入", "app 開著的每一天，含本機自動下單有沒有在跑", "完成連結，記哪一種 AI", "第一次回測、啟動下單（模擬或真錢）、上雲端運行"],
   strat: ["每支策略", "新建、第一次回測、第一次配了金額時各記一次", "只記型別（A／B／C）與市場類別，例如加密貨幣、台指期", "不記策略名稱或標的", "三步記同一組代碼，代碼只有這台電腦算得出", "Blave 推不回策略名稱"],
-  feat: ["用了哪些功能", "分頁與按鈕的名稱，每天每項記一次", "不含分頁與按鈕裡的內容", "從策略庫用一支策略時，記它要不要 Blave 資料", "送出找點子時，記從哪個入口送出", "換策略庫排序時，記選了哪一種", "在策略庫購買時，記走到哪一步與結果類別", "回覆好了的系統通知：有沒有跳出、有沒有被點開", "不含對話標題與內容", "選主要市場時，記選了哪一個"],
+  feat: ["用了哪些功能", "分頁與按鈕的名稱，每天每項記一次", "不含分頁與按鈕裡的內容", "從策略庫用一支策略時，記它要不要 Blave 資料", "送出找點子時，記從哪個入口送出", "換策略庫排序時，記選了哪一種", "在策略庫購買時，記走到哪一步與結果類別", "回覆好了的系統通知：有沒有跳出、有沒有被點開", "不含對話標題與內容", "選主要市場時，記選了哪一個", "開方案或主機的框時，記從哪開、選了哪一階與結果類別"],
   stuck: ["卡在哪一步", "回合失敗、連不上 AI、策略庫用不了的原因類別", "綁卡／儲值提示有沒有出現與按下、回來後能不能用", "啟動雲端方案的結果、更新卡在哪一步", "第一次收到 AI 回覆", "第一次安裝或更新後補裝引擎與策略套件，有沒有裝好", "沒裝好是哪一類原因", "關掉 app 時停在哪個畫面", "app 當掉或沒正常結束時，記是哪一類", "只記類別，不含內容"],
   auth: ["登入與金鑰", "本機 AI 的登入方式，例如訂閱或 API 金鑰", "不含帳號與金鑰", "登入失敗的類別，以及當下是否判定為已登入", "改金鑰時驗證碼框的出現、通過與鎖住", "不含驗證碼"],
   meta: ["每筆紀錄都帶", "發生的時間", "app 版本、作業系統與版本、系統語言", "電腦類型：筆電或桌機", "安裝識別碼：這份安裝隨機產生的編號", "登入後，安裝識別碼會跟你的帳號對上"],
@@ -768,9 +768,9 @@ const privKeys = (g) => ["priv.c." + g + ".h", ...PRIV_ZH[g].slice(1).map((_, i)
 const zhCount = (x) => { const CJK = /[\p{Script=Han}]/gu; return (x.match(CJK) || []).length + (x.replace(CJK, " ").match(/[\p{L}\p{N}_]+(?:[.,]\p{N}+)*/gu) || []).length; };
 ok("隱私 0.1.39:會收七組的 zh 逐字、每句 ≤25 字(canon 算法);組標題與句子 en 都有", Object.keys(PRIV_ZH).every((g) => privKeys(g).every((k, i) => POS(0, k) === PRIV_ZH[g][i] && zhCount(PRIV_ZH[g][i]) <= 25 && !!POS(1, k))));
 // 事件數跟告知綁在一起:加事件而沒補「會收」那幾組,這裡就紅(canon product-telemetry 出貨清單第 5 條)
-ok("隱私:四十四個事件逐項對得上契約的白名單(0.1.54 mkt_q / mkt_set=用了哪些功能的主要市場,只記選了哪一個(priv.c.feat.9);0.1.53 lib_buy_result=用了哪些功能的策略庫一鍵購買結果類別,不帶金額;0.1.52 data_card_shown=卡在哪一步的綁卡提示、engine_fail=沒裝好是哪一類原因、turn_fail_why=回合失敗的原因類別、app_quit=關掉 app 時停在哪個畫面、app_crash=當掉或沒正常結束是哪一類;lib_sort=用了哪些功能的策略庫排序;lib_bindbuy=用了哪些功能的策略庫綁卡即購買走到哪一步,不帶金額;0.1.50 lib_bindplan / lib_cardplan / lib_login_go 同組:策略庫一步開通與登入後接到哪一步,不帶金額;heartbeat=做到哪一步「app 開著的每一天」;strat_* 三個=每支策略,只記型別與市場類別;feature_used=用了哪些功能,名稱、每日一次、不含內容;lib_pick / idea_sent=用了哪些功能的策略庫與找點子;reply_notif=系統通知;0.1.9 九個、0.1.12 引擎安裝兩個、0.1.15 detect_fail=卡在哪一步,只記類別;cli_auth / auth_fail / key_verify=登入與金鑰;device_type=每筆紀錄都帶的電腦類型,spec-0.1.13 #12:寫作業系統與版本,不寫 macOS)",
-  Object.keys(require("../shell/telemetry.js").EVENTS).length === 44
-  && (() => { const ev = require("../shell/telemetry.js").EVENTS; return ["heartbeat", "strat_created", "strat_backtested", "strat_deployed", "feature_used", "lib_pick", "idea_sent", "lib_sort", "lib_bindbuy", "lib_bindplan", "lib_cardplan", "lib_login_go", "lib_buy_result", "mkt_q", "mkt_set", "reply_notif", "detect_fail", "engine_setup", "engine_opt_fail", "data_card_shown", "app_quit", "app_crash", "engine_fail", "turn_fail_why", "cli_auth", "auth_fail", "key_verify", "device_type"].every((e) => !!ev[e]); })()
+ok("隱私:五十四個事件逐項對得上契約的白名單(0.1.57 改價 v3 十個=用了哪些功能的方案／主機框從哪開、選了哪一階(addon_pick)與結果類別(priv.c.feat.10),額度提示與 30 TWD 卡的下一步歸卡在哪一步的綁卡／儲值提示;0.1.54 mkt_q / mkt_set=用了哪些功能的主要市場,只記選了哪一個(priv.c.feat.9);0.1.53 lib_buy_result=用了哪些功能的策略庫一鍵購買結果類別,不帶金額;0.1.52 data_card_shown=卡在哪一步的綁卡提示、engine_fail=沒裝好是哪一類原因、turn_fail_why=回合失敗的原因類別、app_quit=關掉 app 時停在哪個畫面、app_crash=當掉或沒正常結束是哪一類;lib_sort=用了哪些功能的策略庫排序;lib_bindbuy=用了哪些功能的策略庫綁卡即購買走到哪一步,不帶金額;0.1.50 lib_bindplan / lib_cardplan / lib_login_go 同組:策略庫一步開通與登入後接到哪一步,不帶金額;heartbeat=做到哪一步「app 開著的每一天」;strat_* 三個=每支策略,只記型別與市場類別;feature_used=用了哪些功能,名稱、每日一次、不含內容;lib_pick / idea_sent=用了哪些功能的策略庫與找點子;reply_notif=系統通知;0.1.9 九個、0.1.12 引擎安裝兩個、0.1.15 detect_fail=卡在哪一步,只記類別;cli_auth / auth_fail / key_verify=登入與金鑰;device_type=每筆紀錄都帶的電腦類型,spec-0.1.13 #12:寫作業系統與版本,不寫 macOS)",
+  Object.keys(require("../shell/telemetry.js").EVENTS).length === 54
+  && (() => { const ev = require("../shell/telemetry.js").EVENTS; return ["heartbeat", "strat_created", "strat_backtested", "strat_deployed", "feature_used", "lib_pick", "idea_sent", "lib_sort", "lib_bindbuy", "lib_bindplan", "lib_cardplan", "lib_login_go", "lib_buy_result", "mkt_q", "mkt_set", "reply_notif", "detect_fail", "engine_setup", "engine_opt_fail", "data_card_shown", "app_quit", "app_crash", "engine_fail", "turn_fail_why", "cli_auth", "auth_fail", "key_verify", "device_type", "acct_card_alt", "acct_card_alt_click", "ai_credit_line", "plan_box", "plan_box_res", "plan_bind_res", "addon_res", "addon_pick", "auto_resume"].every((e) => !!ev[e]) && ev.free_low_shown === null; })()
   && /^App version, operating system and version, system language$/.test(POS(1, "priv.c.meta.2")) && /^Computer type: laptop or desktop$/.test(POS(1, "priv.c.meta.3"))
   && /whether local auto-trading runs/.test(POS(1, "priv.c.step.2")) && /type \(A\/B\/C\) and market category/.test(POS(1, "priv.c.strat.2")) && /^Never its name or symbol$/.test(POS(1, "priv.c.strat.3"))
   && /whether it needs Blave data/.test(POS(1, "priv.c.feat.3")) && /which entry point/.test(POS(1, "priv.c.feat.4")) && /which sort you picked/.test(POS(1, "priv.c.feat.5")) && /which step it reached and the result type/.test(POS(1, "priv.c.feat.6")) && /^Never the chat title or text$/.test(POS(1, "priv.c.feat.8")) && /^Picking a main market: which one you picked$/.test(POS(1, "priv.c.feat.9"))
@@ -800,7 +800,7 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
   const envPlanChanged = undefined;
   hasToken = true; cur = "claude";
   let balLast = null; eval(fnSrc("balNum")); eval(fnSrc("balNow"));   // 餘額由 balLoad 讀進 balLast(主行程的端點);這裡直接給值
-  eval(fnSrc("pvPriced")); eval(fnSrc("pvCardFoot")); eval(fnSrc("planView")); eval(src.match(/^function planToCloud\(\).*$/m)[0]); eval(fnSrc("planPaint")); eval(src.match(/^function bindGo\(.*$/m)[0]);
+  eval(fnSrc("pvPriced")); eval(fnSrc("pvCardFoot")); eval(fnSrc("planView")); eval(src.match(/^function planToCloud\(\).*$/m)[0]); eval(fnSrc("planStateOf")); eval(fnSrc("planPaint")); eval(src.match(/^function bindGo\(.*$/m)[0]);
   // 最上面一組(.plan-id):帳號列 → 訊息格 → 餘額列;餘額列是這一組的第三個子節點
   const balRow = () => dom["set-plan-main"].children[0].children[0].children[2];
   { planPaint(); const row = balRow(), val = row.children[1];
@@ -1345,7 +1345,7 @@ ok("回合結束不再出費用那一則:dataFeeNote / dataFeeShow / data.fee �
     && R(403, { error_code: "NO_CARD" }).error === "NO_CARD" && R(409, { error_code: "HAS_SERVER" }).error === "SERVER" && R(429, {}).error === "RATE_LIMITED"
     && ["CHEAPER_PLAN_NEXT_PERIOD", "OS_CHANGE_NEEDS_NEW_SERVER", "RELAUNCH_REQUIRED", "PLAN_CANCELLED"].every((c) => R(409, { error_code: c }).error === "PLAN_ON_WEB") && R(400, { error_code: "DOWNGRADE_UNSUPPORTED" }).error === "SERVER" && R(400, { error_code: "toString" }).error === "SERVER"
     && JSON.stringify(R(409, { error_code: "PLAN_CONFIRM_REQUIRED", monthly_twd: "x" }).quote) === '{"cycle":null,"monthly":null,"annual":null}');
-  { let tiers = null; const publicTiers = async () => tiers; eval("var publicPricing = async " + mFn("publicPricing").replace(/^async /, ""));
+  { let tiers = null; const publicTiers = async () => tiers, planV3Mod = require(path.join(__dirname, "..", "shell", "planv3.js")); eval("var publicPricing = async " + mFn("publicPricing").replace(/^async /, ""));
     tiers = { trial: { days: 14 }, linux: [{ label: "Starter", twd_per_hour: null, monthly_twd: 1440, annual_twd: 14400 }], plan: { monthly_billing_active: true, annual_pay_months: 10, annual_period_days: 365, period_days: 30, grace_days: 7 } };
     const a = await publicPricing();
     tiers = { trial: { days: 14 }, linux: [{ label: "Starter", twd_per_hour: 2 }] };

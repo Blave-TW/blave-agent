@@ -1,0 +1,49 @@
+/* 改價 v3 付款框與 30 TWD 用完那張卡(renderer/planv3.js;mockup conversion-journey-2026-11-16 第 4、5、8、10 步)。
+   框本身是 confirmBox(一般確認框 440;加購框 480 變體)。顏色、間距只用 token。 */
+/* 有選項的框(加購框)480;只看框裡有沒有分段,框關掉或換成別的框自己就回 440 */
+.del-modal:has(.p3-hw) { width: min(480px, 92vw); }
+/* 區塊之間 16、區塊裡 4–8(組內 < 組間;設計稽核 M4,mockup .mb gap 16):只套用在這兩個框 */
+.del-body.lines:has(.p3-ticks, .p3-hw) { display: flex; flex-direction: column; gap: var(--space-16); }
+.del-body.lines:has(.p3-ticks, .p3-hw) > * { margin: 0; }
+.del-body.lines p.p3-t { margin: 0; font-size: 13px; line-height: 1.6; color: var(--ink-2); }
+.del-body.lines p.p3-ink { color: var(--ink); }
+.p3-price { display: flex; align-items: baseline; gap: var(--space-6); }
+.p3-price .big { font: 600 26px/1.2 var(--font-mono);   /* 26 = 內文 13 × 2(canon Hierarchy display:body ≥ 2×) */
+  color: var(--ink); font-variant-numeric: tabular-nums; }
+.p3-price .u { font-size: 13px; color: var(--ink-2); }
+.p3-ticks { margin: 0; padding: 0; list-style: none; display: grid; gap: var(--space-4); font-size: 13px; line-height: 1.6; color: var(--ink); }
+/* 勾畫成框線,不用字元 ✓(Windows 字型下長得不一樣;設計稽核 S4) */
+.p3-ticks li { position: relative; padding-left: var(--space-24); }   /* 折行時第二行對齊字、不頂到勾下面(懸掛縮排) */
+.p3-ticks li::before { content: ""; position: absolute; left: var(--space-4); top: 0.45em; width: 4px; height: 8px; border: solid var(--ink-2); border-width: 0 2px 2px 0; transform: rotate(45deg); }
+/* 系統 × 規格兩組分段(第 10 步):依內容寬,不撐滿(設計稽核 S5) */
+.p3-hw { display: grid; gap: var(--space-8); }
+.p3-hw-r { display: flex; align-items: center; gap: var(--space-12); }
+.p3-hw-r .l { flex: 0 0 40px; font-size: 12px; color: var(--ink-3); }
+:lang(en) .p3-hw-r .l { flex-basis: 56px; }
+.set-seg.p3-seg { margin-left: 0; min-width: 0; flex: none; }
+.set-seg.p3-seg button { flex: none; }
+.set-seg.p3-seg button:disabled { color: var(--ink-disabled); cursor: default; }
+.del-body.lines p.p3-hw-spec { margin: 0; font-size: 12px; color: var(--ink-3); }
+/* 自動儲值那一句:觸發字是 .mp-tip(外殼 tooltip 配方),泡泡是相鄰的 .tip;字級色跟著那一句 */
+.p3-tipw { position: relative; display: inline-block; }
+.p3-tipw .mp-tip { position: relative; font-size: inherit; color: inherit; }
+.p3-tipw .tip { left: 0; width: max-content; }
+/* 30 TWD 用完那張卡的下一步卡(第 4 步):回合失敗那一行之下,一句粗體價值、一顆實心主鈕、一顆文字鈕 */
+.p3-offer { margin-top: var(--space-8); padding: var(--space-12) var(--space-16); border-radius: var(--radius-md); background: var(--bg-body); color: var(--ink-2); }
+.p3-offer h4 { margin: 0; font-size: 15px; font-weight: 600; line-height: 1.5; color: var(--ink); }
+.p3-offer p { margin: var(--space-4) 0 0; font-size: 12px; color: var(--ink-3); }
+.p3-act { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-12) var(--space-16); margin-top: var(--space-12); }
+/* 30 TWD 快用完那一行:文字鈕接在句尾、同一行,放不下才折行(設計稽核 M9) */
+.msg.fault.p3-inl .fault-body { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: var(--space-8); }
+.msg.fault.p3-inl .fault-act { margin-top: 0; }
+/* 熱區 44×44(設計稽核 M6):置中固定 44 高、寬至少 44,外觀不動(同 app.css .busy-fix::before) */
+:is(.p3-act, .p3-t, .p3-line, .plan-act) .btn-quiet::before, .p3-tipw .mp-tip::before {
+  content: ""; position: absolute; inset: auto; left: 50%; top: 50%; width: max(44px, calc(100% + 8px)); height: 44px; transform: translate(-50%, -50%);
+}
+.p3-sum .cf-row.total.solo { margin-top: 0; padding-top: 0; border-top: 0; }
+/* 方案框 A 版(設計 v3-plan-box-2026-11-19):頭＝大字＋單位＋一行條件,組內 4(< 塊間 16) */
+.p3-head { display: flex; flex-direction: column; gap: var(--space-4); }
+.del-body.lines .p3-head p.p3-sub { margin: 0; font-size: 13px; line-height: 1.6; color: var(--ink-2); }
+.p3-ticks li span { margin-left: var(--space-6); font-size: 12px; color: var(--ink-3); }
+/* Pro 那一句跟主鈕正上方那一句是同一組事實:間距 4 */
+.del-body.lines:has(.p3-ticks, .p3-hw) > p.p3-pro { margin-top: calc(var(--space-4) - var(--space-16)); }

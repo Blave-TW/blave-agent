@@ -30,6 +30,7 @@ ALLOWED = {
     "strategy_failed", "bar_stale", "scheduler_error", "venue_unbound",
     "ui_override", "exchange_unreachable", "exchange_recovered", "dead_members",
     "data_gap_exposed", "tw_feed_fallback",
+    "reconciler_hang_restarted", "reconciler_hang_halted", "machine_woke",
 }
 # 平台自己 diff payload 產生的，config 寫了就是同一件事落兩筆
 FORBIDDEN = {"halt", "order_error"}

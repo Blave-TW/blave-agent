@@ -133,6 +133,8 @@ async function presResume() {
   PRES.info = info;
   const pc = presPC();
   if (info && info.saved && pc) PRES.phase = "flow";
+  // 改帳號存了、還沒重綁憑證就關了框:重開一樣停在選憑證,不給「確認登入」(daemon 手上還是舊帳號)
+  if (info && info.saved && info.rebindNeeded) PRES.recert = true;
   presScan();   // 清單裡「選憑證」那張卡也要到期日
   presPaint();
 }
@@ -159,10 +161,10 @@ async function presOpenTcem() {
 }
 // 主行程回的錯 + 發生在哪一步(presMsgPlace 決定畫在哪)
 const presErr = (r, step) => Object.assign({}, r || { code: "FAILED" }, { step });
-async function presSaveCreds(then) {
+async function presSaveCreds(acct, then) {
   if (PRES.busy || presDown()) return;
   PRES.busy = true; PRES.msg = null; presPaint();
-  let r = null; try { r = await window.blave.presidentCreds(PRES.acct.trim(), PRES.pw); } catch (_) { }
+  let r = null; try { r = await window.blave.presidentCreds(acct, PRES.pw); } catch (_) { }
   PRES.busy = false;
   if (!r || r.code !== "OK") { PRES.msg = presErr(r, "creds"); presPaint(); return; }
   PRES.pw = ""; presTrack("form");
@@ -172,7 +174,9 @@ async function presSaveCreds(then) {
 }
 async function presGo() {
   if (PRES.phase !== "form" || !/^[0-9]{11}$/.test(PRES.acct.trim()) || !PRES.pw) return;
-  await presSaveCreds(async () => { PRES.phase = "flow"; PRES.acct = ""; });
+  // 存過帳密 = 從登入失敗按「改帳號」回來:daemon 手上還是舊那組、換帳號也丟了憑證密碼,不重綁的話「確認登入」照舊送舊帳號
+  const swap = !!(PRES.info && PRES.info.saved);
+  await presSaveCreds(PRES.acct.trim(), async () => { PRES.phase = "flow"; PRES.acct = ""; if (swap) PRES.recert = true; });
 }
 async function presStep(name, opts) {
   if (PRES.busy || presDown()) return;
@@ -182,6 +186,7 @@ async function presStep(name, opts) {
   PRES.busy = false;
   const code = r && r.code, step = name === "host" ? "probe" : name;
   if (code === "OK" || code === "SENT") PRES.sent = { step, at: Date.now(), upd: pc ? pc.updated_at : null };
+  else if (code === "NO_CA_PW" || code === "SECRETS_STALE") PRES.recert = true;   // 主行程或 daemon 擋下:手上那組不是存著的這組,回選憑證
   else PRES.msg = presErr(r, step);
   presBurst(); presPaint();
 }
@@ -210,7 +215,10 @@ async function presUseCert() {
 // 改交易密碼(被統一擋下之後):存新密碼 → 用同一張憑證重綁(.env 的指紋跟著換)→ 正式主機再確認
 async function presRecheck() {
   if (!PRES.pw) return;
-  await presSaveCreds(async () => {
+  // 帳號用存著的那個:PRES.acct 進清單就清掉了,重開框(presResume)也不回填;這裡不重問帳號
+  const acct = PRES.info && PRES.info.account;
+  if (!acct) { PRES.msg = presErr({ code: "NO_CREDS" }, "creds"); presPaint(); return; }
+  await presSaveCreds(acct, async () => {
     const pc = presPC();
     PRES.busy = true; presPaint();
     let r = null; try { r = await window.blave.presidentCert(null, PRES.source); } catch (_) { }
@@ -351,15 +359,15 @@ function presPwBody(msg, extra) {
   return capFrag(capErr(msg), presInput("pres-pw", t("pres.form.pw"), "pw", { err: null, hint: t("pres.pw.hint"), enter: presRecheck }), capActs(go, extra || null));
 }
 /* 登入失敗(任何一類):講哪一類、處理好按「確認登入」(每按一次真的登入一次)、被鎖找營業員——不講次數;
-   密碼／原因不明多一個改交易密碼,憑證兩類多換憑證／改帳號。按了沒送出去的錯也掛在這一列 */
+   密碼／原因不明多改交易密碼／改帳號(統一的查無此使用者也歸在密碼類),憑證兩類多換憑證／改帳號。按了沒送出去的錯也掛在這一列 */
 function presProbeBody(view, pc) {
   const off = PRES.busy || presDown() || !!(pc && pc.busy), acct = (PRES.info && PRES.info.account) || "—";
   const KEY = { "d-PASSWORD": "pres.err.password", "d-UNKNOWN": "pres.err.unknown", "d-CERT": "pres.err.cert", "d-CERT_MISMATCH": "pres.err.certMismatch",
     "d-TIMEOUT": "pres.err.timeout", "d-MAINTENANCE": "pres.err.maint" };
   const confirm = capBtn("btn-fill", t("pres.err.confirm"), () => presStep("probe"), "pres-confirm", off);
-  const extra = view === "d-PASSWORD" || view === "d-UNKNOWN" ? [capBtn("btn-quiet", t("pres.err.changePw"), () => { PRES.recheck = true; presPaint(); }, "pres-change-pw")]
-    : view === "d-CERT" || view === "d-CERT_MISMATCH" ? [capBtn("btn-quiet", t("pres.err.certSwap"), () => { PRES.recert = true; presPaint(); }, "pres-recert"),
-      capBtn("btn-quiet", t("pres.err.acctSwap"), () => { PRES.phase = "form"; presPaint(); }, "pres-acct-swap")] : [];
+  const acctSwap = capBtn("btn-quiet", t("pres.err.acctSwap"), () => { PRES.phase = "form"; presPaint(); }, "pres-acct-swap");
+  const extra = view === "d-PASSWORD" || view === "d-UNKNOWN" ? [capBtn("btn-quiet", t("pres.err.changePw"), () => { PRES.recheck = true; presPaint(); }, "pres-change-pw"), acctSwap]
+    : view === "d-CERT" || view === "d-CERT_MISMATCH" ? [capBtn("btn-quiet", t("pres.err.certSwap"), () => { PRES.recert = true; presPaint(); }, "pres-recert"), acctSwap] : [];
   const notSent = presRowErr("probe");
   // 略過測試段直接登正式、被拒沒說原因:多半是營業員還沒開正式權限——指回上面的測試單(不自動重試)
   const skipNote = view === "d-UNKNOWN" && pc && pc.env === "live" && pc.test_skipped === true ? presP("cx-hint", t("pres.err.unknownSkipped")) : null;

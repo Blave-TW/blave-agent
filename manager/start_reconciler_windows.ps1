@@ -15,6 +15,7 @@
 # (%BLAVE_AGENT_HOME% defaults to C:\openclaw if unset — see references/deployment.md)
 
 # A resident process is never part of an agent turn: drop the turn's variables (see start_reconciler.sh)
+if ($env:BLAVE_TURN_INTERRUPT_FILE -or $env:BLAVE_TURN_PID) { Remove-Item Env:BLAVE_TEST_HANG_BEFORE_SEND -ErrorAction SilentlyContinue }
 Remove-Item Env:BLAVE_TURN_INTERRUPT_FILE -ErrorAction SilentlyContinue
 Remove-Item Env:BLAVE_TURN_PID -ErrorAction SilentlyContinue
 $Workspace = Split-Path -Parent $PSScriptRoot
@@ -67,6 +68,18 @@ print(tpl.format(code=arg) if arg else tpl)
     }
 }
 
+# Same as start_reconciler.sh: a kill by the runtime's hang watch (state\execution\hang_kill.json,
+# written within 15 minutes) gets its one notice from the next reconciler, not this alert too.
+function Test-HangKillRecent {
+    try {
+        $at = (Get-Content -Raw 'state\execution\hang_kill.json' -ErrorAction Stop | ConvertFrom-Json).at
+        $now = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() / 1000.0
+        return ($at -is [ValueType]) -and ($now - $at -ge 0) -and ($now - $at -le 900)
+    } catch {
+        return $false
+    }
+}
+
 Notify (Get-Msg 'watchdog_started' '✅ Auto-trading started')
 
 while ($true) {
@@ -80,6 +93,10 @@ while ($true) {
     }
     $Msg = Get-Msg 'watchdog_restart' '⚠️ System restarted (code {code}), resuming in 10s' $ExitCode
     Write-Output $Msg
-    Notify $Msg
+    if (Test-HangKillRecent) {
+        Write-Output 'killed by the hang watch - the next reconciler sends the notice'
+    } else {
+        Notify $Msg
+    }
     Start-Sleep -Seconds 10
 }

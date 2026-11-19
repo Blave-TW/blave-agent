@@ -71,7 +71,7 @@ API_URL = os.environ.get(
 PROXY_TOKEN = os.environ.get("BLAVE_PROXY_TOKEN", "")
 
 ORDERS_TAIL = 20  # 最近下單只給一屏的量,orders.jsonl 會一直長
-from reconciler_presence import HEARTBEAT_STALE_S  # noqa: E402  one threshold for both (stdlib-only module)
+from reconciler_presence import HEARTBEAT_STALE_S, last_sign_of_life  # noqa: E402  one threshold for both (stdlib-only module)
 
 
 def _read_json(path, default=None):
@@ -1242,14 +1242,12 @@ def unbind_after_close_view():
 def txf_session(now=None):
     """Loaded by path into a private module, its skew file pointed at this workspace: the
     reporter never imports lib (cwd is not the workspace here, and tw_clock reads a relative path)."""
-    import importlib.util
     path = os.path.join(WORKSPACE, "lib", "tw_clock.py")
     if not os.path.isfile(path):
         return None
     try:
-        spec = importlib.util.spec_from_file_location("_report_tw_clock", path)
-        tc = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(tc)
+        import secret_imports
+        tc = secret_imports.load_source("_report_tw_clock", path)  # from source, never a planted __pycache__ entry
         tc.SKEW_PATH = os.path.join(WORKSPACE_STATE, "clock_skew.json")
         now = time.time() if now is None else now
         s = tc.skew(now) or 0
@@ -2379,6 +2377,7 @@ def build_report(reporter=None):
     if not isinstance(cfg, dict):
         cfg = None
     hb = _mtime(os.path.join(WORKSPACE_STATE, "heartbeat", "reconciler"))
+    life = last_sign_of_life(WORKSPACE_STATE)
     last = _read_json(os.path.join(WORKSPACE, "manager", "last_reconcile.json"))
     sched = scheduled_strategies()
     vens = venues()
@@ -2423,10 +2422,11 @@ def build_report(reporter=None):
         "order_errors": _read_json(os.path.join(WORKSPACE, "manager", "order_errors.json"), []),
         "orders": recent_orders(),
         "reconciler": {
-            "heartbeat_at": hb,
+            # heartbeat or progress stamp, whichever is newer: a long round is not a dead one
+            "heartbeat_at": life,
             # alive = trading: a reconciler gated by the restart record keeps a
             # fresh heartbeat but sends nothing
-            "alive": _fresh(hb) and stopped is None,
+            "alive": _fresh(life) and stopped is None,
             "stopped": stopped,
         },
         # Whether the stop button will work at all. A listener that died leaves

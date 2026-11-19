@@ -215,10 +215,13 @@ t("側欄那一格整段刪掉(hoPendingCell / .ho-back / ho.back.hint 都不存
 /* ⚠️ 承重牆:gate 用 kind === "running" 判,**不可以**用 hoCloudLive()——後者多要求「1 小時內同步過」,
    「running 但讀不到」那一態卡就不出了,人照樣掉在自動下單頁(規格 §2 說這是最容易寫錯的一格) */
 t("gate 多守一格:雲端 running 而且還有一支在等 → 中欄留在 #cv-empty;判準是 kind === \"running\",不是 hoCloudLive()", (() => {
+  // 0.1.57 判準抽成 envGated(左下選單「報告」共用,spec first-strategy-sidebar §A2):envPaint 用它的回傳分 ready／gate
   const i = trSrc.indexOf("function envPaint()"), body = trSrc.slice(i, trSrc.indexOf("\n}", i)).replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
-  return /const ready = cloud && kind === "running" && !!pid;/.test(body)
-    && /const gate = \(cloud && kind !== "running" && kind !== "stopped"\) \|\| ready;/.test(body)
-    && /const pid = typeof hoPendingId === "function" \? hoPendingId\(\) : null;/.test(body) && !/hoCloudLive/.test(body); })());
+  const j = trSrc.indexOf("function envGated()"), eg = trSrc.slice(j, trSrc.indexOf("\n}", j));
+  return /const gk = envGated\(\), ready = gk === "ready", gate = !!gk;/.test(body)
+    && /if \(ENV\.cur !== "cloud"\) return null;/.test(eg) && /if \(kind === "running" && typeof hoPendingId === "function" && hoPendingId\(\)\) return "ready";/.test(eg)
+    && /return kind !== "running" && kind !== "stopped" \? "gate" : null;/.test(eg)
+    && /const pid = typeof hoPendingId === "function" \? hoPendingId\(\) : null;/.test(body) && !/hoCloudLive/.test(body + eg); })());
 t("那一態側欄出 side.cloud.emptyReady,其餘狀態整句不出(emptyGate 已刪);走 dataset.i18n,換語言時才不會被 applyI18n 還原",
   /const sg = \$\("side-gate"\); sg\.hidden = !ready;/.test(trSrc)
   && /if \(ready && sg\.dataset\.i18n !== "side\.cloud\.emptyReady"\) \{ sg\.dataset\.i18n = "side\.cloud\.emptyReady"; sg\.textContent = t\("side\.cloud\.emptyReady"\); \}/.test(trSrc)

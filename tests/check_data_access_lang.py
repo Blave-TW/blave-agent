@@ -57,9 +57,9 @@ t("access=0:明講「用戶讀的每一句自己寫、用該輪語言」,而且�
 for need, label in [
     (r"holder concentration", "哪些是 Blave 專屬資料"),
     (r"card trial", "什麼條件才有(試用)"),
-    (r"cloud plan or cloud\s+machine", "什麼條件才有(雲端方案或主機)"),
+    (r"Blave Agent plan or cloud\s+machine", "什麼條件才有(Agent 方案或主機)"),
     (r"an API plan", "什麼條件才有(API 方案)"),
-    (r"\(plan billing\) not available\s+until a cloud plan or an API plan is started", "方案制:沒有方案就沒有資料(沒有按小時買)"),
+    (r"\(plan billing\) not available\s+until a Blave Agent plan or an API plan is started", "方案制:沒有方案就沒有資料(沒有按小時買)"),
     (r"charged per clock hour of use", "沒有主機也拿得到:按有用到的整點小時收(沒有主機也能買資料)"),
     (r"needs a balance that covers that hour", "事實裡有「餘額付得起這一小時」,不只試用與主機"),
     (r"name which data is missing", "要講缺哪一項"),
@@ -110,7 +110,7 @@ for why in (None, "no_plan", "no_balance", "signed_out"):
       ("needs signing in to Blave first" in r if why == "signed_out" else "needs a plan" in r)
       and ("needs a plan" not in r if why == "signed_out" else "signing in" not in r)
       and "not list conditions" in r and "not mention an API plan, the card trial or hourly billing" in r
-      and "give the conditions" not in b and not re.search(r"a cloud plan or an API plan\)", r))
+      and "give the conditions" not in b and not re.search(r"a (cloud|Blave Agent) plan or an API plan\)", r))
 for why in (None, "bogus"):
     b, f = facts(why)
     t(f"WHY={'未帶(舊外殼)' if why is None else '認不得'}:Facts 原文不變、沒有那條規則", f == FACTS_PLAIN and RULE not in b)
@@ -127,7 +127,7 @@ t("access=1:不再教模型認已經不存在的 DATA_NOT_INCLUDED", "DATA_NOT_I
 for need, label in [
     (r"`ERR007`", "扣不到這一小時的資料費,或方案制下沒有含資料的方案"),
     (r"no plan that includes data", "ERR007 的方案制那一半"),
-    (r"no data until a cloud plan or\s+an API plan is started", "Billing:方案制沒有方案就沒有資料"),
+    (r"no data until a Blave Agent plan or\s+an API plan is started", "Billing:方案制沒有方案就沒有資料"),
     (r"`ERR005`", "key 被刪／撤銷"),
     (r"`KEY_SCOPE`", "越權"),
     (r"per clock hour", "按小時、不是按次"),

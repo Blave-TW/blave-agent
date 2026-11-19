@@ -69,6 +69,22 @@ t("extract_suggestions 只留第一句", items == ["一"], items)
 _, i61 = at.extract_suggestions("好。\n<suggest>\n" + "長" * 61 + "\n</suggest>")
 _, i60 = at.extract_suggestions("好。\n<suggest>\n" + "長" * 60 + "\n</suggest>")
 t("extract_suggestions 上限 60(同顯示端):61 字整句丟、60 字照留", at._SUGGEST_MAX_CHARS == 60 and i61 == [] and i60 == ["長" * 60], (i61, i60))
+_INV = ('回測完成。\n\n<invoke name="suggest">\n'
+        '<parameter>帶我看怎麼把 Supertrend 趨勢（SOL）加進策略組合</parameter>\n</invoke>')
+c, it = at.extract_suggestions(_INV)
+t("工具呼叫樣式的建議句(<parameter> 沒有 name=)收成建議、正文不留標記",
+  c == "回測完成。" and it == ["帶我看怎麼把 Supertrend 趨勢（SOL）加進策略組合"] and at.suggest_kind(it[0]) == "nav", (c, it))
+c, it = at.extract_suggestions('好。\n<function_calls>\n<invoke name="suggest">\n'
+                               '<parameter name="text">回測 BTC 均線</parameter>\n</invoke>\n</function_calls>')
+t("包在 function_calls、帶 name= 的也收", c == "好。" and it == ["回測 BTC 均線"], (c, it))
+_TR = at.extract_suggestions('好。\n<invoke name="suggest">\n<parameter>回測')
+t("截斷的 invoke 尾段剝乾淨、不給句子", _TR == ("好。", []), _TR)
+_FOO = '程式碼:<invoke name="foo">x</invoke>'
+t("別的 invoke 不動", at.extract_suggestions(_FOO) == (_FOO, []))
+for _MID in ('好。\n<invoke name="suggest">\n\n後面的正文要留著。',
+             '好。\n<invoke name="suggest">\n<parameter>回測 A</parameter>\n\n後面的正文要留著。'):
+    t("沒閉合的 invoke 後面還有正文:整段不動、正文不被吞", at.extract_suggestions(_MID) == (_MID, []), at.extract_suggestions(_MID))
+t("visible_text 也看不到工具呼叫樣式的建議句", "<invoke" not in at.visible_text(_INV))
 for line, want in (("帶我看怎麼把 A 加進策略組合", "nav"), ("  带我看怎么先绑模拟盘账户", "nav"), ("SHOW ME HOW to add A", "nav"),
                    ("Show me how to go live", "nav"), ("回測 A", "step"), ("掃 A 的參數找穩定區", "step"), ("Mostrar cómo", "step"), ("", "step")):
     t(f"suggest_kind({line!r}) = {want}", at.suggest_kind(line) == want)

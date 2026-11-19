@@ -30,6 +30,8 @@ function run(throwing) {
     tradeStartIfReady: () => { if (throwing.has("trade")) throw new Error("trade"); },
     mainLog: { write: () => {} }, quitting: false, quitDone: false,   // 0.1.55 主行程 log 與「結束中不起引擎」
     engineKick: () => { if (throwing.has("engine")) throw new Error("engine"); },   // 0.1.12 開 app 就在背景裝引擎
+    // 0.1.57 venv 版本對不上時交易主機起來之前先搬開(tests/check_shell_engine_setup.js 另外測)
+    engineSetup: () => ({ retireStale: () => { if (throwing.has("venv")) throw new Error("venv"); log.push("venv check"); return "ok"; } }),
     codexKick: () => { if (throwing.has("codex")) throw new Error("codex"); },   // 0.1.39 Codex 引擎隨包:刪舊版、連 Codex 時背景補抓
     trayStart: () => { if (throwing.has("traystart")) throw new Error("traystart"); },
     accountStatus: () => { if (throwing.has("state")) throw new Error("state"); },
@@ -65,10 +67,10 @@ function run(throwing) {
 (async () => {
 let r = run(new Set());
 await new Promise((res) => setImmediate(res));
-ok("正常啟動:畫面交字後選單重建成中文;沒有任何一步記錯;附件清掃清的是 workspace;偵測完送 device_type;排程更新對過一次目標版號", r.registered && r.log.includes("menu:檔案") && r.errors.length === 0 && r.log.includes("prune:/ws") && r.log.includes("track:device_type:laptop") && r.log.includes("sched boot"), r);
-r = run(new Set(["tm", "updater", "traystart", "sync", "trade", "engine", "gate", "state", "rotate", "prune", "device", "mv", "relay", "sched", "codex"]));
-ok("遙測 / 更新 / 排程更新 / 選單列 / 工作區同步 / 常駐程式 / 背景裝引擎 / 版本閘 / app 現況回報 / token 輪替 / 附件清掃 / 機型偵測 / 手機查看部位 / 手機對話都拋例外:handler 照樣掛上、選單照樣變中文,錯誤各記一行",
-  r.registered && r.log.includes("menu:檔案") && r.errors.length === 15 && r.errors.every((e) => /^\[startup\] .+ failed/.test(e)), r);
+ok("正常啟動:畫面交字後選單重建成中文;沒有任何一步記錯;附件清掃清的是 workspace;偵測完送 device_type;排程更新對過一次目標版號", r.registered && r.log.includes("menu:檔案") && r.errors.length === 0 && r.log.includes("prune:/ws") && r.log.includes("track:device_type:laptop") && r.log.includes("sched boot") && r.log.includes("venv check"), r);
+r = run(new Set(["tm", "updater", "traystart", "sync", "trade", "engine", "gate", "state", "rotate", "prune", "device", "mv", "relay", "sched", "codex", "venv"]));
+ok("遙測 / 更新 / 排程更新 / 選單列 / 工作區同步 / 常駐程式 / 背景裝引擎 / venv 版本 / 版本閘 / app 現況回報 / token 輪替 / 附件清掃 / 機型偵測 / 手機查看部位 / 手機對話都拋例外:handler 照樣掛上、選單照樣變中文,錯誤各記一行",
+  r.registered && r.log.includes("menu:檔案") && r.errors.length === 16 && r.errors.every((e) => /^\[startup\] .+ failed/.test(e)), r);
 r = run(new Set(["tray"]));
 ok("選單列(traySync)拋例外:選單照樣先重建成中文", r.log.includes("menu:檔案") && r.errors.some((e) => /tray failed/.test(e)), r);
 console.log(red ? `\n${red} FAILED` : "\nALL PASS");

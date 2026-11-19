@@ -16,10 +16,13 @@ const NOT_SIGNIN = {   // 檔 → 所在函式:登出之後切到這一類、查
   // mvBlock:設定 › 隱私「前往登入」切到同一個設定裡的帳號與方案(mockup-desktop-mobile-view-toggle A 版 mv.leadOut;登入失效同一句);phBlock:「允許手機對話」沒登入時同一句
   // dataGateAction:資料卡與事件列共用的出口表,planOpen 那一列是〔看方案〕(登入那兩列走 planSignIn)
   // sideCvClick:左下角帳號那一格的「升級」「已停機」開帳號與方案(spec sidebar-conversion §3.1);「登入」那一種走 planSignIn
-  "app.js": ["acctSignOut", "setCat", "dataCardState", "dataGateAction", "planOpen", "mvBlock", "phBlock", "sideCvClick"],
+  // amPaint:左下第一格選單的「帳號與方案」(spec first-strategy-sidebar §A4,只對已登入的人出);沒登入的選單沒有這一項,登入走膠囊
+  "app.js": ["acctSignOut", "setCat", "dataCardState", "dataGateAction", "planOpen", "mvBlock", "phBlock", "sideCvClick", "amPaint"],
   "library.js": ["libGateBtn", "libBuyBox", "libPaintList", "libBindBuyBox", "libPlanBox"],   // libPaintList:方案制試用閘門旁的「看方案」(paywall-redesign-2026-10-21);
   // libBindBuyBox:框 3「開通方案」(spec library-buy-with-bind §3 決定 2);libPlanBox:框 ③ 讀不到自動儲值的數字時退回方案頁(0.1.50 一步開通)
   "welcome.js": ["wdNote"],
+  // 0.1.57 改價 v3:p3OpenAgent 在報價說「方案或試用已有效」(agent_offer.kind active)時改看方案頁,不再賣一次;登入走 planSignIn
+  "planv3.js": ["p3OpenAgent"],
 };
 const SIGNIN_KEYS = /"(cn\.blave\.btn|pv\.signin|shr\.gateGo|wd\.note\.out(NoNum|\.m)?)"/;
 const sites = [];

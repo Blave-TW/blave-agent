@@ -124,7 +124,7 @@ Import from `lib/` — never write these functions inline (`references/lib.md`).
 
 ## Reports
 
-A report is a document the user reads in the Reports list (web: 「報告」 in the sidebar; desktop: Reports in the left sidebar) — for anything read again later. A change to a report the user named goes through `edit_report` on that same report — never a hand edit of the JSON, never a report nobody named (`references/reports.md` §1). A report you got wrong this turn is rewritten under its id with `replace=True`, never a second id; cannot fix it → say so in the reply.
+A report is a document the user reads in the Reports list (web: 「報告」 in the sidebar; desktop: Reports in the bottom-left menu, older app versions: the left sidebar) — for anything read again later. A change to a report the user named goes through `edit_report` on that same report — never a hand edit of the JSON, never a report nobody named (`references/reports.md` §1). A report you got wrong this turn is rewritten under its id with `replace=True`, never a second id; cannot fix it → say so in the reply.
 
 - **A research question goes straight to a report:** its answer needs an analysis script over multi-period history (event study, conditional returns, comparing periods or groups) or the user asks for a new research report → say 「這題會直接做成報告，約 N 分鐘」 and start, no confirmation round; 研究 or 分析 alone does not trigger it; one number, a current reading or a follow-up stays in chat.
 - **For a research question, check the data first:** period covered, condition present, independent segments (B9). Question must change or few segments → answer in chat, report asked for or not; say what changed, offer a report on the new question (「用前 10% 門檻做成報告」) — taking it is consent. **Never publish a report on a substitution the user did not accept** (`references/reports.md` §1b).
@@ -200,7 +200,7 @@ Never call `bt.plot()`. Never edit or hand-copy the `chart/` folder `run()` writ
 Read `references/manager.md` (workflow, CRITICAL rules). Always:
 1. **NEVER manually edit `portfolio_config.json["weights"]`** — run `manager.py`
 2. **`manager.py` is dry-run by default** — show proposed weights, `--apply` only after the user confirms
-3. **Order library → reconciler is one atomic task** — wire `reconciler.py` in the same session as `lib/order_*.py`
+3. **`manager/reconciler.py`, `manager/flatten.py` and the official `lib/` order code are read-only for you** — supported venues are wired already; a venue Blave does not support yet needs Blave to ship code (`references/exchange-connect.md` rule 7)
 
 Another weighting method is **always a new `allocators/<name>/allocator.py`** (`references/allocator-code.md`), never an edit to `manager/manager.py` or `manager/management_backtest.py`; custom execution → `references/lib.md` › *Custom executors*; TWAP is set on the web 下單設定, never hand-wired.
 

@@ -77,6 +77,17 @@ const EVENTS = {
   // (shown 第一次畫出來、skip 按跳過、市場值 = 點了那一格),mkt_set = 設定 › 一般改了主要市場
   mkt_q: { act: ["shown", "skip", "crypto", "twstock", "txf", "usstock"] },
   mkt_set: { v: ["all", "crypto", "twstock", "txf", "usstock"] },
+  // 改價 v3 付款框(0.1.57;renderer/planv3.js 送;canon product-telemetry 登記表、api desktop_telemetry 同一份、同順序,api 先上)
+  acct_card_alt: { alt: ["paper", "running", "none"] },
+  acct_card_alt_click: { card: ["pre_free", "turn_free"] },
+  free_low_shown: null,
+  ai_credit_line: { kind: ["low_trial", "low_period", "used_up", "topped"] },
+  plan_box: { from: ["data", "free", "low", "side", "welcome", "set", "cloud", "unlaunched", "retry", "model", "lib"] },
+  plan_box_res: { step: ["trial_page", "pay_page", "paid_card", "paid_wallet", "repriced", "src_changed", "charge_fail", "busy", "net", "rate", "active"] },
+  plan_bind_res: { step: ["trial_ok", "plan_ok", "failed", "wallet", "refund", "unsettled", "dropped", "expired"] },
+  addon_res: { step: ["ok_full", "ok_prorated", "ok_free", "ok_convert", "bind_page", "repriced", "src_changed", "capped", "cap_down", "paid_no_srv", "charge_fail", "wallet_short", "net"] },
+  addon_pick: { tier: ["linux_starter", "linux_premium", "linux_max", "windows_starter", "windows_premium", "windows_max"] },
+  auto_resume: { r: ["sent", "skip_new", "skip_state"] },
   // 0.1.15 偵測失敗(renderer 送,只在連結畫面偵測完時):本機那個 CLI 為什麼不能用。值由主行程 detectWhy 判,語意見 canon 登記表
   detect_fail: { why: ["claude_none", "claude_timeout", "claude_nonzero", "claude_badjson", "codex_none", "codex_shim", "codex_timeout", "codex_nonzero"] },
   // 本機策略的三步(0.1.18;主行程送,strategySteps):新建、第一次有回測、第一次配了錢(同雲端的 deployed;按下啟動下單另有 trade_started)。
@@ -370,7 +381,12 @@ const EVENTS = {
     "side_cv_login", "side_cv_trial", "side_cv_plan", "side_cv_stopped",
     "login_side", "login_side_again", "bind_side", "plan_side", "stopped_side",
     // 0.1.54 雲端策略頁頭「拉回這台電腦」改成 icon 鈕(renderer/handoff.js;對照送上雲端那顆 sp_cloud_icon,api 先上)
-    "sp_pull_icon"] },
+    "sp_pull_icon",
+    // 0.1.57 左下選單與沒有策略時的導引(spec first-strategy-sidebar §10.1;同 api 順序,api 先上):選單打開、選單「報告」真的開了報告頁、選單其餘五項
+    // (renderer/app.js amPaint、reports.js rptMenuGo)、第一格的新報告點被看見(amFirstPaint);自動下單清單空那張卡的〔新增策略〕／「連接帳戶」
+    // (portfolio.js poFog("onb-new");trade_onb_cx 是 spec 的 trade_onb_connect,超過 prop 的 16 字)、新增策略框的範例籤(newstrategy.js)
+    "side_menu_open", "side_menu_rpt", "side_menu_set", "side_menu_plan", "side_menu_usage",
+    "side_menu_docs", "side_menu_out", "rpt_dot_shown", "trade_onb_new", "trade_onb_cx", "ns_example"] },
 };
 // `claude auth status` 的 authMethod 原值 → cli_auth 的 how(隨包 CLI 2.1.281 的 auth status 只會給這六個)。唯一的一份:
 // 主行程 detectAgents 算好放進 out.claude.how,畫面與主行程都讀那一欄。null／缺 = none,表外 = other
@@ -382,7 +398,7 @@ const ONCE = ["app_first_open", "first_backtest_done", "first_reply_done"];   //
 const DAILY = ["feature_used", "acct_card_shown", "acct_card_click", "acct_card_back", "turn_failed", "connect_failed",
   "plan_start_res", "update_failed", "lib_blocked", "heartbeat", "engine_setup", "engine_opt_fail", "lib_pick", "idea_sent", "detect_fail",
   "device_type", "reply_notif", "auth_fail", "cli_auth", "key_verify", "lib_sort", "lib_bindbuy", "lib_bindplan", "lib_cardplan", "lib_login_go",
-  "data_card_shown", "app_quit", "app_crash", "engine_fail", "turn_fail_why", "lib_buy_result", "mkt_q", "mkt_set"];
+  "data_card_shown", "app_quit", "app_crash", "engine_fail", "turn_fail_why", "lib_buy_result", "mkt_q", "mkt_set", "acct_card_alt", "acct_card_alt_click", "free_low_shown", "ai_credit_line", "plan_box", "plan_box_res", "plan_bind_res", "addon_res", "addon_pick", "auto_resume"];
 // 每日一則、不分屬性值:心跳一天只要一列(live 記當天第一次送出那一刻的),下單中途開關不多送
 const DAILY_ONE = ["heartbeat"];
 const HEARTBEAT_MS = 10 * 60 * 1000;   // 啟動後 10 分鐘起每 10 分鐘看一次;當天送過就不出門(啟動當天另有 app_open)
@@ -400,7 +416,7 @@ const SID_ON = ["strat_created", "strat_backtested", "strat_deployed"];
 const SID_RE = /^[0-9a-f]{16}$/;
 const SID_KEY_RE = /^[0-9a-f]{64}$/;
 // 畫面(track-event)只准送這幾個;里程碑(app_first_open、login_done…)與主行程自己判的(plan_start_res、update_failed)不收
-const FROM_RENDERER = ["acct_card_shown", "acct_card_click", "acct_card_back", "turn_failed", "connect_failed", "first_reply_done", "lib_blocked", "lib_pick", "idea_sent", "detect_fail", "auth_fail", "cli_auth", "key_verify", "lib_sort", "lib_bindbuy", "lib_bindplan", "lib_cardplan", "lib_login_go", "data_card_shown", "turn_fail_why", "lib_buy_result", "mkt_q", "mkt_set"];
+const FROM_RENDERER = ["acct_card_shown", "acct_card_click", "acct_card_back", "turn_failed", "connect_failed", "first_reply_done", "lib_blocked", "lib_pick", "idea_sent", "detect_fail", "auth_fail", "cli_auth", "key_verify", "lib_sort", "lib_bindbuy", "lib_bindplan", "lib_cardplan", "lib_login_go", "data_card_shown", "turn_fail_why", "lib_buy_result", "mkt_q", "mkt_set", "acct_card_alt", "acct_card_alt_click", "free_low_shown", "ai_credit_line", "plan_box", "plan_box_res", "plan_bind_res", "addon_res", "addon_pick", "auto_resume"];
 const DAY_RE = /^[0-9]{8}$/;
 const DEFAULT_ON = true;   // Wei 2026-09-21:預設開、照實告知、可關
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;

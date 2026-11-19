@@ -62,17 +62,32 @@ Semantics — panic button, not portfolio management:
     closed symbols' ledger baselines are zeroed afterwards
     (zero_ledger_symbols) so the closes are never re-summed as bot trades.
 """
+import os
+import sys
+
+# Before any other import, in the process itself (not when a test imports this file): the workspace folders come
+# off sys.path and only lib/ is reachable from the workspace, through lib/secret_imports.py (audit 2026-11-19 M1).
+# os is loaded at interpreter startup and runpy is imported only once the workspace is off sys.path.
+# Same block in lib/president_worker.py, lib/capital_worker.py, lib/sinopac_worker.py, manager/reconciler.py,
+# manager/flatten.py.
+if __name__ == "__main__" and not __package__:
+    _WS = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+    _OWN = {os.path.normcase(os.path.realpath(d)) for d in (_WS, os.path.join(_WS, "lib"), os.path.join(_WS, "manager"))}
+    sys.path[:] = [p for p in sys.path if os.path.normcase(os.path.realpath(p or os.curdir)) not in _OWN]
+    import runpy
+    _imports = runpy.run_path(os.path.join(_WS, "lib", "secret_imports.py"))
+    _imports["install"](_WS, _imports["SCRIPT_SIBLINGS"])
+
 import importlib
 import inspect
 import json
 import logging
-import os
 import re
-import sys
 import time
 from datetime import datetime, timedelta, timezone
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if not any(type(f).__name__ == "WorkspaceLibFinder" for f in sys.meta_path) and os.path.dirname(os.path.dirname(os.path.abspath(__file__))) not in sys.path:  # imported by a test
+    sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.chdir(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from lib import guard, venue_traits
@@ -152,6 +167,14 @@ def _note_reply(vid, key, exc):
     r = _broker_reply(exc)
     if r:
         _RUN["reply"].setdefault((vid, key), r)
+
+
+def _empty_read_untrusted(acct, positions, ledger):
+    """統一 answered 查無資料 for the positions (the worker takes that as flat only with no margin in use)
+    while the bot's book still holds rows for this venue: the two disagree, so the empty read is not a flat
+    to book. The caller raises into its get_positions-failed path: nothing closed, an error row, book kept."""
+    no_data = getattr(acct, "positions_from_no_data", None)
+    return not positions and bool(ledger) and callable(no_data) and bool(no_data())
 
 
 def _note(vid, key, why):
@@ -238,12 +261,9 @@ def _reconciler():
     close has to be parked, so no other flatten pays for its import."""
     global _RECONCILER
     if _RECONCILER is None:
-        import importlib.util
-        spec = importlib.util.spec_from_file_location("reconciler", os.path.join(os.path.dirname(
+        from lib import secret_imports  # from source: a planted __pycache__/reconciler.*.pyc never runs here
+        _RECONCILER = secret_imports.load_source("reconciler", os.path.join(os.path.dirname(
             os.path.abspath(__file__)), "reconciler.py"))
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        _RECONCILER = mod
     _RECONCILER.CAPITAL_PENDING_PATH = CAPITAL_PENDING_PATH
     return _RECONCILER
 
@@ -1296,6 +1316,9 @@ def _flatten():
             else:
                 months_by_key = None
                 positions = acct.get_positions(env)
+            if _empty_read_untrusted(acct, positions, ledger):
+                raise RuntimeError("the broker answered 查無資料 for positions while the bot's book holds "
+                                   f"{','.join(sorted(ledger))} — not treated as closed")
             _RUN.setdefault("read", {})[vid] = (acct, months_by_key, ledger is not None)
         except _SnapshotLag as e:
             logging.error(f"[{vid}] position snapshot has not caught up with the last order: {e} — not closed")

@@ -21,6 +21,7 @@ never printed, never echoed, and never included in an error message.
 import base64
 import json
 import contextlib
+import functools
 import hashlib
 import os
 import platform
@@ -52,6 +53,7 @@ import capital_connect
 import exec_style
 import president_connect
 import capital_local
+import hang_watch
 import telegram_pairing
 import refresh_capacity
 import save_routing
@@ -352,7 +354,7 @@ def _local_real_key_gate(venue_id, env):
         raise ValueError(f"INCOMPLETE_PAIR: {venue} needs {' + '.join(need)} together — not saved")
     mod_name = f"lib.account_{venue}"
     try:
-        mod = __import__(mod_name, fromlist=["get_equity"])
+        mod = __import__(f"lib.account_{venue}", fromlist=["get_equity"])
     except ModuleNotFoundError as e:
         if e.name not in ("lib", mod_name):
             raise ValueError(f"LIB_BROKEN: lib/account_{venue}.py could not load "
@@ -453,7 +455,8 @@ def _drop_namespace_lib():
     `from lib…` below is ModuleNotFoundError for the rest of the process
     (0.1.18 Windows: halt / resume / close_all dead). The workspace's lib always
     has an __init__.py, so a namespace `lib` is never the right one: drop it and
-    the import below resolves again, with the workspace first."""
+    the import below resolves again: a regular package beats a namespace
+    portion wherever it sits on sys.path, so the workspace can stay last."""
     m = sys.modules.get("lib")
     if m is None or getattr(m, "__file__", None):
         return
@@ -464,15 +467,22 @@ def _drop_namespace_lib():
 
 def _in_workspace(fn, *a, **kw):
     """lib/guard.py resolves state/HALT relative to the cwd, and this thread has
-    no business changing the process-wide cwd out from under the bridge — so the
-    workspace goes on sys.path and the call is made with cwd swapped only for
-    the duration, then restored."""
+    no business changing the process-wide cwd out from under the bridge — so
+    `lib` is made importable and the call is made with cwd swapped only for the
+    duration, then restored.
+
+    The daemon and the web bridge (which hold the user's keys and broker
+    passwords) installed secret_imports' finder at startup: `lib` comes only
+    through it and the workspace stays off sys.path (audit 2026-11-19 M1;
+    local_daemon._workspace_lib, web_bridge.main). Anywhere else (lib/venue.py
+    in an agent's own python) the workspace goes on sys.path as before."""
     cwd = os.getcwd()
     try:
         os.chdir(WORKSPACE)
-        if WORKSPACE not in sys.path:
-            sys.path.insert(0, WORKSPACE)
-        _drop_namespace_lib()
+        if not any(type(f).__name__ == "WorkspaceLibFinder" for f in sys.meta_path):
+            if WORKSPACE not in sys.path:
+                sys.path.append(WORKSPACE)
+            _drop_namespace_lib()
         return fn(*a, **kw)
     finally:
         try:
@@ -512,22 +522,20 @@ _downtime_import_logged = False
 
 
 def _downtime_lib(optional=False):
-    """optional=True → None on a workspace that predates lib/downtime.py
-    (nothing there ever writes a pause, so there is nothing to honour). The
-    cause is logged once either way: a `lib` bound to the wrong directory reads
-    exactly like a missing module here (0.1.18 Windows), and that must show."""
+    """lib/downtime.py has never shipped: on every machine a file by that name
+    was written by the agent, and this runs inside the daemon that holds the
+    broker passwords (audit 2026-11-19 M-3) — so it is never imported.
+    optional=True → None (nothing ever wrote a pause, nothing to honour);
+    otherwise the RuntimeError a workspace without it always gave. Shipping it:
+    add it to agent_turn.SECRET_CODE_FILES first, then import it here. Logged
+    once."""
     global _downtime_import_logged
-    try:
-        from lib import downtime
-    except ImportError as e:
-        if not _downtime_import_logged:
-            _downtime_import_logged = True
-            _log(f"lib.downtime not importable: {type(e).__name__}: {e}")
-        if optional:
-            return None
-        raise RuntimeError("this workspace has no lib/downtime.py — "
-                           "run 更新 blave agent first") from None
-    return downtime
+    if not _downtime_import_logged:
+        _downtime_import_logged = True
+        _log("lib.downtime is not shipped — not imported")
+    if optional:
+        return None
+    raise RuntimeError("this workspace has no lib/downtime.py — run 更新 blave agent first")
 
 
 def _book_hold_asking():
@@ -2077,6 +2085,28 @@ STRAY_RESULT = "reconciler running outside the supervisor — not started again"
 # than this is the stopped one's, however fresh (TC-28: unbind → rebind → start
 # inside RECONCILER_RUNNING_S read the dead daemon as running).
 RECONCILER_STOP_MARK = os.path.join(WORKSPACE_STATE, "reconciler_stop_mark")
+# Held by everything here that stops, starts or kills the reconciler — start, stop, the
+# whole-machine start, the unbind (its stop through the membership clear) and the hang watch's
+# check-and-kill — so the watch never kills in a stop's or an unbind's window, nor a stop lands
+# between its check and its kill. Reentrant: _ensure_reconciler_running calls _restart_reconciler.
+# This process only: a chat bind runs its own copy of this file (the watch only ever kills).
+_reconciler_ctl_lock = threading.RLock()
+
+
+def _ctl_locked(fn):
+    @functools.wraps(fn)
+    def run(*a, **kw):
+        with _reconciler_ctl_lock:
+            return fn(*a, **kw)
+    return run
+
+
+def _reconciler_life():
+    """reconciler_presence.last_sign_of_life on this file's paths: heartbeat or progress stamp."""
+    t = [x for x in (_mtime_or_none(RECONCILER_HEARTBEAT),
+                     _mtime_or_none(os.path.join(os.path.dirname(RECONCILER_HEARTBEAT), "reconciler_progress")))
+         if x is not None]
+    return max(t) if t else None
 # A full unbind on a workspace lib without reset_venue_book parks the old
 # account's snapshot and guard state here (and runtimes before this change always
 # did); the rebind restores them only for the same account (TC-13).
@@ -2577,6 +2607,7 @@ def _stray_reconciler_pids():
     return pids
 
 
+@_ctl_locked
 def _ensure_reconciler_running():
     """The whole-machine start with no restart record: a machine whose
     reconciler never ran (a fresh box) or was stopped without a record (an
@@ -2594,7 +2625,7 @@ def _ensure_reconciler_running():
     cleared, but with nothing running nothing trades, and the ack is what
     tells the page."""
     global _resume_started_at
-    hb = _mtime_or_none(RECONCILER_HEARTBEAT)
+    hb = _reconciler_life()  # a long round's legs keep it fresh between loop tops
     stopped = _mtime_or_none(RECONCILER_STOP_MARK)
     if hb is not None and stopped is not None and hb <= stopped:
         hb = None  # the beat of the daemon an unbind stopped, not of a live one
@@ -2813,7 +2844,7 @@ def _signals_frozen():
     restart neither leaves a stale marker nor rewrites `since`."""
     frozen = False
     if not _bound_venue():
-        hb = _mtime_or_none(RECONCILER_HEARTBEAT)
+        hb = _reconciler_life()
         stopped = _mtime_or_none(RECONCILER_STOP_MARK)
         gap = _downtime_gap_seen
         just_woke = gap is not None and time.monotonic() - gap < SIGNALS_GAP_GRACE_S
@@ -3091,6 +3122,98 @@ def _migrate_legacy_ac_crons():
         _log(f"cron migration failed: {type(e).__name__}: {e}")
 
 
+# ── Hang watch (cloud; desktop 0.1.58 spec §2.3) ──────────────────────────────────────────────
+# Its own thread, not the downtime loop: nssm / systemctl calls here can take a minute. Kills only
+# the pid the service runs (SIGKILL / TerminateProcess) and leaves the respawn to the wrapper loop
+# under systemd / NSSM — never _restart_reconciler, which would start a stopped service.
+HANG_WATCH_TICK_S = 5
+_hang_watch = None
+
+
+def _hang_watch_loop():
+    global _hang_watch
+    _hang_watch = hang_watch.Watch(WORKSPACE)
+    while True:
+        try:
+            _hang_watch_tick(_hang_watch)
+        except Exception as e:
+            _log(f"hang watch failed: {type(e).__name__}: {e}")
+        time.sleep(HANG_WATCH_TICK_S)
+
+
+def _reconciler_service_active():
+    """The service runs the reconciler right now (strict: a transition or an unreadable answer is no)."""
+    if platform.system() == "Windows":
+        st = subprocess.run(["nssm", "status", "blaveclaw-reconciler"],
+                            capture_output=True, timeout=30, **_child_kw())
+        return st.returncode == 0 and b"SERVICE_RUNNING" in (st.stdout or b"").replace(b"\x00", b"")
+    if not os.path.isfile(RECONCILER_UNIT_PATH):
+        return False  # tmux-supervised (pre-systemd) machine: not watched, as before
+    st = subprocess.run(["systemctl", "is-active", RECONCILER_UNIT],
+                        capture_output=True, text=True, timeout=15, **_child_kw())
+    return st.stdout.strip() == "active"
+
+
+def _hang_target_ok(pid, stamp_mtime):
+    """Everything that must hold before `pid` may be killed (called under the ctl lock)."""
+    if os.path.exists(RESTART_STOP_PATH) or update_hold_fresh(WORKSPACE_STATE):
+        return False
+    mark = _mtime_or_none(RECONCILER_STOP_MARK)
+    if mark is not None and mark >= stamp_mtime:
+        return False
+    if not _reconciler_service_active():
+        return False
+    try:
+        if atomic_file.read_bytes(os.path.join(WORKSPACE, RECONCILER_SINGLETON)).decode("ascii", "replace").strip() != str(pid):
+            return False
+    except OSError:
+        # Windows: reconciler.py keeps byte 0 of its singleton file locked, so it cannot be read
+        # here — the process list below (a reconciler.py with that pid) is the identity there
+        if platform.system() != "Windows":
+            return False
+    pids = _unsupervised_reconciler_pids(all_=True)
+    return bool(pids) and pid in pids
+
+
+def _kill_hung(pid):
+    # SIGKILL: a Python handler would not run inside the C call it is stuck in. Windows: TerminateProcess
+    os.kill(pid, getattr(signal, "SIGKILL", signal.SIGTERM))
+
+
+def _trip_hang_halt():
+    from lib import guard
+    if os.path.exists(guard.HALT_PATH):  # a pause already on (the user's) keeps its source and reason
+        return False
+    guard.trip_halt(hang_watch.HALT_REASON, hang_watch.HALT_SOURCE)
+    return True
+
+
+def _hang_audit(event, **kw):
+    from lib import guard
+    guard.audit(event, **kw)
+
+
+def _hang_watch_tick(w):
+    st = hang_watch.stamp(WORKSPACE)
+    if st is None:
+        return  # no reconciler, or one from before the stamp: never watched
+    if w.left_alone(st[0]):
+        return
+    stall = w.stall(st[0])
+    if stall is None or stall < hang_watch.HANG_STALL_S:
+        return
+    with _reconciler_ctl_lock:
+        st = hang_watch.stamp(WORKSPACE)  # a stop or start may have run while we waited
+        stall = w.stall(st[0]) if st else None
+        if stall is None or stall < hang_watch.HANG_STALL_S or not _hang_target_ok(st[0], st[1]):
+            return
+        if w.left_alone(st[0]):
+            return
+        done = hang_watch.act(WORKSPACE, st[0], _kill_hung, lambda: _in_workspace(_trip_hang_halt), _log,
+                              now=w.clock(), audit=lambda e, **kw: _in_workspace(_hang_audit, e, **kw))
+        w.handled(st[0], done)
+
+
 def _scheduler_loop():
     """The Type A/C migration sweep is NOT called here unconditionally — it runs
     from inside _run_scheduler_cycle, gated on wait_for_bar.py actually being
@@ -3107,6 +3230,10 @@ def _scheduler_loop():
     except Exception as e:
         _log(f"downtime startup check failed: {type(e).__name__}: {e}")
     threading.Thread(target=_downtime_watch_loop, daemon=True, name="downtime-watch").start()
+    # The desktop's watch is its daemon's supervisor tick: never two. Cloud Windows stays off until
+    # the uid=1 canary shows LocalSystem can terminate the NSSM reconciler (spec §2.3, audit 0.1.57)
+    if not _local_mode() and platform.system() != "Windows":
+        threading.Thread(target=_hang_watch_loop, daemon=True, name="hang-watch").start()
     phase = _scheduler_phase()
     # Started late in a minute (the same K3 window as a late wake): the first cycle waits for :phase.
     full = phase is None or time.time() % SCHEDULER_INTERVAL_SECONDS < LATE_LAUNCH_SECOND
@@ -4510,6 +4637,7 @@ def _cmd_execution(args):
     return f"execution={default.get('type')}"
 
 
+@_ctl_locked
 def _stop_reconciler():
     """True only when no reconciler daemon can still be watching the workspace
     (confirmed stopped, or provably never running). The full-unbind path gates
@@ -4650,6 +4778,7 @@ def _unbind_targets(args, cmd):
     return names, drop, dropped_ids
 
 
+@_ctl_locked  # its stop through the membership clear: no hang kill and no start in between
 def _cmd_credentials_remove(args):
     """Unbind: drop exchange keys from the workspace .env.
 
@@ -5196,6 +5325,7 @@ def _cmd_restart_reconciler(args):
     return _restart_reconciler(args)
 
 
+@_ctl_locked
 def _restart_reconciler(args):
     """Start the order daemon through its watchdog wrapper, never directly —
     the wrapper restarts on crash and alerts on each exit (references/manager.md).

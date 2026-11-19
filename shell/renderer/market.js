@@ -36,6 +36,7 @@ function mktApply() {
   if (typeof libRepaint === "function") libRepaint();
   if (typeof wdPaint === "function") wdPaint();
   if (typeof wcPaint === "function") wcPaint();   // ①的卡(指紋帶 MKT.v,值沒變不重建);設定改值時沒有別的路會重畫它
+  if (typeof nsRepaint === "function") nsRepaint();   // 新增策略框開著:範例列換成那個市場的三顆(newstrategy.js)
 }
 
 /* ── 連結畫面第二步 ── */

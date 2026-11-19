@@ -205,6 +205,22 @@ app.whenReady().then(async () => {
       return { gap: rb.left - ra.right, a: __hit(a), b: __hit(b), dead, both, labelW: rl.width, labelGap: ra.left - rl.right, headOver: rb.right - $("strat-head").getBoundingClientRect().right, paneOver: (() => { const p = $("strat-head").parentElement; return { over: p.scrollWidth - p.clientWidth, ox: getComputedStyle(p).overflowX, cls: p.className }; })() }; })()`);
     ok(`⑯ 側欄 ${sw}:圖示隔 4、熱區各 ≥44×44、中間沒有死區也沒有搶點、標題有留位:${JSON.stringify(g)}`, g.gap === 4 && g.a.vw === 28 && g.b.vw === 28 && g.a.w >= 44 && g.b.w >= 44 && g.a.h >= 44 && g.b.h >= 44 && g.dead === 0 && g.both === 0 && g.labelGap >= 16 && g.headOver <= 0 && (g.paneOver.over <= 0 || g.paneOver.ox === "hidden" || g.paneOver.ox === "visible" || g.paneOver.ox === "clip"), JSON.stringify(g));
   }
+  // ⑰ 側欄底列間距一律 8(spec sidebar-foot-spacing-2026-11-19,0.1.57):沿列的中線逐點 elementFromPoint,每一樣吃到的 x 範圍連續、照順序、不重疊;
+  // 第一格(齒輪與帳號鈕兩種)、手機、更新圓鈕各寬 44,四樣(含帳號那一格)高 44。四種情況:四樣都在、沒有手機、沒有更新、只有第一格
+  for (const sw of [236, 180]) for (const av of [false, true]) for (const [ph, up] of [[true, true], [false, true], [true, false], [false, false]]) {
+    const g = await X(`(async () => { ${HIT} paneSt.side.off = false; paneSt.side.w = paneSt.side.want = ${sw}; panesRender(false); await new Promise((r) => setTimeout(r, 450));
+      const ids = ["ws-conn", "ph-pill", "side-cv", "up-pill"], first = $("ws-conn"), was = ids.map((id) => $(id).hidden), cls = first.className, kv = $("side-cv").textContent;
+      first.classList.toggle("av", ${av}); $("ph-pill").hidden = ${!ph}; $("up-pill").hidden = ${!up}; $("side-cv").hidden = ${!(ph || up)}; if (!$("side-cv").textContent) $("side-cv").textContent = "Upgrade";
+      await new Promise((r) => setTimeout(r, 60));
+      const on = ids.filter((id) => !$(id).hidden), row = $("foot-row").getBoundingClientRect(), y = row.y + row.height / 2, span = {}; let order = [], back = false;
+      for (let x = Math.floor(row.left) - 24; x < Math.ceil(row.right); x++) { const e = document.elementFromPoint(x + 0.5, y), id = e && on.find((k) => $(k) === e || $(k).contains(e)); if (!id) continue;
+        if (!span[id]) { span[id] = [x, x]; order.push(id); } else { if (span[id][1] !== x - 1) back = true; span[id][1] = x; } }
+      const out = { on, order, back, w: {}, h: {} }; for (const id of on) { out.w[id] = span[id] ? span[id][1] - span[id][0] + 1 : 0; out.h[id] = __hit($(id)).h; }
+      first.className = cls; ids.forEach((id, i) => { $(id).hidden = was[i]; }); $("side-cv").textContent = kv; return out; })()`);
+    const icons = g.on.filter((id) => id !== "side-cv");
+    ok(`⑰ 側欄 ${sw}、第一格${av ? "帳號鈕" : "齒輪"}、手機${ph ? "在" : "無"}、更新${up ? "在" : "無"}:每樣高 44、圖示寬 44、熱區連續照順序不重疊:${JSON.stringify(g)}`,
+      JSON.stringify(g.order) === JSON.stringify(g.on) && !g.back && g.on.every((id) => Math.abs(g.h[id] - 44) <= 1) && icons.every((id) => Math.abs(g.w[id] - 44) <= 1), JSON.stringify(g));
+  }
   await X(`paneSt.side.w = paneSt.side.want = PANES.side.def; panesRender(false);`); w.setContentSize(1024, 760); await nap(300);
   ok(`⑭ 提示音開關熱區 ≥44×44、下一顆也是;「開啟系統設定」熱區 ≥44 高:${JSON.stringify([hot.sw, hot.sug, hot.go])}`, hot.sw.w >= 44 && hot.sw.h >= 44 && hot.sug.h >= 44 && hot.go.h >= 44 && hot.go.w >= 80);
   // ⑬ 投資組合列的標的格寫股票名字:欄窄時只在名字之間換行,不把一個名字拆兩半,也不把表撐開

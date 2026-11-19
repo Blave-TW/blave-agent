@@ -25,6 +25,7 @@ import platform
 import re
 import shlex
 import shutil
+import site
 import socket
 import ssl
 import subprocess
@@ -228,18 +229,24 @@ CREDENTIAL_RULES = [f"{tool}({_abs_rule_path(CREDENTIALS_DIR)}/{g})"
                     for tool in ("Read", "Edit") for g in CREDENTIAL_SECRET_GLOBS]
 PROTECTED_EDIT_RULES.extend(CREDENTIAL_RULES)
 
-# The code that is handed the 群益 / 統一 trading and certificate passwords (the vault readers,
-# the login workers, the order and account libs, and the two manager scripts that get the
-# desktop daemon's stdin line): an agent that edits one gets the passwords out on the next
-# run (audit 2026-10-07 S1; Wei: freeze them). Every turn, chat and scheduled; the runtime's
-# own update writes them, never the agent. Bash writes go through _secret_code_bash_guard.
-SECRET_CODE_FILES = (
-    "lib/president_vault.py", "lib/president_worker.py", "lib/order_president.py", "lib/account_president.py",
-    "lib/capital_vault.py", "lib/capital_worker.py", "lib/order_capital.py", "lib/account_capital.py",
-    "manager/reconciler.py", "manager/flatten.py",
-    "lib/winreplace.py",  # imported by the four vault files: an edit there runs inside them
-)
+# The frozen code: runtime/secret_code.py (the list, and the shipped-hash check that backs this freeze).
+from secret_code import SECRET_CODE_FILES  # noqa: E402
 PROTECTED_EDIT_RULES.extend(f"Edit(/{f})" for f in SECRET_CODE_FILES)
+
+# Where Python loads code from before any script runs: a .pth in site-packages (the venv's, or the user site a
+# plain python3 reads) and a sitecustomize / usercustomize on the path run at every interpreter start — the
+# broker-password processes included. The agent's shell runs as the same OS user that owns the venv (desktop:
+# <base>/venv; cloud: blaveagent owns /opt/blave-agent/venv), so nothing else stops a write there (audit
+# 2026-11-19 M1). The interpreter the venv is built on (its stdlib: desktop Windows installs per user), the runtime's
+# own folder and <base>/current (the runtime every process reads, lib/events.py included) are the same story.
+# A speed bump like the rest: `pip install` is not refused (references/*-broker.md uses it).
+_BASE_DIR = os.path.dirname(os.path.abspath(WORKSPACE))
+SITE_DIRS = sorted({os.path.join(_BASE_DIR, "venv"), site.getusersitepackages(), sys.base_prefix,
+                    os.path.join(_BASE_DIR, "current"), os.path.dirname(os.path.abspath(__file__))}
+                   | ({sys.prefix} if sys.prefix != sys.base_prefix else set()))
+SITE_RULES = ([f"Edit({_abs_rule_path(d)}/**)" for d in SITE_DIRS]
+              + [f"Edit(//**/{g})" for g in ("*.pth", "sitecustomize.py", "usercustomize.py")])
+PROTECTED_EDIT_RULES.extend(SITE_RULES)
 
 
 # 模型(尤其較弱的 instruction-following)看到 prompt 裡的逐字稿格式,會在寫完
@@ -270,6 +277,17 @@ def strip_hallucinated_turn(text):
 _SUGGEST_BLOCK_RE = re.compile(r"[ \t]*<suggest>(.*?)</suggest>[ \t]*", re.S)
 # 回覆被截斷(interrupt/max_turns)時可能只剩未閉合的開頭——也要剝乾淨。
 _SUGGEST_OPEN_TAIL_RE = re.compile(r"[ \t]*<suggest>(?:(?!</suggest>).)*$", re.S)
+# DeepSeek 偶發把建議句寫成工具呼叫的樣子(`<invoke name="suggest"><parameter>句子</parameter></invoke>`,
+# <parameter> 可能沒有 name=)。沒有這個工具:收斂成 <suggest> 區塊再走同一條路。
+_SUGGEST_INVOKE_RE = re.compile(
+    r"(?:<function_calls>\s*)?<invoke\s+name=[\"']?suggest[\"']?\s*>((?:(?!<invoke\b|</invoke>).)*)"
+    r"</invoke>(?:\s*</function_calls>)?", re.S)
+# 沒閉合的只在真的是截斷尾段時剝:開頭之後到文末只有空白與 <parameter> 內容(單行、可截在半途)。
+# 後面還有正文就整段不動——寧可露標記,也不吞掉用戶該看到的字。
+_SUGGEST_INVOKE_TAIL_RE = re.compile(
+    r"(?:<function_calls>\s*)?<invoke\s+name=[\"']?suggest[\"']?\s*>"
+    r"(?:\s*<parameter\b[^>]*>[^<\n]*</parameter>)*\s*(?:<parameter\b[^>]*>[^<\n]*)?(?:</?\w*)?\s*\Z")
+_SUGGEST_PARAM_RE = re.compile(r"<parameter\b[^>]*>(.*?)</parameter>", re.S)
 _SUGGEST_MAX_ITEMS = 1
 _SUGGEST_MAX_CHARS = 60  # 同顯示端 SUG_MAX_CHARS(電腦版 suggest.js、web 工作頁):超過整句丟、不截
 # 導航句的固定起手:suggestions chunk 的 kind 照它判,其他語系一律算 step。舊 runtime 不帶 kind,客戶端用同一套自己判。
@@ -300,9 +318,17 @@ def suggest_kind(line):
     return "nav" if line.lstrip().lower().startswith(_SUGGEST_NAV_HEADS) else "step"
 
 
+def _suggest_invoke_to_block(m):
+    vals = [v.strip() for v in _SUGGEST_PARAM_RE.findall(m.group(1))]
+    return "<suggest>\n" + "\n".join(vals) + "\n</suggest>"  # 沒有句子也留空區塊:走同一條剝除與 rstrip
+
+
 def extract_suggestions(text):
     """回傳 (清理後文字, 建議清單)。剝掉所有 <suggest> 區塊(含未閉合尾段),
     items 取最後一個完整區塊;格式不符的行直接丟——fail-silent,絕不影響正文。"""
+    if text and "<invoke" in text:
+        text = _SUGGEST_INVOKE_RE.sub(_suggest_invoke_to_block, text)
+        text = _SUGGEST_INVOKE_TAIL_RE.sub("<suggest>\n</suggest>", text)  # 半途的建議不可信,同 _SUGGEST_OPEN_TAIL_RE 只剝不給
     if not text or "<suggest>" not in text:
         return text, []
     items = []
@@ -1655,11 +1681,17 @@ def cred_bash_denied(cmd):
 # Bash that names one of SECRET_CODE_FILES and writes, moves, deletes or replaces something.
 # Reading them (cat, grep, python -c "import ...") and running them stay allowed. A speed bump
 # like the credentials guard: a path assembled at run time is not caught.
+# The broker-named files match by name anywhere (`cd lib && sed -i … president_vault.py`); the rest (data.py,
+# guard.py …) only as lib/… or manager/… paths from the workspace, so a strategy's own data.py stays writable.
+_WS_RE = r"[\\/]".join(re.escape(p) for p in re.split(r"[\\/]", os.path.abspath(WORKSPACE)))
+_PATH_START = r"(?:(?<![^\s'\"`=(:,;&|<>])|(?i:" + _WS_RE + r")[\\/])(?:\.[\\/])?"
+_NAMES_ALT = "|".join(re.escape(os.path.basename(f)[:-3]) for f in SECRET_CODE_FILES
+                      if re.search(r"president|capital|sinopac|vault|winreplace|reconciler|flatten", f))
+_PATHS_ALT = "|".join(re.escape(f).replace("/", r"[\\/]") for f in SECRET_CODE_FILES)
 _SECRET_CODE_NAME_RE = re.compile(
-    r"(?:^|[\\/\s'\"`=(:,])(?:" + "|".join(re.escape(os.path.basename(f)[:-3]) for f in SECRET_CODE_FILES)
-    + r")\.py\b", re.IGNORECASE)
-_NAMES_ALT = "|".join(re.escape(os.path.basename(f)[:-3]) for f in SECRET_CODE_FILES)
-_REDIRECT_INTO_RE = re.compile(r">>?\s*['\"]?[^\s;&|'\"]*(?:" + _NAMES_ALT + r")\.py\b", re.IGNORECASE)
+    r"(?:^|[\\/\s'\"`=(:,])(?:" + _NAMES_ALT + r")\.py\b|" + _PATH_START + r"(?:" + _PATHS_ALT + r")\b", re.IGNORECASE)
+_REDIRECT_INTO_RE = re.compile(r">>?\s*['\"]?(?:[^\s;&|'\"]*(?:" + _NAMES_ALT + r")\.py\b|" + _PATH_START
+                               + r"(?:" + _PATHS_ALT + r")\b)", re.IGNORECASE)
 _WRITE_MARK_RE = re.compile(
     r"\btee\b|\bsed\b[^|;&]*\s-[a-zA-Z]*i|\bperl\b[^|;&]*\s-[a-zA-Z]*i|\b(?:cp|mv|rm|ln|install|truncate|patch|dd)\b"
     r"|\b(?:copy|move|del|erase|ren|rename|xcopy|robocopy)\b|(?:Set|Add|Clear)-Content|Out-File|(?:Remove|Move|Copy|Rename|New)-Item"
@@ -1677,10 +1709,10 @@ _WRITE_MARK_RE = re.compile(
     r"|\bgit\b[^|;&]*\b(?:checkout|restore|apply|am|reset|stash|mv|rm)\b",
     re.IGNORECASE)
 SECRET_CODE_DENY_REASON = (
-    "Refused by the Blave runtime — the broker login code (lib/*president*, lib/*capital* vault/worker/order/account, "
-    "manager/reconciler.py, manager/flatten.py) is handed the user's trading passwords, so it is never written, moved "
-    "or replaced from the agent; only a Blave update changes it. Read it if you need to; put new helpers in a new "
-    "file. Do not retry it another way."
+    "Refused by the Blave runtime — this file runs inside the processes that are handed the user's trading passwords "
+    "(the broker workers, manager/reconciler.py, manager/flatten.py and the official lib/ files they import, "
+    "lib/order_*.py and lib/account_*.py included), so it is never written, moved or replaced from the agent; only "
+    "a Blave update changes it. Read it if you need to; put new helpers in a new file. Do not retry it another way."
 )
 
 
@@ -1693,10 +1725,101 @@ def _writes(cmd, powershell):
     return bool(_WRITE_MARK_RE.search(cmd) or (powershell and _PS_ALIAS_WRITE_RE.search(cmd)))
 
 
+def _norm_paths(cmd):
+    """Literal spellings of one path folded to the form the patterns know: $PWD / ${PWD} (the turn's cwd is the
+    workspace) and ~ expanded, `//` and `/./` collapsed, `dir/../` dropped (audit follow-up S-2)."""
+    cmd = re.sub(r"\$\{?PWD\}?(?=[\\/])", lambda _m: os.path.abspath(WORKSPACE), cmd)
+    cmd = re.sub(r"(?:(?<=^)|(?<=[\s'\"=(:,]))~(?=[\\/])", lambda _m: os.path.expanduser("~"), cmd)
+    prev = None
+    while prev != cmd:
+        prev = cmd
+        cmd = re.sub(r"([\\/])\.(?=[\\/])", "", cmd)
+        cmd = re.sub(r"([\\/])[\\/]+", r"\1", cmd)
+        cmd = re.sub(r"(?:(?<=^)|(?<=[\s'\"=(:,\\/]))(?!\.\.[\\/])[^\s'\"\\/;&|<>=()]+[\\/]\.\.[\\/]", "", cmd)
+    return cmd
+
+
 def secret_code_bash_denied(cmd, powershell=False):
-    cmd = cmd or ""
+    cmd = _norm_paths(cmd or "")
     # a redirect counts only INTO one of them (`... > tmp/log 2>&1` while running one is fine)
     return bool(_REDIRECT_INTO_RE.search(cmd) or (_SECRET_CODE_NAME_RE.search(cmd) and _writes(cmd, powershell)))
+
+
+# Names, not the venv path: the agent runs <venv>/bin/python by its absolute path in the same command lines it
+# writes files with. Writing over the venv's own interpreter is the Edit rule's alone (KNOWN_GAPS in the test).
+_SITE_PATH_RE = re.compile(
+    r"site-packages|dist-packages|\.pth\b|\b(?:site|user)customize\b|\bpyvenv\.cfg\b|\.\.[\\/]+current[\\/]|"
+    + "|".join(r"[\\/]+".join(map(re.escape, re.split(r"[\\/]+", os.path.abspath(d))))
+               for d in (sys.base_prefix, os.path.join(_BASE_DIR, "current"), os.path.dirname(os.path.abspath(__file__)))),
+    re.IGNORECASE)
+_SITE_REDIRECT_RE = re.compile(r">>?\s*['\"]?[^\s;&|'\"]*(?:" + _SITE_PATH_RE.pattern + ")", re.IGNORECASE)
+SITE_DENY_REASON = (
+    "Refused by the Blave runtime — site-packages, .pth files and sitecustomize / usercustomize are loaded by every "
+    "Python process on this machine, the ones holding the user's trading passwords included, so they are never "
+    "written from the agent. Put code in the workspace instead. Do not retry it another way."
+)
+
+
+def site_bash_denied(cmd, powershell=False):
+    cmd = _norm_paths(cmd or "")
+    return bool(_SITE_REDIRECT_RE.search(cmd) or (_SITE_PATH_RE.search(cmd) and _writes(cmd, powershell)))
+
+
+# A module named like a stdlib one where an import can reach it: the workspace root (PYTHONPATH of every turn and
+# strategy run), lib/ and manager/ (sys.path[0] of their scripts). The broker-password processes put those folders
+# last (audit 2026-11-19 M1), so this is the second line there; everywhere else it is what keeps a stray json.py
+# from breaking every backtest. Never imported by anything that runs here, so a scratch test.py stays allowed.
+STDLIB_SHADOW_NAMES = frozenset(sys.stdlib_module_names) - {"test", "this", "antigravity"}
+STDLIB_SHADOW_DENY_REASON = (
+    "Refused by the Blave runtime — a .py file in the workspace root, lib/ or manager/ named like a Python "
+    "standard-library module (json.py, hashlib.py, ssl.py …) would replace that module for every script that "
+    "imports it. Pick another name (e.g. json_utils.py). Do not retry it another way."
+)
+_SHADOW_PATH = (_PATH_START + r"(?:(?i:lib|manager)[\\/])?(?:"
+                + "|".join(sorted(map(re.escape, STDLIB_SHADOW_NAMES))) + r")(?:\.py|[\\/]__init__\.py)(?![\w.])")
+_SHADOW_PATH_RE = re.compile(_SHADOW_PATH)
+_SHADOW_REDIRECT_RE = re.compile(r">>?\s*['\"]?" + _SHADOW_PATH)
+
+
+def stdlib_shadow(path):
+    """The stdlib module a file at `path` (absolute, or relative to the workspace) would stand in for, or None."""
+    if not isinstance(path, str) or not path:
+        return None
+    try:
+        rel = os.path.relpath(os.path.realpath(os.path.join(WORKSPACE, path)), os.path.realpath(WORKSPACE))
+    except ValueError:  # another drive on Windows
+        return None
+    parts = rel.replace("\\", "/").split("/")
+    if parts[0].lower() in ("lib", "manager"):  # MANAGER/ is manager/ on a case-insensitive disk
+        parts = parts[1:]
+    if len(parts) == 1 and parts[0].endswith(".py"):
+        name = parts[0][:-3]
+    elif len(parts) == 2 and parts[1] == "__init__.py":
+        name = parts[0]
+    else:
+        return None
+    return name if name in STDLIB_SHADOW_NAMES else None
+
+
+def secret_code_path(path):
+    """True when `path` (absolute, or relative to the workspace) is one of SECRET_CODE_FILES in any spelling the disk
+    accepts — the Edit rules compare the literal path (audit follow-up M-1: LIB/data.py)."""
+    if not isinstance(path, str) or not path:
+        return False
+    try:
+        rel = os.path.relpath(os.path.realpath(os.path.join(WORKSPACE, path)), os.path.realpath(WORKSPACE))
+    except ValueError:
+        return False
+    rel = rel.replace("\\", "/")
+    if sys.platform in ("darwin", "win32"):
+        return rel.lower() in {f.lower() for f in SECRET_CODE_FILES}
+    return rel in SECRET_CODE_FILES
+
+
+def stdlib_shadow_bash_denied(cmd, powershell=False):
+    cmd = _norm_paths(cmd or "")
+    return bool(_SHADOW_REDIRECT_RE.search(cmd) or (
+        _SHADOW_PATH_RE.search(cmd) and (_writes(cmd, powershell) or re.search(r"\btouch\b", cmd))))
 
 
 # manager/amounts.ui.json (see PROTECTED_EDIT_RULES): same shape as the secret-code guard, any turn.
@@ -1730,20 +1853,37 @@ def encoded_command_denied(cmd):
 
 
 def _secret_code_bash_guard_hooks(options):
-    """PreToolUse:Bash／PowerShell,任何回合:改／搬／刪拿得到券商密碼的程式檔、或寫資金鏡像 amounts.ui.json 的指令拒絕。"""
+    """PreToolUse:Bash／PowerShell,任何回合:改／搬／刪拿得到券商密碼的程式檔、寫資金鏡像 amounts.ui.json、寫 site-packages／.pth、或寫標準庫同名 .py 的指令拒絕。"""
     async def guard(input_data, _tool_use_id, _context):
         _, cmd, ps = _shell_input(input_data)
         if cmd is None:
             return {}
         reason = (ENCODED_DENY_REASON if encoded_command_denied(cmd)
                   else MIRROR_DENY_REASON if mirror_bash_denied(cmd, ps)
-                  else SECRET_CODE_DENY_REASON if secret_code_bash_denied(cmd, ps) else None)
+                  else SECRET_CODE_DENY_REASON if secret_code_bash_denied(cmd, ps)
+                  else SITE_DENY_REASON if site_bash_denied(cmd, ps)
+                  else STDLIB_SHADOW_DENY_REASON if stdlib_shadow_bash_denied(cmd, ps) else None)
         if not reason:
             return {}
         return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
                                        "permissionDecisionReason": reason}}
 
     return _add_hook(options, "PreToolUse", SHELL_TOOL_MATCHER, guard)
+
+
+def _stdlib_shadow_edit_hooks(options):
+    """PreToolUse:Write／Edit,任何回合:在 workspace 根目錄、lib/、manager/ 寫標準庫同名的 .py 拒絕(stdlib_shadow)。"""
+    async def guard(input_data, _tool_use_id, _context):
+        tool_input = (input_data or {}).get("tool_input") or {}
+        path = tool_input.get("file_path")
+        reason = (SECRET_CODE_DENY_REASON if secret_code_path(path)
+                  else STDLIB_SHADOW_DENY_REASON if stdlib_shadow(path) else None)
+        if not reason:
+            return {}
+        return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
+                                       "permissionDecisionReason": reason}}
+
+    return _add_hook(options, "PreToolUse", "Write|Edit", guard)
 
 
 def _cred_bash_guard_hooks(options):
@@ -1794,6 +1934,7 @@ def _mount_turn_hooks(options, sink, lang_msg=None, reply_lang=None):
     _bg_guard_hooks(options)
     _cred_bash_guard_hooks(options)
     _secret_code_bash_guard_hooks(options)
+    _stdlib_shadow_edit_hooks(options)
     if isinstance(sink, LocalSink):
         # 語言與排程器兩道只在電腦版(實測過本機 CLI);機隊另外驗過再開
         _lang_hooks(options, lang_reminder(lang_msg, reply_lang))
@@ -5134,16 +5275,16 @@ def data_access_rule():
             "reads you write yourself, in the language the per-turn language directive names; "
             "do not copy, translate or adapt phrasing from this block or from an error body.\n"
             "Billing: data on this key is included while the card trial is running, or when the "
-            "account has a Blave Agent cloud plan or machine (including one still being set up) or "
+            "account has a Blave Agent plan or machine (including one still being set up) or "
             "an API plan. Otherwise it depends on the account's billing: either it is charged per "
             "clock hour in which any data call is made — not per call — so a successful call can "
-            "therefore cost the user money, or (plan billing) there is no data until a cloud plan or "
+            "therefore cost the user money, or (plan billing) there is no data until a Blave Agent plan or "
             "an API plan is started. Fetch only what this turn needs and never poll.\n"
             "Three different 403s:\n"
             "- `ERR007` — the account has no data access right now: either the hourly data fee "
             "could not be charged, or (plan billing) the account has no plan that includes data. "
             "The body's message and `next_steps` say which and name the ways out (topping up, a "
-            "cloud plan, an API plan); a `retry_after`, when present, is a ceiling rather than a "
+            "Blave Agent plan, an API plan); a `retry_after`, when present, is a ceiling rather than a "
             "wait. Convey that the data stopped and that it needs a plan; do not mention an API plan "
             "even though the body names one. The exception is a user asking what it takes to call "
             "the Blave API from their own code with a key they created themselves — answer that "
@@ -5173,10 +5314,10 @@ def data_access_rule():
             + (f" — {why}" if why else "")
             + ". Access comes with signing in "
             "to Blave (whichever AI the user runs — Blave's, their own Claude Code or Codex): free "
-            "while the card trial is active or when the account has a Blave Agent cloud plan or cloud "
+            "while the card trial is active or when the account has a Blave Agent plan or cloud "
             "machine or an API plan; otherwise, depending on the account's billing, either charged per clock "
             "hour of use, which needs a balance that covers that hour, or (plan billing) not available "
-            "until a cloud plan or an API plan is started. The Blave-only datasets, which stop that way: holder concentration, "
+            "until a Blave Agent plan or an API plan is started. The Blave-only datasets, which stop that way: holder concentration, "
             "whale hunter, taker intensity, liquidation, Taiwan chip / institutional / futures data "
             "and the rest of the Blave indicators. Public data still works: crypto klines "
             "(`fetch_kline`, Binance public endpoints) and the key-free public fetchers; single-ticker "

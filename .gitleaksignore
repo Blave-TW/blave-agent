@@ -32,3 +32,7 @@ bcd7fadf67408f7b171d9fafc124a1ad8906f128:tests/fixtures/redact_cases.json:gcp-ap
 
 # tests/fixtures/error_report_cases.json:錯誤回報清洗的共用 fixture(spec agent-error-report-2026-11-16 §4.5,與 api 那份逐字相同),假 query 值
 tests/fixtures/error_report_cases.json:generic-api-key:33
+# 0.1.57 改價 v3:以下是 i18n 字串 key（p3.h.trialEnd、p3.s.trialIncl），generic-api-key 誤判，不是憑證；行號一改就要重取
+shell/renderer/planv3.js:generic-api-key:102
+tests/check_shell_plan_v3.js:generic-api-key:151
+tests/check_shell_plan_v3.js:generic-api-key:155

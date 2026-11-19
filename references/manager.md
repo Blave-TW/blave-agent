@@ -14,7 +14,7 @@
 What may be added and edited in here is a closed list:
 
 - **`manager/executors/<name>.py`** — a custom execution style, the only new file this directory takes (`references/lib.md` › *Custom executors*; the loader in `lib/execute.py` reads exactly that path).
-- **`manager/reconciler.py`** — hand-wired venue plumbing, and only that: `get_positions()` / `place_order()` for a venue without an official lib (see *reconciler.py* below and `references/lib.md`). Official venues are auto-wired — do not touch it for them.
+- **`manager/reconciler.py` and `manager/flatten.py` — read-only for you** (the runtime refuses the edit; only a Blave update changes them). Supported venues are auto-wired; a venue Blave does not support yet needs Blave to ship code (`references/exchange-connect.md` rule 7).
 - **`manager/manager.py` and `manager/management_backtest.py` — never.** A new weighting method, including a variant of the built-in optimiser, is a new `allocators/<name>/allocator.py` (`references/allocator-code.md` › *Never edit the built-in*).
 
 ## management_backtest.py
@@ -108,7 +108,7 @@ When the user asks about leverage or target volatility:
 
 ## reconciler.py
 
-Polls every 5 seconds; only reconciles when a strategy's `state.json` mtime changes (plus `state/execution/kick`, touched when an async execution completes). `get_positions()` and `place_order()` are exchange-specific stubs to fill in once. `lib/portfolio.py` contains `reconcile()` logic; applies `leverage` from portfolio_config.
+Polls every 5 seconds; only reconciles when a strategy's `state.json` mtime changes (plus `state/execution/kick`, touched when an async execution completes). `get_positions()` and `place_order()` route through `lib/venue_wiring.py` (the Taiwan brokers through their own blocks) — Blave's code, read-only for you. `lib/portfolio.py` contains `reconcile()` logic; applies `leverage` from portfolio_config.
 
 **Execution styles:** on auto-wired official venues, `place_order()` routes through `lib.execute.dispatch_order`, which reads the portfolio-wide `portfolio_config["execution_default"]` (one 市價/TWAP/chase/custom setting for every order — see `references/lib.md` › *Execution styles*). TWAP/custom run in a background thread; while one is in flight for a symbol, further legs for that symbol return `False` (deferred) and the residual gap re-reconciles after completion. Hand-wired venues (TW brokers) bypass this entirely.
 
@@ -630,6 +630,14 @@ fill could silently go missing from the book now fail loud instead:
   when `state/HALT` can't land; `reap_dead_inflight` exits the process
   outright when the halt can't persist, keeping its markers for the next boot
   to retry (halt/notify first, marker cleanup last).
+
+**Hang watch (desktop 0.1.58):** `manager/reconciler.py` writes `state/heartbeat/reconciler_progress`
+(its pid) at startup and touches it around every order leg, position read and per-symbol lookup.
+The runtime kills a reconciler whose stamp has not moved for 240 s and the supervisor starts the
+next one; the third kill within an hour first trips HALT (source `hang_watch`). Never delete the
+stamp, `state/execution/hang_kill.json` or `hang_kills.json`, and never restart the reconciler
+yourself because of them. A marker left by a killed leg pauses trading like any other
+`execution_interrupted`.
 
 **Capital (群益) / lot-based rows:** the book needs no case of its own there —
 a capital-routed leg's `signed_diff` and `executed_qty` are both LOTS (see

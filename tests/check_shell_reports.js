@@ -152,8 +152,8 @@ if (!process.versions.electron) {
     ok("② 過了 5 分鐘重打;沒登入 → UNREACH 不打;rptCloudInvalidate 清掉之後再問就重打", c5 !== c4 && (await M.cloudReports(false)).code === "UNREACH" && (() => { tok = "U"; M.rptCloudInvalidate(); const n = hostCalls.length; return M.cloudReports(false).then((c6) => c6 !== c5 && hostCalls.length === n + 1); })());
   })().then(() => {
     // ── ③ 接線 ──
-    ok("③ index.html:側欄「報告」#rpt-nav 在「策略庫」後、同一個 #side-nav 裡;#rpt 在 #lib 後、#main-empty 前;兩個 css;script 順序 report-robust →(0.1.10 report-wf → 0.1.34 report-xt)→ md → report-blocks → reports →(0.1.8 report-share → report-sharelist → report-pdf)→ newstrategy → trade",
-      html.indexOf('id="rpt-nav"') > html.indexOf('id="lib-nav"') && html.indexOf('id="rpt-nav"') < html.indexOf("</nav>") && html.indexOf('id="rpt"') > html.indexOf('id="lib"') && html.indexOf('id="rpt"') < html.indexOf('id="main-empty"')
+    ok("③ index.html:側欄沒有「報告」列(0.1.57 入口搬進左下選單 #side-menu,spec first-strategy-sidebar §A1);#rpt 在 #lib 後、#main-empty 前;兩個 css;script 順序 report-robust →(0.1.10 report-wf → 0.1.34 report-xt)→ md → report-blocks → reports →(0.1.8 report-share → report-sharelist → report-pdf)→ newstrategy → trade",
+      !html.includes('id="rpt-nav') && html.indexOf('id="side-menu"') > html.indexOf('id="ws-conn"') && html.indexOf('id="rpt"') > html.indexOf('id="lib"') && html.indexOf('id="rpt"') < html.indexOf('id="main-empty"')
       && /<link rel="stylesheet" href="report-blocks\.css">\s*<link rel="stylesheet" href="reports\.css">/.test(html) && /<script src="report-robust\.js"><\/script>\s*<script src="report-wf\.js"><\/script>\s*<script src="report-xt\.js"><\/script>\s*<script src="md\.js"><\/script>\s*<script src="report-blocks\.js"><\/script>\s*<script src="reports\.js"><\/script>\s*<script src="report-share\.js"><\/script>\s*<script src="report-sharelist\.js"><\/script>\s*<script src="report-pdf\.js"><\/script>\s*<script src="newstrategy\.js"><\/script>\s*<script src="trade\.js">/.test(html));
     ok("③ #rpt 的骨架:region + aria-labelledby 到 h5、h5 tabindex=-1、工具列份數 + #rpt-ask(aria-haspopup、aria-label rpt.askAria、字由 JS 寫)、#rpt-msg、返回鈕(hidden)、#rpt-body tabindex=0、#rpt-state role=status、#rpt-read(hidden)",
       /<div class="rpt" id="rpt" role="region" aria-labelledby="rpt-h" hidden>/.test(html) && /<h5 class="main-head-name" id="rpt-h" tabindex="-1" data-i18n="rpt\.nav">/.test(html) && /<span class="rpt-count" id="rpt-count"><\/span>/.test(html)
@@ -238,16 +238,37 @@ app.whenReady().then(async () => {
   const js = (s) => w.webContents.executeJavaScript(s, true);
   const T = (k, v) => js(`t(${JSON.stringify(k)}, ${JSON.stringify(v || {})})`);
   const Q = `const q = (x) => [...document.querySelectorAll(x)], g = (id) => document.getElementById(id);`;
-  const view = () => js(`(() => { ${Q} return { on: !g("rpt").hidden, cur: g("rpt-nav").getAttribute("aria-current"), lib: g("lib").hidden, tr: g("tr").hidden, empty: g("main-empty").hidden, headList: g("rpt-head-list").hidden, back: g("rpt-back").hidden, read: g("rpt-read").hidden,
+  const view = () => js(`(() => { ${Q} return { on: !g("rpt").hidden, cur: (amPaint(), g("side-menu").querySelector('.am-i[aria-current="page"]') ? "page" : null), lib: g("lib").hidden, tr: g("tr").hidden, empty: g("main-empty").hidden, headList: g("rpt-head-list").hidden, back: g("rpt-back").hidden, read: g("rpt-read").hidden,
     ids: q("#rpt-rows .rpt-row").map((b) => b.dataset.id).join(), count: g("rpt-count").textContent, countVis: getComputedStyle(g("rpt-count")).visibility, ask: g("rpt-ask-t").textContent, askDis: g("rpt-ask").disabled, msg: g("rpt-msg").hidden ? null : g("rpt-msg").textContent, msgErr: g("rpt-msg").classList.contains("err"), mark: q("#rpt-msg .fault-mark").length,
     state: g("rpt-state").hidden ? null : g("rpt-state").textContent, stateCls: g("rpt-state").className, stateBtns: q("#rpt-state button").length, more: q("#rpt-rows .rpt-more").map((b) => b.textContent).join(), sk: q("#rpt-rows .rpt-sk").length, article: q("#rpt-read article.rb-report").length,
     focus: document.activeElement && (document.activeElement.id || document.activeElement.dataset.id || document.activeElement.className), current: q('#rpt-rows .rpt-row[aria-current="true"]').map((b) => b.dataset.id).join() }; })()`);
   const rowOf = (id) => js(`(() => { ${Q} const b = q('#rpt-rows .rpt-row[data-id="${id}"]')[0]; return { t: b.querySelector(".t").textContent, title: b.querySelector(".t").title, m: b.querySelector(".m").textContent, mono: b.querySelector(".m .mono").textContent, imgs: b.querySelectorAll("img").length, h: b.getBoundingClientRect().height }; })()`);
 
+  // 設計稽核 0157 熱區:選單項目列本身 44 高(zh／en 一樣)、email 那行沒有 <p> 預設外距、〔登入〕膠囊至少 44 寬、統一框文字鈕熱區 44 高
+  { const hit = (lang) => js(`(async () => { setLang(${JSON.stringify(lang)}); applyStatic(); amOpen(); await new Promise((r) => setTimeout(r, 60));
+      const items = [...document.querySelectorAll("#side-menu .am-i")].filter((x) => !x.hidden && x.offsetParent).map((x) => Math.round(x.getBoundingClientRect().height));
+      const who = Object.assign(document.createElement("p"), { className: "am-who", textContent: "a@b.c" }); document.getElementById("side-menu").prepend(who);
+      const wm = getComputedStyle(who); const whoM = [wm.marginTop, wm.marginBottom]; who.remove(); amClose(false);
+      const pill = Object.assign(document.createElement("button"), { className: "cv-pill", textContent: ${JSON.stringify(lang === "zh" ? "登入" : "Sign In")} }); document.getElementById("foot-row").appendChild(pill);
+      const pw = pill.getBoundingClientRect().width; pill.remove();
+      const acts = Object.assign(document.createElement("div"), { className: "cap-acts" }), qb = Object.assign(document.createElement("button"), { className: "btn-quiet", textContent: "x" });
+      acts.appendChild(qb); document.body.appendChild(acts); const qs = getComputedStyle(qb, "::before"); const q = [parseFloat(qs.height), parseFloat(qs.width)]; acts.remove();
+      const foot = [...document.querySelectorAll(".foot-row .ic-btn")].map((x) => { const cs = getComputedStyle(x), bf = getComputedStyle(x, "::before");
+        return { border: cs.borderTopWidth, h: x.getBoundingClientRect().height + parseFloat(bf.top) * -1 + parseFloat(bf.bottom) * -1 }; });
+      return { items, whoM, pw, q, foot }; })()`);
+    for (const lang of ["zh", "en"]) {
+      const h = await hit(lang);
+      ok(`④ 熱區(${lang}):選單項目每列 ≥44 高、email 行上下外距 0、〔登入〕膠囊 ≥44 寬、.cap-acts 文字鈕熱區 44 高 ≥44 寬`,
+        h.items.length > 0 && h.items.every((x) => x >= 44) && h.whoM.join() === "0px,0px" && h.pw >= 44 && h.q[0] === 44 && h.q[1] >= 44
+        // spec sidebar-foot-consistency-2026-11-19:底列圖示鈕都有 1px 框,熱區高仍 44
+        && h.foot.length > 0 && h.foot.every((f) => f.border === "1px" && Math.round(f.h) === 44), JSON.stringify(h));
+    }
+    await js(`setLang("zh"); applyStatic();`); }
+
   // 開
-  await js(`(async () => { document.getElementById("rpt-nav").click(); await new Promise((r) => setTimeout(r, 120)); })()`); await wait(60);
+  await js(`(async () => { rptMenuGo(); await new Promise((r) => setTimeout(r, 120)); })()`); await wait(60);
   let v = await view(), row = await rowOf("am-0901");
-  ok("④ 側欄「報告」→ #rpt 出、入口 aria-current、歡迎頁 / 策略庫 / 自動下單收;三列照 created_at 新到舊;份數「3 份報告」;鈕「新增報告」可按;焦點在鈕;reports_list", v.on && v.cur === "page" && v.lib && v.tr && v.empty && !v.headList && v.back && v.read && v.ids === "wk-2026-08-31,mcpt-2317,am-0901" && v.count === (await T("rpt.count.other", { n: 3 })) && v.countVis === "visible"
+  ok("④ 選單「報告」→ #rpt 出、選單那一列 aria-current、歡迎頁 / 策略庫 / 自動下單收;三列照 created_at 新到舊;份數「3 份報告」;鈕「新增報告」可按;焦點在鈕;reports_list", v.on && v.cur === "page" && v.lib && v.tr && v.empty && !v.headList && v.back && v.read && v.ids === "wk-2026-08-31,mcpt-2317,am-0901" && v.count === (await T("rpt.count.other", { n: 3 })) && v.countVis === "visible"
     && v.ask === (await T("rpt.ask")) && !v.askDis && v.msg === null && v.focus === "rpt-ask" && (await js("window.__r.tracked.includes('reports_list')")), JSON.stringify(v));
   ok("④ 列:標題(agent 的字只進 textContent、全文放 title)、第二行 MM/DD HH:MM(.mono)+ 類型字;認不得的類型不出字;列高 ≥ 48", row.t === "晨報 <img onerror=x>" && row.title === row.t && row.imgs === 0 && /^\d\d\/\d\d \d\d:\d\d$/.test(row.mono) && row.m === row.mono && row.h >= 52 && (await rowOf("wk-2026-08-31")).m.endsWith(" · " + (await T("rpt.type.performance"))), JSON.stringify(row));
   { const edge = (narrow) => js(`(() => { const g = (x) => document.getElementById(x), p = g("rpt"); if (${narrow}) { p.style.flex = "none"; p.style.width = "480px"; }
@@ -322,7 +343,7 @@ app.whenReady().then(async () => {
   // turn-end:多出新報告 → 不自動打開(結果卡 spec §1):清單原地多一列、交出結果卡項目、人在清單上就不亮記號
   const NEW = Object.assign({}, WEEKLY, { id: "new1", title: "新的報告" });
   await js(`(async () => { window.__r.list = { reports: ${JSON.stringify([{ id: "new1", title: "新的報告", type: "performance", created_at: 1799999999 }].concat(LIST))} }; window.__r.docs.new1 = { report: ${JSON.stringify(NEW)}, images: {} }; running = false; window.__r.items = await rptTurnEnd(); })()`); await wait(300); v = await view();
-  a = await js(`(() => ({ reading: rptBag("local").reading, pending: RPT.pending.local, loaded: window.__r.calls.filter((x) => x === "load:new1").length, items: window.__r.items.map((x) => x.kind + ":" + x.ref + ":" + x.ver).join(), mark: !document.getElementById("rpt-nav-new").hidden }))()`);
+  a = await js(`(() => ({ reading: rptBag("local").reading, pending: RPT.pending.local, loaded: window.__r.calls.filter((x) => x === "load:new1").length, items: window.__r.items.map((x) => x.kind + ":" + x.ref + ":" + x.ver).join(), mark: RPT.mark }))()`);
   ok("④ turn-end:本機多出 new1 → 不打開(沒讀 new1)、清單原地多一列在最上面、回 new1 的結果卡項目(版本鍵 new1@)、pending 收掉、鈕回「新增報告」、人在清單上不亮記號", a.reading === null && a.pending === null && a.loaded === 0 && a.items === "report:new1:new1@" && !a.mark && v.ids.startsWith("new1,") && v.headList === false && v.article === 0 && v.ask === (await T("rpt.ask")), JSON.stringify([a, v]));
   // 沒新報告:灰字;離開視圖就清
   await js(`document.getElementById("rpt-back").click(); RPT.pending.local = { env: "local", before: new Set(RPT.data.local.map(rptKey)) }; rptTurnEnd();`); await wait(300); v = await view();
@@ -334,17 +355,17 @@ app.whenReady().then(async () => {
   ok("④ B1 同 id 覆寫:mtime 變了就算新報告(不打開)、上一輪的 noNew 灰字清掉", a.reading === null && a.noNew === null && v.article === 0 && v.msg === null, JSON.stringify([a, v]));
   // 設計稽核:等待期間人在別的視圖(自動下單)→ 不拉回,側欄入口只做記號;回到報告區記號收掉
   await js(`(async () => { await trOpen("over"); RPT.pending.local = { env: "local", before: new Set(RPT.data.local.map(rptKey)) }; window.__r.list = { reports: ${JSON.stringify([{ id: "new2", title: "又一份", type: "research", created_at: 1799999998 }, { id: "new1", title: "新的報告(改過)", type: "performance", created_at: 1799999999, mtime: 2 }].concat(LIST))} }; rptTurnEnd(); })()`); await wait(500);
-  a = await js(`(() => ({ tr: !document.getElementById("tr").hidden, rpt: !document.getElementById("rpt").hidden, mark: document.getElementById("rpt-nav-new").hidden, reading: rptBag("local").reading }))()`);
-  await js(`(async () => { document.getElementById("rpt-nav").click(); await new Promise((r) => setTimeout(r, 150)); })()`); await wait(60);
-  const b6 = await js(`(() => { const mark = document.getElementById("rpt-nav-new").hidden, reading = rptBag("local").reading; document.getElementById("rpt-back").click(); return { rpt: !document.getElementById("rpt").hidden, mark, reading, ids: [...document.querySelectorAll("#rpt-rows .rpt-row")].map((b) => b.dataset.id).join() }; })()`);
+  a = await js(`(() => ({ tr: !document.getElementById("tr").hidden, rpt: !document.getElementById("rpt").hidden, mark: !RPT.mark, reading: rptBag("local").reading }))()`);
+  await js(`(async () => { rptMenuGo(); await new Promise((r) => setTimeout(r, 150)); })()`); await wait(60);
+  const b6 = await js(`(() => { const mark = !RPT.mark, reading = rptBag("local").reading; document.getElementById("rpt-back").click(); return { rpt: !document.getElementById("rpt").hidden, mark, reading, ids: [...document.querySelectorAll("#rpt-rows .rpt-row")].map((b) => b.dataset.id).join() }; })()`);
   ok("④ 等待期間切到自動下單:報告好了不拉回(仍在自動下單、報告區收著)、側欄「報告」出記號;點進報告 → 清單、記號收掉、有 new2", a.tr && !a.rpt && !a.mark && a.reading === null && b6.rpt && b6.mark && b6.reading === null && b6.ids === "new1,new2,wk-2026-08-31,mcpt-2317,am-0901", JSON.stringify([a, b6]));
-  await js(`(async () => { await libOpen(); await new Promise((r) => setTimeout(r, 60)); document.getElementById("rpt-nav").click(); await new Promise((r) => setTimeout(r, 120)); })()`); await wait(60); v = await view();
+  await js(`(async () => { await libOpen(); await new Promise((r) => setTimeout(r, 60)); rptMenuGo(); await new Promise((r) => setTimeout(r, 120)); })()`); await wait(60); v = await view();
   ok("④ 開策略庫(互斥:#rpt 收、入口 aria-current 拿掉)再回來:灰字清掉、清單重問(5 份)", v.on && v.msg === null && v.ids.split(",").length === 5 && v.count === (await T("rpt.count.other", { n: 5 })), JSON.stringify(v));
   // 一般對話(不經「新增報告」框)產出的報告——含同 id 覆寫:認得出是這一輪寫的(亮記號),但中欄一律不動
   { const CM = { id: "crypto-market-20260926", title: "加密市場晨報", type: "morning", created_at: 1790380800 }, CMDOC = Object.assign({}, WEEKLY, { id: CM.id, title: CM.title });
     const plainTurn = async (mtime, extra) => { const err = await js(`(async () => { try { ${extra || ""} window.__r.sendResult = { started: true }; await submitMessage("幫我做加密晨報"); running = false;
       window.__r.list = { reports: ${JSON.stringify([Object.assign({}, CM, { mtime: "__M__" })].concat(LIST))}.map((r) => r.mtime === "__M__" ? Object.assign(r, { mtime: ${mtime} }) : r) }; rptTurnEnd(); return null; } catch (e) { return String(e && e.stack || e); } })()`); if (err) console.log("      plainTurn: " + err); await wait(700); };
-    const where = () => js(`(() => ({ rpt: !document.getElementById("rpt").hidden, empty: !document.getElementById("main-empty").hidden, tr: !document.getElementById("tr").hidden, reading: rptBag("local").reading, mark: !document.getElementById("rpt-nav-new").hidden, msg: document.getElementById("rpt-msg").hidden ? null : document.getElementById("rpt-msg").textContent, turnAt: RPT.turnAt }))()`);
+    const where = () => js(`(() => ({ rpt: !document.getElementById("rpt").hidden, empty: !document.getElementById("main-empty").hidden, tr: !document.getElementById("tr").hidden, reading: rptBag("local").reading, mark: RPT.mark, msg: document.getElementById("rpt-msg").hidden ? null : document.getElementById("rpt-msg").textContent, turnAt: RPT.turnAt }))()`);
     await js(`window.__r.keepList = window.__r.list; window.__r.keepReading = rptBag("local").reading; window.__r.docs[${JSON.stringify(CM.id)}] = { report: ${JSON.stringify(CMDOC)}, images: {} }; rptBag("local").reading = null; rptLeave("local"); envShowMain();`); await wait(80);
     const before = await where();
     // 舊檔在回合開始前就在(mtime 很舊)→ 不是這一輪寫的,不開
@@ -357,7 +378,7 @@ app.whenReady().then(async () => {
     await js(`document.getElementById("rpt-back").click();`); await wait(60);
     await plainTurn("Date.now()", `await trOpen("over");`); a = await where();
     ok("④ 一般對話、人在自動下單:這一輪寫了報告也不拉回,側欄「報告」出記號", a.tr && !a.rpt && a.mark, JSON.stringify(a));
-    await js(`(async () => { document.getElementById("rpt-nav").click(); await new Promise((r) => setTimeout(r, 150)); document.getElementById("rpt-back").click(); })()`); await wait(80);
+    await js(`(async () => { rptMenuGo(); await new Promise((r) => setTimeout(r, 150)); document.getElementById("rpt-back").click(); })()`); await wait(80);
     // 瀏覽器展開層蓋在中欄(BR.exp)→ 也不開(展開層由用戶自己收,或按結果卡時收)
     await plainTurn("Date.now()", `rptLeave("local"); await trOpen("over"); BR.exp = { mode: "one", id: "x" };`); a = await where();
     const brLeft = await js(`(() => { const x = BR.exp; BR.exp = null; return x; })()`);
@@ -424,15 +445,15 @@ app.whenReady().then(async () => {
   ok("④ 聊天發起:等到窗口結束都沒有新報告 → 收掉、不自動打開、不出「沒多出報告」灰字(那句只回應框送出的)", a.poll === null && a.pending === null && a.reading === null && a.noNew === null, JSON.stringify(a));
   // 雲端視角:送出時在雲端自動下單頁、等待期間沒動 → 也不打開、亮記號;等待期間切到策略庫 → 同樣只做記號
   const chatTurn = (id, during) => js(`(async () => { rptCloudPollStop(); RPT.pending.cloud = null; rptLeave("cloud"); envShowMain(); rptTurnStart({ env: "cloud" }); rptTurnTool({ type: "tool", tool: "Bash", status: "running", where: "cloud" });
-    ${during} window.__r.cloudList = { code: "OK", reports: [{ id: "${id}", title: "晨報", created_at: ${nowS}, stored_at: ${nowS + 5} }] }; $("rpt-nav-new").hidden = true; rptTurnEnd(); })()`);
+    ${during} window.__r.cloudList = { code: "OK", reports: [{ id: "${id}", title: "晨報", created_at: ${nowS}, stored_at: ${nowS + 5} }] }; RPT.mark = false; rptTurnEnd(); })()`);
   await chatTurn("c-stay", ""); await wait(300);
-  a = await js(`(() => ({ reading: rptBag("cloud").open ? rptBag("cloud").reading : null, mark: !$("rpt-nav-new").hidden }))()`);
+  a = await js(`(() => ({ reading: rptBag("cloud").open ? rptBag("cloud").reading : null, mark: RPT.mark }))()`);
   ok("④ 聊天發起:送出時在雲端自動下單頁、等待期間沒切走 → 不打開、側欄「報告」出記號", a.reading === null && a.mark, JSON.stringify(a));
   await js(`document.getElementById("rpt-back").click();`);
   await chatTurn("c-away", "await libOpen();"); await wait(300);
-  a = await js(`(() => ({ rptOpen: rptBag("cloud").open, lib: !$("lib").hidden, mark: !$("rpt-nav-new").hidden }))()`);
+  a = await js(`(() => ({ rptOpen: rptBag("cloud").open, lib: !$("lib").hidden, mark: RPT.mark }))()`);
   ok("④ 聊天發起:等待期間切到策略庫 → 不拉回、只亮側欄記號", !a.rptOpen && a.lib && a.mark, JSON.stringify(a));
-  await js(`libLeave(); $("rpt-nav-new").hidden = true; envShowMain();`);
+  await js(`libLeave(); RPT.mark = false; envShowMain();`);
   // 切回本機:仍在讀 new1
   await js(`ENV.cur = "local"; TR_BAGS.cloud.st = null; envShowMain();`); await wait(60); v = await view();
   ok("④ 切回本機:回到本機那袋——仍在讀 new1、article 畫出", v.on && v.headList && !v.back && v.article === 1 && (await js(`rptBag("local").reading`)) === "new1", JSON.stringify(v));

@@ -69,7 +69,7 @@ function rptStoredSince(sinceMs, list) { const s = Math.floor(sinceMs / 1000) - 
 
 const RPT = { bags: { local: rptNewBag(), cloud: rptNewBag() }, data: { local: null, cloud: null }, failed: { local: false, cloud: false }, skel: { local: false, cloud: false },
   seq: { local: 0, cloud: 0 }, readSeq: 0, docs: new Map(), pending: { local: null, cloud: null }, turnAt: null, cloudTurn: null, cloudRes: [], noNew: null, poll: null, sending: false, fail: false, opener: null, paintedEnv: null,
-  busyTold: false };   // 回合中點過停用的「新增報告」:那句「上一輪還在跑。」留到回合結束(rptSync 清)   // pending 每袋一份(雲端輪詢中送本機的不互蓋);fail = 上一次送出失敗:腳那一句留到下次送出 / 關框
+  busyTold: false, mark: false };   // 回合中點過停用的「新增報告」:那句「上一輪還在跑。」留到回合結束(rptSync 清)   // pending 每袋一份(雲端輪詢中送本機的不互蓋);fail = 上一次送出失敗:腳那一句留到下次送出 / 關框
 const RPT_DOCS_MAX = 8;   // 讀過的本體留幾份(回清單再進同一份不重抓;換語言整組清掉——渲染出來的字是 i18n 過的)
 function rptNewBag() { return { open: false, reading: null, scroll: 0, row: null, shown: RPT_PAGE }; }
 const rptBag = (env) => RPT.bags[(env || libEnv()) === "cloud" ? "cloud" : "local"];
@@ -98,7 +98,7 @@ async function rptOpen() {
   envShowMain();
   rptLoad(libEnv(), false);
   rptFocusHome();
-  $("rpt-nav-new").hidden = true;   // 進來就看到了:記號收掉(本機與雲端的新報告共用這一個記號,哪一邊進來都收)
+  rptMarkSet(false);   // 進來就看到了:記號收掉(本機與雲端的新報告共用這一個記號,哪一邊進來都收)
   libTrack("reports_list");
   return true;
 }
@@ -113,15 +113,32 @@ function rptLeave(env) {
   const B = rptBag(env);
   if (!B.open) return;
   B.open = false; if (RPT.noNew === (env || libEnv())) RPT.noNew = null;
-  if (B === rptBag()) { $("rpt").hidden = true; $("rpt-nav").removeAttribute("aria-current"); }
+  if (B === rptBag()) $("rpt").hidden = true;
 }
 /* envShowMain(trade.js)的最後一步(libShowMain 之後):報告開著就蓋掉其餘視圖。gate = 雲端沒主機可看(開通頁),那時側欄入口也藏著 */
 function rptShowMain(gate) {
   const on = !gate && rptBag().open, was = !$("rpt").hidden;
   if (on) { $("rp").hidden = true; $("tr").hidden = true; $("po").hidden = true; $("main-empty").hidden = true; $("lib").hidden = true; $("tr-nav").removeAttribute("aria-current"); $("po-nav").removeAttribute("aria-current"); $("lib-nav").removeAttribute("aria-current"); }
   $("rpt").hidden = !on;
-  if (on) $("rpt-nav").setAttribute("aria-current", "page"); else $("rpt-nav").removeAttribute("aria-current");
   if (on && (!was || RPT.paintedEnv !== libEnv())) { rptPaint(); if (was) rptLoad(libEnv(), false); }   // 剛打開 / 切視角(兩邊都開著也要換成這一邊那袋)
+}
+
+/* 新報告的記號(spec first-strategy-sidebar §A5):一個旗標,畫在左下第一格與選單「報告」那一列(app.js amFirstPaint)。何時亮、何時清照舊 */
+function rptMarkSet(on) {
+  if (RPT.mark === !!on) return;
+  RPT.mark = !!on;
+  if (typeof amFirstPaint === "function") amFirstPaint();
+}
+/* 左下選單「報告」(§A2):先判這個視角擋不擋,再判報告頁開沒開,命中就停。
+   擋著而且有一支等著送上雲端(「準備好了」,或主機還沒好時 hoAsk 先記下的那支):什麼都不做,切視角會讓 envSwitch 把它清掉。
+   其餘擋著的(雲端沒主機、沒登入、啟動中、讀不到)先切回這台電腦,切不了(框開著、組字中)就不動——直接 rptOpen 會把雲端那袋標成開著、
+   清掉點、多記一筆 reports_list,畫面卻不動 */
+async function rptMenuGo() {
+  const gate = typeof envGated === "function" ? envGated() : null;
+  if (gate && typeof hoPendingId === "function" && hoPendingId()) return;
+  if (gate) { if (!envSwitchGuarded("local")) return; }
+  else if (rptBag().open) { sideReclick(() => rptLeave(), rptBag().reading ? rptBack : null); return; }   // 閱讀層先回清單;清單再按 = 回首頁
+  if (await rptOpen()) trackFeature("side_menu_rpt");
 }
 
 /* ── 資料 ─────────────────────────────────────────────── */
@@ -201,7 +218,7 @@ function rptTurnEnd(rt) {
     const fresh = p ? rptNewEntries(p.before, RPT.data.local) : rptWrittenSince(since, RPT.data.local);
     if (!fresh.length) { if (p) { RPT.noNew = "local"; rptSync(); } return []; }   // 「沒多出報告」的灰字只回應框送出的那一輪;一般對話沒寫報告是常態
     RPT.noNew = null;
-    if (!rptListShown("local")) $("rpt-nav-new").hidden = false;
+    if (!rptListShown("local")) rptMarkSet(true);
     rptSync();
     return fresh.map((r) => resReportItem(r, "local", rptKey(r)));
   });
@@ -229,7 +246,7 @@ async function rptCloudPollTick() {
       const to = (at === null ? null : waiting.filter((x) => x.at <= at).pop()) || waiting[0];
       if (to) resAdd(to.rt, [resReportItem(r, "cloud", rptKey(r))]);
     });
-    if (!rptListShown("cloud")) $("rpt-nav-new").hidden = false;
+    if (!rptListShown("cloud")) rptMarkSet(true);
     rptSync();
     return;
   }
@@ -378,7 +395,7 @@ function rptShowRead(id) {
   const B = rptBag();
   if (!B.reading) B.scroll = $("rpt-body").scrollTop;
   B.row = id; B.reading = id;
-  $("rpt-nav-new").hidden = true;
+  rptMarkSet(false);
   rptPaint(); $("rpt-body").scrollTop = 0;
   $("rpt-back").focus();
 }
@@ -538,7 +555,6 @@ async function rptSend() {
 /* ── 接線(這支比 app.js 先載:只用 getElementById,不碰 app.js 的全域;handler 裡的才在點擊時取)── */
 (function rptWire() {
   const g = (id) => document.getElementById(id);
-  g("rpt-nav").addEventListener("click", () => { if (!rptBag().open) rptOpen(); else sideReclick(() => rptLeave(), rptBag().reading ? rptBack : null); });   // 閱讀層先回清單;清單再點 = 回 welcome;展開層蓋著時先收展開層(trade.js sideReclick)
   g("rpt-back").addEventListener("click", rptBack);
   g("rpt-ask").addEventListener("click", () => { if (g("rpt-ask").getAttribute("aria-disabled") === "true") { rptBusyTell(); return; } rptNewOpen(g("rpt-ask")); });
   g("rpt-rows").addEventListener("click", (e) => {   // 列會重畫:委派

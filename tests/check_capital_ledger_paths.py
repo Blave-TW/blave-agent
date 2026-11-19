@@ -112,6 +112,7 @@ class World:
         self.stale = False
         self.lag = False  # True: the snapshot's read started before this round's sends
         self.fake = None  # rows the snapshot reports instead of the real ones (a wrong read)
+        self.nodata = False  # 統一: the worker's 查無資料 read (positions [] + positions_no_data), whatever is held
 
     def setup(self, lots):
         os.makedirs("manager", exist_ok=True)
@@ -256,9 +257,18 @@ def president_world(tmp):
             qty = int(o.orderqty)
             w.sent.append({"contract": o.productid, "side": "buy" if o.bs == "B" else "sell",
                            "lots": qty, "opencloseflag": o.opencloseflag})
+            seq = f"S{len(w.sent)}"
+            if getattr(w, "pmode", None) in ("silent_fill", "silent_nofill"):
+                # accepted (0000), no match row: the lib parks it as 'sent'. silent_fill: it did fill at the
+                # broker; silent_nofill: it did not
+                if w.pmode == "silent_fill":
+                    w.rows[o.productid] = w.rows.get(o.productid, 0) + (qty if o.bs == "B" else -qty)
+                    w.rows = {k: v for k, v in w.rows.items() if v}
+                self.dtrade.on_reply(R(seq=seq, orderno=f"O{len(w.sent)}", statuscode="0000",
+                                       orderstatus="", matchqty=0, nomatchqty=qty, productid=o.productid))
+                return R(issend=True, errorcode="", errormsg="", seq=seq)
             w.rows[o.productid] = w.rows.get(o.productid, 0) + (qty if o.bs == "B" else -qty)
             w.rows = {k: v for k, v in w.rows.items() if v}
-            seq = f"S{len(w.sent)}"
             self.dtrade.on_reply(R(seq=seq, orderno=f"O{len(w.sent)}", statuscode="0000",
                                    orderstatus="", matchqty=qty, nomatchqty=0, productid=o.productid))
             self.dtrade.on_match(R(orderno=f"O{len(w.sent)}", matchseq="1", matchqty=qty,
@@ -276,8 +286,9 @@ def president_world(tmp):
         json.dump({"ok": True, "read_at": now - 1000 if w.stale else now + 1,
                    "query_started_at": now - 1 if w.lag else now + 30, "account_fp": "fp1", "equity": 1e6,
                    "listed": w.listed,
-                   "positions": [{"root": k[:3], "productid": k, "net": v}
-                                 for k, v in (w.rows if w.fake is None else w.fake).items()]},
+                   "positions": [] if w.nodata else [{"root": k[:3], "productid": k, "net": v}
+                                                     for k, v in (w.rows if w.fake is None else w.fake).items()],
+                   "positions_no_data": w.nodata},
                   open(ap._SNAPSHOT, "w"))
     w.write_snapshot = write_snapshot
     w.listed = {"TXF": ["TXFJ6", "TXFK6", "TXFL6"]}
@@ -404,12 +415,101 @@ def child(venue, sid, tmp):
         tw_clock.close_hold = lambda now=None: (None if w.taking
                                                 else {"why": "session", "until": time.time() + 3600})
         tw_clock.queued_until = lambda now=None: None if w.session else w.open_at
+    if sid == "N0":
+        w.signal(0)
+        w.nodata = True  # a first login on an account with no positions: 查無資料, nothing in the book
+    if sid == "P":
+        w.pmode = "silent_fill"  # the entry fills at the broker, the report never says so: parked
     round_("entry")
     w.mode = None
+    if sid == "P":
+        w.pmode, w.nodata = None, True  # …and the next snapshots are 查無資料,
+        let_time_pass(17 * 60)          # read past reconciler.QUEUED_HOLD_S (a 0000 ack is held 16 min)
     round_("converged")
     ok, why = True, ""
 
-    if sid == "A":
+    if sid == "N":
+        # audit release-0157-merged F-M1: the bot holds +2, then 統一 answers 查無資料 for the positions
+        # (with margin 查無資料 too — the same back end) while the 2 lots are still there. Taken as flat,
+        # two reads >=5 s apart confirm a "manual close", the book goes to 0 and the entry buys 2 more.
+        w.nodata = True
+        r1 = round_("查無資料 read, signal unchanged")
+        let_time_pass(5.5)
+        r2 = round_("next round, >=5 s later: 查無資料 again")
+        r3 = round_("one more round")
+        sent_nd = [o for r in (r1, r2, r3) for o in r["sent"]]
+        w.nodata = False
+        last = round_("the real read is back")
+        ok = (not sent_nd and not last["sent"] and w.net() == 2 and ledger_txf(last) == 2
+              and all(r["outcome"].startswith("skipped") for r in (r1, r2, r3)) and last["outcome"] == "ok"
+              and not audits("ledger_writeoff"))
+        why = (f"查無資料 reads with 2 held: sent={sent_nd}, outcomes={[r['outcome'][:40] for r in (r1, r2, r3)]}; "
+               f"then real read: sent={last['sent']}, broker={w.rows}, book TXF={ledger_txf(last)}, "
+               f"writeoffs={len(audits('ledger_writeoff'))}")
+    elif sid == "N2":
+        # the same, but the signal is cut to 1 lot during the 查無資料 reads: taken as flat, the two short
+        # reads confirm a manual close, the book is rebased to 0 and the 1 lot target is BOUGHT on top of
+        # the 2 still held (3 held instead of 1)
+        w.nodata = True
+        w.signal(0.5)
+        r1 = round_("查無資料 read, signal cut to 1 lot")
+        let_time_pass(5.5)
+        r2 = round_("next round, >=5 s later: 查無資料 again")
+        r3 = round_("one more round")
+        sent_nd = [o for r in (r1, r2, r3) for o in r["sent"]]
+        held_nd = w.net()
+        w.nodata = False
+        last = round_("the real read is back")
+        conv = round_("converged")
+        ok = (not sent_nd and held_nd == 2 and w.net() == 1 and ledger_txf(conv) == 1
+              and [o["side"] for o in last["sent"] + conv["sent"]] == ["sell"] and not audits("ledger_writeoff"))
+        why = (f"查無資料 reads with 2 held, target 1: sent={sent_nd}, broker net then={held_nd}; then real read: "
+               f"sent={last['sent'] + conv['sent']}, broker={w.rows}, book TXF={ledger_txf(conv)}, "
+               f"writeoffs={len(audits('ledger_writeoff'))}")
+    elif sid == "P":
+        # audit F2-M1: a parked entry (filled at the broker, no match report) meets a 查無資料 read. Claimed
+        # against it, net 0 == expected 0 reads "not filled": the row is cleared and +2 is sent again (4 held).
+        r_nd = log[1:]
+        let_time_pass(5.5)
+        r_nd.append(round_("查無資料 again"))
+        sent_nd = [o for r in r_nd for o in r["sent"]]
+        held_nd = w.net()
+        w.nodata = False
+        last = round_("the real read is back: 2 held")
+        conv = round_("converged")
+        ok = (not sent_nd and held_nd == 2 and not last["sent"] and not conv["sent"] and w.net() == 2
+              and ledger_txf(conv) == 2 and not audits("unfilled_order_cleared"))
+        why = (f"parked entry + 查無資料: sent={sent_nd}, broker net then={held_nd}; real read: "
+               f"sent={last['sent'] + conv['sent']}, broker={w.rows}, book TXF={ledger_txf(conv)}, "
+               f"cleared-as-unfilled={len(audits('unfilled_order_cleared'))}")
+    elif sid == "P2":
+        # a parked close that did NOT fill meets a 查無資料 read: claimed against it, net 0 == expected + lots
+        # reads as a late fill and the book goes to 0 over the 2 lots still held
+        w.pmode = "silent_nofill"
+        w.signal(0)
+        r1 = round_("signal 0: the close is accepted, does not fill, no report: parked")
+        w.pmode, w.nodata = None, True
+        r2 = round_("查無資料 read")
+        let_time_pass(5.5)
+        r3 = round_("查無資料 again")
+        book_nd = ledger_txf(r3)
+        w.nodata = False
+        last = round_("the real read: 2 still held")
+        conv = round_("converged")
+        ok = (book_nd == 2 and w.net() == 0 and ledger_txf(conv) == 0 and not audits("late_fill_adopted")
+              and [o["side"] for r in (last, conv) for o in r["sent"]] == ["sell"])
+        why = (f"parked close (not filled) + 查無資料: book TXF while unreadable={book_nd}; real read: "
+               f"sent={last['sent'] + conv['sent']}, broker={w.rows}, book TXF={ledger_txf(conv)}, "
+               f"late fills booked={len(audits('late_fill_adopted'))}")
+    elif sid == "N0":
+        first = log[0]
+        w.signal(1)
+        r = round_("signal 1 on the 查無資料-flat account")
+        ok = (first["outcome"] == "ok" and not first["sent"] and [o["lots"] for o in r["sent"]] == [2]
+              and ledger_txf(r) == 2)
+        why = (f"first login, empty book, 查無資料 read: outcome={first['outcome'][:60]}; then signal 1 "
+               f"sent={r['sent']}, book TXF={ledger_txf(r)}")
+    elif sid == "A":
         w.rows = {}
         round_("user closed it in the app, signal unchanged")
         w.signal(0)
@@ -732,7 +832,9 @@ def main():
     failed, xfail = [], []
     for venue in venues:
         for sid in ("A", "A2", "A3", "A4", "A5", "A6", "F", "M", "M2", "Z", "R1", "R2", "B1", "B2", "B2R", "B3", "H1", "H2",
-                    "L1", "L2", "L3", "C1", "C2"):
+                    "L1", "L2", "L3", "C1", "C2", "N", "N2", "N0", "P", "P2"):
+            if sid[0] in "NP" and venue != "president":
+                continue  # the 查無資料 read is 統一's (lib/president_worker.read_account)
             if sid[0] == "L" and venue != "capital":
                 continue  # 統一's park: tests/check_president_lib.py and check_tw_entry_gate.py
             cid = f"{venue}:{sid}"

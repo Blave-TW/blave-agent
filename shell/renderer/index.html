@@ -24,6 +24,7 @@
 <link rel="stylesheet" href="apikey.css">
 <link rel="stylesheet" href="rules.css">
 <link rel="stylesheet" href="library.css">
+<link rel="stylesheet" href="planv3.css">
 <link rel="stylesheet" href="report-blocks.css">
 <link rel="stylesheet" href="reports.css">
 <link rel="stylesheet" href="report-share.css">
@@ -107,22 +108,22 @@
         <button class="strat-row" id="po-nav" type="button"><svg class="side-nav-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12c.552 0 1.005-.449.95-.998a10 10 0 0 0-8.953-8.951c-.55-.055-.998.398-.998.95v8a1 1 0 0 0 1 1z"/><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/></svg><span class="strat-name" data-i18n="po.nav"></span></button>
         <button class="strat-row" id="tr-nav" type="button"><svg class="side-nav-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></svg><span class="strat-name" data-i18n="tr.nav"></span></button>
         <!-- 策略庫入口(spec-desktop-library §2):同一顆 .strat-row 解剖,icon 是 lucide library-big;內容由 library.js 畫 -->
-        <button class="strat-row" id="lib-nav" type="button"><svg class="side-nav-ic" viewBox="0 0 24 24" aria-hidden="true"><rect width="8" height="18" x="3" y="3" rx="1"/><path d="M7 3v18"/><path d="M20.4 18.9c.2.5-.1 1.1-.6 1.3l-1.9.7c-.5.2-1.1-.1-1.3-.6L11.1 5.1c-.2-.5.1-1.1.6-1.3l1.9-.7c.5-.2 1.1.1 1.3.6Z"/></svg><span class="strat-name" data-i18n="lib.nav"></span></button>
-        <!-- 報告入口(spec-desktop-0.1.6 §1.2):同一顆 .strat-row 解剖,icon 是 lucide file-text;內容由 reports.js 畫 -->
-        <button class="strat-row" id="rpt-nav" type="button"><svg class="side-nav-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg><span class="strat-name" data-i18n="rpt.nav"></span><span class="nav-new" id="rpt-nav-new" role="img" data-i18n-aria="rpt.newMark" hidden></span></button></nav>
+        <button class="strat-row" id="lib-nav" type="button"><svg class="side-nav-ic" viewBox="0 0 24 24" aria-hidden="true"><rect width="8" height="18" x="3" y="3" rx="1"/><path d="M7 3v18"/><path d="M20.4 18.9c.2.5-.1 1.1-.6 1.3l-1.9.7c-.5.2-1.1-.1-1.3-.6L11.1 5.1c-.2-.5.1-1.1.6-1.3l1.9-.7c.5-.2 1.1.1 1.3.6Z"/></svg><span class="strat-name" data-i18n="lib.nav"></span></button></nav>
       <!-- 「策略」標題旁的 ＋:新增策略 modal(spec-desktop-0.1.6 §4;照雲端 #strat_add)。兩個視角都出;雲端沒主機時跟 #strat-head 一起被 envPaint 藏掉 -->
       <div class="strat-head" id="strat-head"><span class="label" data-i18n="ws.strategies"></span><button class="strat-add" id="strat-add" type="button" aria-haspopup="dialog" data-i18n-aria="ns.title"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M12 5v14"/></svg></button></div>
       <div class="strat-list" id="strat-list"><p class="pf-state" id="strat-empty" data-i18n="ws.noStrategies"></p></div>
       <!-- 雲端那幾份:點一支 → 中欄畫雲端那一份的報告(app.js rpCloudSelect);名字是雲端來的字串,一律 textContent -->
       <div class="strat-list" id="strat-list-cloud" hidden></div>
       <!-- 細軌(spec sidebar-conversion §3.5):上面展開鈕;底部更新圓鈕(跟列裡那顆同一份 plan,app.js upPillPaint)、它下面齒輪 -->
-      <div class="side-rail"><button class="rail-btn" id="rail-open" type="button" data-i18n-aria="ws.sideExpand"><svg class="ws-icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="1.75" y="2.75" width="12.5" height="10.5" rx="2"/><line x1="6" y1="2.75" x2="6" y2="13.25"/><polyline points="9.6,6.2 11.4,8 9.6,9.8"/></svg></button><div class="rail-bot"><button class="up-pill up-rail" id="up-rail" type="button" hidden><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg></button><button class="rail-btn" id="rail-set" type="button" aria-haspopup="dialog"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></button></div></div>
+      <div class="side-rail"><button class="rail-btn" id="rail-open" type="button" data-i18n-aria="ws.sideExpand"><svg class="ws-icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="1.75" y="2.75" width="12.5" height="10.5" rx="2"/><line x1="6" y1="2.75" x2="6" y2="13.25"/><polyline points="9.6,6.2 11.4,8 9.6,9.8"/></svg></button><div class="rail-bot"><button class="up-pill up-rail" id="up-rail" type="button" hidden><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg></button><button class="rail-btn" id="rail-set" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="side-menu"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></button></div></div>
       <!-- 左下角一列(spec sidebar-conversion-2026-11-10 §2):靠左依序 齒輪、手機、帳號那一格、更新;缺的往左補,右邊留白。
            #foot-why 是更新回合中原因句的錨點:句子插在它後面、列的上方,列本身不動(§6.4)。手機與帳號那一格由 promptslot.js／app.js sidePaint 畫 -->
       <div class="ws-foot">
         <div id="foot-why" hidden></div>
         <div class="foot-row" id="foot-row">
-          <button class="ic-btn" id="ws-conn" type="button" aria-haspopup="dialog"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></button>
+          <button class="ic-btn" id="ws-conn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="side-menu"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></button>
+          <!-- 第一格的選單(spec first-strategy-sidebar §A4):內容由 app.js amPaint 畫;position: fixed,開的時候量位置,不佔列寬 -->
+          <div class="side-menu" id="side-menu" role="menu" hidden></div>
           <!-- pop 緊接手機圖示:Tab 從圖示直接進 pop。pop 是 position: fixed,不佔列寬 -->
           <button class="ic-btn" id="ph-pill" type="button" aria-expanded="false" aria-controls="ph-pop" hidden><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect width="14" height="20" x="5" y="2" rx="2"/><path d="M12 18h.01"/></svg></button>
           <div class="ph-pop" id="ph-pop" hidden></div>
@@ -812,6 +813,8 @@
     </div>
     <div class="modal-body">
       <p class="ns-hint" id="ns-hint" data-i18n="ns.hint"></p>
+      <!-- 範例列(spec first-strategy-sidebar §B5):三顆籤照主要市場換整組,由 newstrategy.js nsExPaint 畫;按了填四格、不送出 -->
+      <div class="ns-ex" id="ns-ex"><span class="l" data-i18n="ns.ex"></span><span class="ns-ex-chips" id="ns-ex-chips"></span></div>
       <label class="fld"><span class="fld-l" data-i18n="ns.name"></span><input class="f-input txt" id="ns-name" name="name" autocomplete="off" data-i18n-ph="ns.namePh"></label>
       <div class="f-row">
         <label class="fld"><span class="fld-l" data-i18n="ns.symbol"></span><input class="f-input txt" name="symbol" autocomplete="off" data-i18n-ph="ns.symbolPh"></label>
@@ -824,7 +827,7 @@
     <div class="modal-foot">
       <span class="foot-msg" id="ns-msg" role="status"></span>
       <span class="del-where" id="ns-where" hidden></span>
-      <span class="ns-lib-hint"><span data-i18n="ns.libHint"></span><button type="button" class="btn-quiet" id="ns-lib" data-i18n="ns.libLink"></button></span>
+      <span class="ns-lib-hint"><button type="button" class="btn-quiet" id="ns-lib" data-i18n="ns.libLink"></button></span>
       <span class="modal-btns"><button type="button" class="btn-out" id="ns-cancel" data-i18n="del.cancel"></button><button type="submit" class="btn-fill" id="ns-submit" data-i18n="ns.submit" disabled></button></span>
     </div>
   </form>
@@ -957,6 +960,7 @@
 <script src="library.js"></script>
 <script src="app.js"></script>
 <script src="suggest.js"></script>
+<script src="planv3.js"></script>
 <script src="form.js"></script>
 <script src="rules.js"></script>
 <script src="strategy_versions.js"></script>

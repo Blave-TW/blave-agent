@@ -115,11 +115,12 @@ if hooks:
           not re.search("[A-Za-z]", ctx["additionalContext"]), ctx)
 check("the per-message pin is still the last line of the prompt", s["prompt"].rstrip().endswith("[用中文回覆這則訊息,<suggest> 建議句也用中文]"), s["prompt"][-80:])
 pre = (s.get("hooks") or {}).get("PreToolUse") or []
-check("desktop: PreToolUse hooks on Bash／PowerShell — background guard, credentials guard, then the OS scheduler (cases: tests/check_bg_backtest_guard.py, tests/check_cred_guard.py, tests/check_desktop_sched_guard.py)",
+check("desktop: PreToolUse hooks — background guard, credentials guard, secret code, the stdlib-name Write/Edit guard, then the OS scheduler (cases: tests/check_bg_backtest_guard.py, tests/check_cred_guard.py, tests/check_stdlib_shadow.py, tests/check_desktop_sched_guard.py)",
       [h["hooks"][0].__qualname__ for h in pre] == ["_bg_guard_hooks.<locals>.guard", "_cred_bash_guard_hooks.<locals>.guard",
-                                                     "_secret_code_bash_guard_hooks.<locals>.guard", "_sched_guard_hooks.<locals>.guard"]
-      and all(h["matcher"] == at.SHELL_TOOL_MATCHER for h in pre)
-      and asyncio.run(pre[3]["hooks"][0]({"tool_input": {"command": "crontab -l"}}, "t1", None))["hookSpecificOutput"]["permissionDecision"] == "deny", s.get("hooks"))
+                                                     "_secret_code_bash_guard_hooks.<locals>.guard",
+                                                     "_stdlib_shadow_edit_hooks.<locals>.guard", "_sched_guard_hooks.<locals>.guard"]
+      and [h["matcher"] for h in pre] == [at.SHELL_TOOL_MATCHER] * 3 + ["Write|Edit", at.SHELL_TOOL_MATCHER]
+      and asyncio.run(pre[4]["hooks"][0]({"tool_input": {"command": "crontab -l"}}, "t1", None))["hookSpecificOutput"]["permissionDecision"] == "deny", s.get("hooks"))
 
 s = turn("find me two bitcoin news items today and list the sources")
 check("English question → the rule names English", "Write everything the user sees in English" in s["system"], s["system"][-600:])
@@ -184,11 +185,11 @@ class _Web(at.WebSink):
 seen.clear()
 with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
     asyncio.run(at.run_turn("s9", ZH, "sonnet", _Web("http://x/report", "t", "s9")))
-check("fleet (web) turns get the background and credentials guards only (the language / scheduler hooks are not verified on a machine yet)",
+check("fleet (web) turns get the background, credentials, secret-code and stdlib-name guards only (the language / scheduler hooks are not verified on a machine yet)",
       list((seen.get("hooks") or {})) == ["PreToolUse"]
       and [h["hooks"][0].__qualname__ for h in seen["hooks"]["PreToolUse"]]
       == ["_bg_guard_hooks.<locals>.guard", "_cred_bash_guard_hooks.<locals>.guard",
-          "_secret_code_bash_guard_hooks.<locals>.guard"], seen.get("hooks"))
+          "_secret_code_bash_guard_hooks.<locals>.guard", "_stdlib_shadow_edit_hooks.<locals>.guard"], seen.get("hooks"))
 codex_engine.run = fake_run
 turn(ZH, engine="codex", codex_bin="/x/codex")
 check("Codex: the same rule rides in front of the prompt, before the conversation",

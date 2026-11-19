@@ -96,7 +96,7 @@ app.whenReady().then(async () => {
   await w.loadFile(path.join(R, "index.html"));
   await wait(1200);
   const js = (s) => w.webContents.executeJavaScript(s, true);
-  await js(`(async () => { document.getElementById("rpt-nav").click(); await new Promise((r) => setTimeout(r, 150)); })()`);
+  await js(`(async () => { rptMenuGo(); await new Promise((r) => setTimeout(r, 150)); })()`);
   for (const c of CASES) {
     await js(`(() => { const g = (x) => document.getElementById(x), host = g("rpt-read"); g("rpt-rows").hidden = true; g("rpt-rows").textContent = ""; host.hidden = false; host.textContent = "";
       window.renderAgentReport(host, ${JSON.stringify(c.report)}, { apiBase: "", i18n: {}, imageUrl: () => "", markdown: (x) => x }); })()`);

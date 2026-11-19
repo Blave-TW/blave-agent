@@ -114,11 +114,11 @@ function rig(o = {}) {
     return c;
   };
   const S = E.createEngineSetup({
-    fs, path, spawn, base, ws, venvPy, venvBin: "bin", win: false, basePython: () => "/bundled/python3", envPath: o.envPath || (async () => "/usr/bin:/bin"),
+    fs: o.fs || fs, path, spawn, base, ws, venvPy, venvBin: "bin", win: false, basePython: () => "/bundled/python3", envPath: o.envPath || (async () => "/usr/bin:/bin"),
     pyEnv: { PYTHONUTF8: "1" }, copyOfficial: () => { fs.mkdirSync(path.join(ws, "lib"), { recursive: true }); }, isPackaged: true,
     sdkPins: o.sdk || SDK, deps: o.deps || DEPS, lock: o.lock, optional: o.optional || OPT, firstRunMB: 200, venvMs: 300000, engineMs: 600000, pkgMs: o.pkgMs || 600000,
     // 假子行程的 pid(5000+n)可能撞到本機真的行程:探針預設當它死了,否則 waitLock 在假時鐘下永遠等不完
-    idleMs: o.idleMs, watchMs: 5, alive: o.alive || (() => false), sleep: o.sleep, lockWaitMs: o.lockWaitMs, setPriority: (pid) => prio.push(pid),
+    pyVersion: o.pyVersion, venvInUse: o.venvInUse, idleMs: o.idleMs, watchMs: 5, alive: o.alive || (() => false), sleep: o.sleep, lockWaitMs: o.lockWaitMs, setPriority: (pid) => prio.push(pid),
     // 網路類失敗的自動重跑(0.1.55)另在 tests/check_shell_engine_net_retry.js 測;這裡的斷言都是「失敗一次就停」的那一條
     netRetryMs: o.netRetryMs || [],
     groupMB: o.groupMB === undefined ? { core: 100, us: 10 } : o.groupMB, pipCacheDir: o.pipCacheDir, procStart: o.procStart, killPid: o.killPid,
@@ -617,7 +617,13 @@ const venvDir = (r) => path.join(r.base, "venv");
     ok("WORKSPACE_LOCK_FOR 對得上現在的 SDK_PINS + WORKSPACE_DEPS(對不上 = 換了直接相依沒重解鎖:跑 node shell/tools/lock-deps.js 貼回 main.js)", FOR === E.lockKey(SDK, MAIN_DEPS), { FOR, now: E.lockKey(SDK, MAIN_DEPS) });
     ok("WORKSPACE_LOCK:每行都是 名字==版本、不重複、不含直接相依(那些已經在清單裡)", LOCK.length >= 30 && LOCK.every((l) => /^[a-z0-9][a-z0-9._-]*==[0-9][0-9A-Za-z.+!-]*$/.test(l)) && new Set(LOCK.map(nn)).size === LOCK.length && !LOCK.some((l) => direct.has(nn(l))), LOCK.filter((l) => direct.has(nn(l))));
     ok("lockKey:SDK 或清單任一個換了就不一樣", E.lockKey(SDK, MAIN_DEPS) !== E.lockKey(SDK2, MAIN_DEPS) && E.lockKey(SDK, MAIN_DEPS) !== E.lockKey(SDK, [bump(MAIN_DEPS[0]), ...MAIN_DEPS.slice(1)]) && E.lockKey(SDK, MAIN_DEPS) === E.lockKey(SDK, [...MAIN_DEPS]));
-    ok("接線:main.js 只在 WORKSPACE_LOCK_FOR 對得上時才帶鎖,對不上帶空的", /lock: WORKSPACE_LOCK_FOR === require\("\.\/enginesetup"\)\.lockKey\(SDK_PINS, WORKSPACE_DEPS\) \? WORKSPACE_LOCK : \[\],/.test(MAIN_SRC)); }
+    ok("接線:main.js 只在 WORKSPACE_LOCK_FOR 對得上時才帶鎖,對不上帶空的", /lock: WORKSPACE_LOCK_FOR === require\("\.\/enginesetup"\)\.lockKey\(SDK_PINS, WORKSPACE_DEPS\) \? WORKSPACE_LOCK : \[\],/.test(MAIN_SRC));
+    // shell/requirements.txt、constraints.txt 只給 Dependabot 掃,安裝照 main.js;Dependabot 改了那兩個檔沒改 main.js 就在這裡紅
+    const lines = (f) => fs.readFileSync(path.join(SHELL, f), "utf8").split("\n").map((l) => l.trim()).filter((l) => l && !l.startsWith("#"));
+    const req = lines("requirements.txt"), want = ["-c constraints.txt", ...SDK.split(" "), ...MAIN_DEPS];
+    ok("shell/requirements.txt 逐行等於 -c constraints.txt + SDK_PINS + WORKSPACE_DEPS", req.join("\n") === want.join("\n"), req.filter((l, i) => l !== want[i]));
+    const con = lines("constraints.txt");
+    ok("shell/constraints.txt 逐行等於 WORKSPACE_LOCK", con.join("\n") === LOCK.join("\n"), con.filter((l, i) => l !== LOCK[i])); }
 
   // ── certifi 直接釘(eMudhra 中繼 CA 外洩,GHSA-6q48-6c7w-9gw2 要 ≥ 2026.10.19):只放鎖裡的話既有 venv 永遠不升 ──
   { const cp = MAIN_DEPS.filter((p) => nn(p) === "certifi"), ver = cp.length === 1 ? cp[0].split("==")[1].split(".").map(Number) : [];
@@ -707,6 +713,112 @@ const venvDir = (r) => path.join(r.base, "venv");
     for (let i = 0; i < E.FAIL_LOG_KEEP + 5; i++) { try { await many.S.ensure(); } catch (_) { /* 預期 */ } }
     ok("engine-setup.log 只留最近 " + E.FAIL_LOG_KEEP + " 筆", fs.readFileSync(path.join(many.base, "state", "engine-setup.log"), "utf8").split("\n").filter(Boolean).length === E.FAIL_LOG_KEEP);
     ok("送出點:enginesetup.js 失敗那段 engine_fail 跟 engine_setup 同一個條件(relink、自己收掉的不送)", /if \(!e\.aborted\) \{ const why = engineFailWhy\(S\.err\.step, S\.cur && S\.cur\.sub, e\); failLog\(why, S\.err\.step, e\); if \(S\.kind !== "relink"\) trackWhy\(why\); \}/.test(fs.readFileSync(path.join(SHELL, "enginesetup.js"), "utf8"))); }
+
+  // ── Python 隔離(稽核 desktop-python-isolation M2／S1,0.1.57)──
+  { // 用戶系統層的 PYTHON*／PIP_* 不進建 venv、pip、compileall;我們自己的 pyEnv 照帶
+    const SET = { PYTHONHOME: "/evil/home", PYTHONPATH: "/evil/site", pythonstartup: "/evil/s.py", PIP_INDEX_URL: "https://evil.example/simple", PIP_NO_BINARY: ":all:" };
+    const saved = {}; for (const k of Object.keys(SET)) { saved[k] = process.env[k]; process.env[k] = SET[k]; }
+    const r = rig();
+    try { await r.S.ensure(); await r.settle(); } finally { for (const k of Object.keys(SET)) { if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k]; } }
+    const kinds = ["venv", "pip", "compileall"].map((w) => r.calls.find((c) => c.args.includes(w)));
+    ok("建 venv、pip、compileall 都不帶用戶的 PYTHONHOME／PYTHONPATH／PYTHONSTARTUP(不分大小寫)／PIP_*;PYTHONUTF8 與 PATH 照我們的",
+      kinds.every(Boolean) && kinds.every((c) => !Object.keys(c.env).some((k) => /^(PYTHON(HOME|PATH|STARTUP)|PIP_)/i.test(k)) && c.env.PYTHONUTF8 === "1" && c.env.PATH === "/usr/bin:/bin"),
+      kinds.map((c) => c && Object.keys(c.env).filter((k) => /^(PYTHON|PIP_)/i.test(k))));
+    ok("其餘環境照帶(HOME 還在)", kinds.every((c) => c && c.env.HOME === process.env.HOME));
+  }
+  { // venv 版本記號:建 venv 的 Python minor 換了就整個重建,記號檔不能說「裝好了」
+    ok("venvCfgMinor 讀 pyvenv.cfg 的 version", E.venvCfgMinor("home = /x/bin\ninclude-system-site-packages = false\nversion = 3.12.14\n") === "3.12" && E.venvCfgMinor("") === null);
+    const lay = { "/R/python-arm64/lib": ["libpython3.12.dylib", "python3.12", "pkgconfig"], "C:/R/python-x64": ["python3.dll", "python312.dll", "python.exe"] };
+    const rd = (d) => { if (!lay[d.replace(/\\/g, "/")]) throw new Error("ENOENT"); return lay[d.replace(/\\/g, "/")]; };
+    ok("basePyMinor 看檔案佈局:mac lib/python3.N、Windows python3NN.dll(python3.dll 不算);系統的 python3 → null",
+      E.basePyMinor("/R/python-arm64/bin/python3", false, rd) === "3.12" && E.basePyMinor("python3", false, rd) === null
+      && (process.platform === "win32" ? E.basePyMinor("C:/R/python-x64/python.exe", true, rd) === "3.12" : true));
+    const a = rig(); await a.S.ensure(); await a.settle();
+    fs.writeFileSync(path.join(venvDir(a), "pyvenv.cfg"), "home = /bundled\nversion = 3.12.14\n");
+    fs.writeFileSync(path.join(venvDir(a), "old-site-marker"), "x");
+    const same = rig({ base: a.base, pyVersion: () => "3.12" }); await same.S.ensure(); await same.settle();
+    ok("同一個 minor(既有 venv 還沒有 .blave-python,看 pyvenv.cfg):什麼都不重裝,補寫記號 3.12",
+      same.calls.filter((c) => !c.args.includes("compileall")).length === 0 && fs.readFileSync(path.join(venvDir(a), ".blave-python"), "utf8") === "3.12", same.calls.map((c) => c.args.slice(0, 3)));
+    const up = rig({ base: a.base, pyVersion: () => "3.13" }); await up.S.ensure(); await up.settle();
+    ok("升 minor(記號 3.12 → 3.13):整個 venv 重建(舊檔不在)、重建 venv、SDK 與套件重裝、記號改 3.13",
+      up.calls[0] && up.calls[0].args.join(" ") === "-m venv " + venvDir(up) && batches(up).join("|") === [SDK, DEPS.join(" ")].join("|")
+      && !fs.existsSync(path.join(venvDir(up), "old-site-marker")) && fs.readFileSync(path.join(venvDir(up), ".blave-python"), "utf8") === "3.13", { calls: up.calls.map((c) => c.args.slice(0, 3)), logs: up.logs.slice(-3) });
+  }
+
+  { // 版本對不上時的順序(稽核 release-0157-merged M2):有人在用就不動;動就整個搬開(全有或全無)、不 rmSync 刪一半;搬開的背景刪
+    const old312 = async () => { const a = rig(); await a.S.ensure(); await a.settle();
+      fs.writeFileSync(path.join(venvDir(a), ".blave-python"), "3.12"); fs.writeFileSync(path.join(venvDir(a), "site-file.py"), "x"); return a; };
+    const olds = (base) => fs.readdirSync(base).filter((n) => /^venv\.old-/.test(n));
+    const until = async (f) => { for (let k = 0; k < 500 && !f(); k++) await new Promise((x) => setTimeout(x, 2)); return f(); };
+
+    const a = await old312();
+    const busy = rig({ base: a.base, pyVersion: () => "3.13", venvInUse: () => true }); await busy.S.ensure(); await busy.settle();
+    ok("交易主機或回合在跑:venv 不動(檔都在)、不建 venv、不重裝、記號不改成新版本,log 說下次開再建",
+      fs.existsSync(path.join(venvDir(a), "site-file.py")) && olds(a.base).length === 0 && busy.calls.filter((c) => !c.args.includes("compileall")).length === 0
+      && fs.readFileSync(path.join(venvDir(a), ".blave-python"), "utf8") === "3.12" && busy.logs.some((l) => /in use, rebuild on next launch/.test(l)), { calls: busy.calls.map((c) => c.args.slice(0, 3)), logs: busy.logs.slice(-2) });
+
+    const lockedFs = Object.assign(Object.create(fs), { renameSync: () => { throw Object.assign(new Error("EBUSY"), { code: "EBUSY" }); }, rmSync: () => { throw new Error("不該刪"); } });
+    const lk = rig({ base: a.base, pyVersion: () => "3.13", fs: lockedFs }); await lk.S.ensure(); await lk.settle();
+    ok("Windows 有檔被鎖、搬不動:一個檔都沒少(不 rmSync 刪一半)、照用舊的、記號不改", fs.existsSync(path.join(venvDir(a), "site-file.py")) && fs.existsSync(path.join(venvDir(a), ".blave-sdk"))
+      && fs.readFileSync(path.join(venvDir(a), ".blave-python"), "utf8") === "3.12" && lk.logs.some((l) => /could not move it aside \(EBUSY\)/.test(l)), lk.logs.slice(-2));
+
+    fs.unlinkSync(path.join(venvDir(a), "bin", "python"));
+    const gone = rig({ base: a.base, pyVersion: () => "3.13", venvInUse: () => true }); let ge = null;
+    try { await gone.S.ensure(); } catch (e) { ge = e; }
+    ok("搬不開又沒有 python:這輪失敗,不在舊版本的 site-packages 上原地建", ge && /another Python version/.test(ge.message) && gone.calls.length === 0 && fs.existsSync(path.join(venvDir(a), "site-file.py")), ge && ge.message);
+    fs.writeFileSync(path.join(venvDir(a), "bin", "python"), "");
+
+    fs.mkdirSync(path.join(a.base, "venv.old-1", "Lib"), { recursive: true }); fs.writeFileSync(path.join(a.base, "venv.old-1", "Lib", "half.pyd"), "x");   // 上次刪到一半
+    const up = rig({ base: a.base, pyVersion: () => "3.13", venvInUse: () => false }); await up.S.ensure(); await up.settle();
+    ok("沒人在用:舊 venv 搬開、原地重建、SDK 與套件重裝、記號 3.13", up.calls[0] && up.calls[0].args.join(" ") === "-m venv " + venvDir(up) && batches(up).join("|") === [SDK, DEPS.join(" ")].join("|")
+      && !fs.existsSync(path.join(venvDir(up), "site-file.py")) && fs.readFileSync(path.join(venvDir(up), ".blave-python"), "utf8") === "3.13", up.calls.map((c) => c.args.slice(0, 3)));
+    ok("搬開的與上次刪一半的舊 venv 都在背景刪掉;現用的 venv 不受影響", await until(() => olds(a.base).length === 0) && fs.existsSync(path.join(venvDir(up), ".blave-sdk")), olds(a.base));
+
+    // 稽核 release-0157-merged D-S1:搬開之後重建失敗 → 半成品刪掉、舊的搬回來(交易主機照舊能起),下次開 app 再搬再建
+    const pipFail = (bin, args) => (args.includes("pip") && args.includes("install") ? { code: 1, err: "ERROR: No matching distribution found for x==1\n" } : { code: 0 });
+    const c = await old312();
+    const cf = rig({ base: c.base, pyVersion: () => "3.13", venvInUse: () => false, behave: pipFail }); let ce = null;
+    try { await cf.S.ensure(); } catch (e) { ce = e; }
+    ok("重建時 pip 失敗:這輪照樣失敗;舊 venv 搬回 venv/(舊檔、舊記號 3.12 都在),沒有留下 venv.old-*",
+      ce && fs.existsSync(path.join(venvDir(c), "site-file.py")) && fs.readFileSync(path.join(venvDir(c), ".blave-python"), "utf8") === "3.12" && olds(c.base).length === 0
+      && cf.logs.some((l) => /previous venv is back/.test(l)), { e: ce && ce.message, olds: olds(c.base), logs: cf.logs.slice(-3) });
+    const cOk = rig({ base: c.base, pyVersion: () => "3.13", venvInUse: () => false }); await cOk.S.ensure(); await cOk.settle();
+    ok("…下次再試:再搬一次、建好、記號 3.13", fs.readFileSync(path.join(venvDir(c), ".blave-python"), "utf8") === "3.13" && await until(() => olds(c.base).length === 0));
+    const x = await old312();
+    ok("(前提)開機搬開了就關 app:只剩 venv.old-*", rig({ base: x.base, pyVersion: () => "3.13" }).S.retireStale() === "retired" && !fs.existsSync(venvDir(x)) && olds(x.base).length === 1);
+    const xf = rig({ base: x.base, pyVersion: () => "3.13", behave: pipFail }); try { await xf.S.ensure(); } catch (_) { /* 預期 */ }
+    ok("跨啟動:下次開 app 重建又失敗 → 拿最新的 venv.old-* 搬回來", fs.existsSync(path.join(venvDir(x), "site-file.py")) && olds(x.base).length === 0, olds(x.base));
+    // 稽核 D2-S1:重建到一半當機／斷電(新 venv 的 python 有了、套件沒裝完,app 沒走 restoreRetired)
+    const mark = (base) => path.join(base, "venv-rebuild.json");
+    const crash = async () => { const k = await old312(); ok("(前提)搬開時落地重建記號", rig({ base: k.base, pyVersion: () => "3.13" }).S.retireStale() === "retired" && fs.existsSync(mark(k.base)));
+      fs.mkdirSync(path.join(venvDir(k), "bin"), { recursive: true }); fs.writeFileSync(k.venvPy, ""); fs.writeFileSync(path.join(venvDir(k), "pyvenv.cfg"), "version = 3.13.1\n"); return k; };
+    const k1 = await crash();
+    ok("下次開機那一步:記號在、venv 不完整 → 半成品刪掉(交易主機不在缺套件的 venv 上起)、記號留著", rig({ base: k1.base, pyVersion: () => "3.13" }).S.retireStale() === "ok"
+      && !fs.existsSync(k1.venvPy) && fs.existsSync(mark(k1.base)));
+    const k2 = await crash();
+    const k2f = rig({ base: k2.base, pyVersion: () => "3.13", behave: pipFail }); try { await k2f.S.ensure(); } catch (_) { /* 預期 */ }
+    ok("…接著重建又失敗 → 舊 venv 搬回來、記號清掉", fs.existsSync(path.join(venvDir(k2), "site-file.py")) && !fs.existsSync(mark(k2.base)) && olds(k2.base).length === 0, { olds: olds(k2.base), logs: k2f.logs.slice(-3) });
+    const k3 = await crash();
+    const k3ok = rig({ base: k3.base, pyVersion: () => "3.13" }); await k3ok.S.ensure(); await k3ok.settle();
+    ok("…或接著重建成功 → 新 venv 3.13、記號清掉、舊的背景刪", fs.readFileSync(path.join(venvDir(k3), ".blave-python"), "utf8") === "3.13" && !fs.existsSync(mark(k3.base)) && await until(() => olds(k3.base).length === 0));
+    const k4 = await old312(); rig({ base: k4.base, pyVersion: () => "3.13" }).S.retireStale(); const k4b = rig({ base: k4.base, pyVersion: () => "3.13" }); await k4b.S.ensure(); await k4b.settle();
+    fs.writeFileSync(mark(k4.base), JSON.stringify({ old: path.join(k4.base, "venv.old-1"), at: 1 }));
+    ok("建好之後、清記號之前斷電:venv 完整 → 只清記號,不動 venv", rig({ base: k4.base, pyVersion: () => "3.13" }).S.retireStale() === "ok" && !fs.existsSync(mark(k4.base)) && fs.existsSync(k4.venvPy));
+    fs.writeFileSync(mark(k4.base), JSON.stringify({ old: "/etc", at: 1 }));
+    ok("記號指到 BASE 以外 → 不理、清掉(不拿它指路)", rig({ base: k4.base, pyVersion: () => "3.13" }).S.retireStale() === "ok" && !fs.existsSync(mark(k4.base)) && fs.existsSync(k4.venvPy));
+
+    const y = rig(); await y.S.ensure(); await y.settle();
+    const yf = rig({ base: y.base, sdk: SDK2, behave: pipFail }); try { await yf.S.ensure(); } catch (_) { /* 預期 */ }
+    ok("沒有搬開過(一般的 SDK 更新失敗):venv 不動、不刪", fs.existsSync(path.join(venvDir(y), ".blave-deps-1")) && fs.existsSync(y.venvPy) && !yf.logs.some((l) => /previous venv/.test(l)));
+
+    const b = await old312();
+    ok("retireStale(開機、交易主機起來之前叫):沒人在用 → 搬開、回 retired;venv 沒了,交易主機會等重建", rig({ base: b.base, pyVersion: () => "3.13" }).S.retireStale() === "retired"
+      && !fs.existsSync(venvDir(b)) && olds(b.base).length === 1);
+    const MAIN = fs.readFileSync(path.join(SHELL, "main.js"), "utf8");
+    ok("main.js:背景安裝失敗也試著起交易主機(舊 venv 搬回來的話對帳器照跑)", /ensureEngineShared\(\)\.then\(\(\) => tradeStartIfReady\(\), \(e\) => \{ console\.error\("\[engine\] background setup failed: " \+ \(\(e && e\.message\) \|\| e\)\); tradeStartIfReady\(\); \}\);/.test(MAIN));
+    ok("main.js:開機先 retireStale 再起交易主機;venvInUse 看回合與交易主機", MAIN.indexOf('startStep("venv version", () => engineSetup().retireStale())') > 0
+      && MAIN.indexOf('startStep("venv version"') < MAIN.indexOf('startStep("trade host", tradeStartIfReady)') && /venvInUse: \(\) => anyTurn\(\) \|\| !!\(_tradeHost && _tradeHost\.status\(\)\.running\)/.test(MAIN));
+  }
 
   for (const d of TMPS) fs.rmSync(d, { recursive: true, force: true });
   process.exit(red ? 1 : 0);

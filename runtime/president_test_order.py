@@ -32,6 +32,7 @@ import time
 from urllib.parse import urlparse
 
 import atomic_file  # runtime/, next to this script (sys.path[0] when run as one)
+import secret_imports
 
 ROOT = "TMF"
 REPLY_WAIT_S = 15
@@ -106,7 +107,9 @@ def _send(api, order_cls, reports, actno, productid, bs, lots, closing):
 
 
 def run(workspace):
-    sys.path.insert(0, os.path.join(workspace, "lib"))
+    # the vault and contracts by bare name, from <ws>/lib only (audit 2026-11-19 M1; local_daemon._workspace_lib);
+    # the vault's own `from events import emit` stays runtime/events.py, as before
+    secret_imports.install(workspace, ("president_vault", "president_contracts", "winreplace"))
     import president_vault as pv
     from president_contracts import computed_near
 

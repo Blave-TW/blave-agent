@@ -26,6 +26,7 @@ import contextlib
 import datetime
 import io
 import json
+import re
 import os
 import shutil
 import subprocess
@@ -350,58 +351,62 @@ check("6d …and run_probe through the same one catch-all", st6d["state"] == "un
 pc._local_run = real_local_run
 
 # ── 6b. test environment (the cloud's president_host / president_test_order, same runtime code) ──
+EXP = node_seal(GOOD)  # the app's expect on login steps: the pair it saved (= the one this daemon holds here)
 probes = []
 real_probe = pc.run_probe
 pc.run_probe = lambda push=None: probes.append(pc.current_env()) or (
     pc._update("probe", status="ok", state="ok", env=pc.current_env()) and {"state": "ok", "env": pc.current_env()})
 check("6b start before production → TEST_ENV (the worker never runs on the test host)",
-      code_of(lambda: pc.local_dispatch({"op": "start"}, D).run()) == "TEST_ENV")
+      code_of(lambda: pc.local_dispatch({"op": "start", "expect": EXP}, D).run()) == "TEST_ENV")
 check("6b a host outside the two allowed → HOST_NOT_ALLOWED, before anything runs",
-      code_of(lambda: pc.local_dispatch({"op": "host", "url": "evil.example.com"}, D)) == "HOST_NOT_ALLOWED")
+      code_of(lambda: pc.local_dispatch({"op": "host", "expect": EXP, "url": "evil.example.com"}, D)) == "HOST_NOT_ALLOWED")
 check("6b host takes exactly one of env / url", code_of(lambda: pc.local_dispatch({"op": "host"}, D)) == "BAD_ARGS"
-      and code_of(lambda: pc.local_dispatch({"op": "host", "env": "prod"}, D)) == "BAD_ARGS")
-r6 = pc.local_dispatch({"op": "host", "url": " https://test167.pfctrade.com/ "}, D).run()
+      and code_of(lambda: pc.local_dispatch({"op": "host", "env": "prod"}, D)) == "BAD_ARGS"
+      and code_of(lambda: pc.local_dispatch({"op": "host", "expect": EXP, "env": "live", "url": "test167.pfctrade.com"}, D)) == "BAD_ARGS"
+      and code_of(lambda: pc.local_dispatch({"op": "host", "expect": EXP}, D)) == "BAD_ARGS")
+r6 = pc.local_dispatch({"op": "host", "expect": EXP, "url": " https://test167.pfctrade.com/ "}, D).run()
 check("6b the address as mailed → the test host, then the probe there", r6["env"] == "test" and probes[-1] == "test"
       and pc.read_status()["probe"]["env"] == "test")
 ran = []
 real_order = pc.run_test_order
 pc.run_test_order = lambda push=None: ran.append(pc.current_env()) or {"state": "accepted"}
-pc.local_dispatch({"op": "test_order"}, D).run()
+pc.local_dispatch({"op": "test_order", "expect": EXP}, D).run()
 check("6b test order after a test-host probe", ran == ["test"])
-pc.local_dispatch({"op": "host", "env": "live"}, D).run()
+pc.local_dispatch({"op": "host", "expect": EXP, "env": "live"}, D).run()
 check("6b 營業員說開好了 = host live: bundle switched, probe on production",
       pc._LOCAL["secrets"]["live"] is True and probes[-1] == "live" and pc.read_status()["env"] == "live")
-check("6b test order on production → LIVE_ENV", code_of(lambda: pc.local_dispatch({"op": "test_order"}, D)) == "LIVE_ENV")
+check("6b test order on production → LIVE_ENV", code_of(lambda: pc.local_dispatch({"op": "test_order", "expect": EXP}, D)) == "LIVE_ENV")
 # 6e. production access already open (a reinstall, a second computer): host live straight from the test section
 pc._update("test_order", status="ok")
-pc.local_dispatch({"op": "host", "env": "live"}, D).run()
+pc.local_dispatch({"op": "host", "expect": EXP, "env": "live"}, D).run()
 check("6e host live after a test order: not a skip", pc.read_status().get("test_skipped") is False)
 pc._update("test_order", reset=True, status="idle")
-pc.local_dispatch({"op": "host", "env": "test"}, D).run()
+pc.local_dispatch({"op": "host", "expect": EXP, "env": "test"}, D).run()
 n_probes = len(probes)
-pc.local_dispatch({"op": "host", "env": "live"}, D).run()
+pc.local_dispatch({"op": "host", "expect": EXP, "env": "live"}, D).run()
 check("6e host live with no test order = the test section skipped: env live, probe on production, test_skipped",
       pc.read_status()["env"] == "live" and probes[-1] == "live" and pc.read_status().get("test_skipped") is True
       and pc._LOCAL["secrets"]["live"] is True)
 n_probes = len(probes)
-pc.local_dispatch({"op": "host", "env": "test"}, D).run()
+pc.local_dispatch({"op": "host", "expect": EXP, "env": "test"}, D).run()
 check("6e …back to the test section from a skip: the switch only (no login against the default test host), rows doable again",
       pc.read_status()["env"] == "test" and len(probes) == n_probes and pc.read_status().get("test_skipped") is False
       and pc.read_status()["probe"]["status"] == "idle", json.dumps(pc.read_status()["probe"]))
 # 6e. a skip belongs to the account, not the machine (audit integ-0118 third B-2): skip, then bind another
 # account → its first test-host login (host {url}) is a real login, not "back from a skip" (switch only)
-pc.local_dispatch({"op": "host", "env": "live"}, D).run()
+pc.local_dispatch({"op": "host", "expect": EXP, "env": "live"}, D).run()
 check("6e setup: skipped again", pc.read_status().get("test_skipped") is True)
 cert(dict(GOOD, account="70000099999"))
+EXP2 = node_seal(dict(GOOD, account="70000099999"))  # the daemon now holds this account
 n_probes = len(probes)
-pc.local_dispatch({"op": "host", "url": " https://test167.pfctrade.com/ "}, D).run()
+pc.local_dispatch({"op": "host", "expect": EXP2, "url": " https://test167.pfctrade.com/ "}, D).run()
 check("6e skip, then another account bound → test_skipped off, its first host {url} probes the test host",
       pc.read_status().get("test_skipped") is False and len(probes) == n_probes + 1 and probes[-1] == "test"
       and pc.read_status()["env"] == "test", json.dumps(pc.read_status()))
 # 6e. skipped, then the test-host row's own press (host {url}) — a real login, the switch-only rule is {env: test}'s alone
-pc.local_dispatch({"op": "host", "env": "live"}, D).run()
+pc.local_dispatch({"op": "host", "expect": EXP2, "env": "live"}, D).run()
 n_probes = len(probes)
-pc.local_dispatch({"op": "host", "url": "test167.pfctrade.com"}, D).run()
+pc.local_dispatch({"op": "host", "expect": EXP2, "url": "test167.pfctrade.com"}, D).run()
 check("6e skipped, then host {url}: logs in on the test host, skip cleared",
       len(probes) == n_probes + 1 and probes[-1] == "test" and pc.read_status().get("test_skipped") is False
       and pc.read_status()["env"] == "test")
@@ -717,7 +722,49 @@ os.environ["BLAVE_AGENT_LOCAL"] = "1"
 check("10 an unknown op / extra key → BAD_ARGS", code_of(lambda: pc.local_dispatch({"op": "x"}, D)) == "BAD_ARGS"
       and code_of(lambda: pc.local_dispatch({"op": "start", "sealed": "x"}, D)) == "BAD_ARGS")
 check("10 probe before the credentials are handed over → NO_SECRETS",
-      code_of(lambda: pc.local_dispatch({"op": "probe"}, D)) == "NO_SECRETS")
+      code_of(lambda: pc.local_dispatch({"op": "probe", "expect": node_seal(GOOD)}, D)) == "NO_SECRETS")
+
+# ── 10b. the daemon is the judge of which pair it logs in with (audit release-0157-merged D-M1, D-S2) ──
+# The app saw the certificate step as SENT and moved on, but the step failed here: this daemon still holds the
+# old account. Or a changed trading password whose rebind failed: it holds the old password. Either way a
+# 「確認登入」 would log in to 統一 with the wrong pair and spend one of its three tries.
+held_before = pc._LOCAL["secrets"]
+pc._LOCAL["secrets"] = {"account": ACCT, "password": PW, "ca_password": CAPW, "live": False}
+logins = []
+real_probe10, real_order10, real_start10, real_host10 = pc.run_probe, pc.run_test_order, pc._local_start, pc._local_host
+pc.run_probe = lambda push=None: logins.append("probe")
+pc.run_test_order = lambda push=None: logins.append("test_order")
+pc._local_start = lambda push=None: logins.append("start")
+pc._local_host = lambda target, push, by_env=True: logins.append("host")
+# every op that logs in (host: switch, then probe there — both shapes); the list itself is pinned against
+# the code that calls run_probe / run_test_order / the worker start, so a new login path has to join it
+LOGIN_SHAPES = {"probe": [{}], "test_order": [{}], "start": [{}], "host": [{"env": "live"}, {"env": "test"}, {"url": "test167.pfctrade.com"}]}
+check("10b the login ops are exactly probe / test_order / start / host (= shell/president_local.js LOGIN_OPS)",
+      set(pc._LOGIN_OPS) == set(LOGIN_SHAPES) and set(LOGIN_SHAPES) <= set(pc.LOCAL_OPS), pc._LOGIN_OPS)
+_src = open(os.path.join(ROOT, "runtime", "president_connect.py"), encoding="utf-8").read()
+_jobs = _src[_src.index("def _local_jobs("):_src.index("def local_dispatch(")]
+_reach = set()
+for _br in re.split(r"\n    if op", _jobs)[1:]:   # one branch per top-level `if op …` in _local_jobs
+    if re.search(r"\b(run_probe|run_test_order|_local_start|_local_host)\(", _br):
+        _reach |= set(re.findall(r'"(\w+)"', _br.split("\n", 1)[0])) & set(pc.LOCAL_OPS)
+check("10b every op whose job reaches run_probe / run_test_order / _local_start / _local_host is a login op", _reach <= set(pc._LOGIN_OPS), _reach)
+for op, shapes in LOGIN_SHAPES.items():
+    for extra in shapes:
+        check(f"10b {op} {extra or ''} with the app's new account while the daemon holds the old one → SECRETS_STALE, no login",
+              code_of(lambda: pc.local_dispatch(dict({"op": op, "expect": node_seal(dict(GOOD, account="70000099999"))}, **extra), D)) == "SECRETS_STALE"
+              and logins == [], logins)
+        check(f"10b {op} {extra or ''} without expect → BAD_ARGS", code_of(lambda: pc.local_dispatch(dict({"op": op}, **extra), D)) == "BAD_ARGS" and logins == [])
+check("10b same account, a new trading password the daemon never got → SECRETS_STALE",
+      code_of(lambda: pc.local_dispatch({"op": "probe", "expect": node_seal(dict(GOOD, password="new-pw"))}, D)) == "SECRETS_STALE" and logins == [])
+check("10b a login step without expect → BAD_ARGS (nothing logs in on the daemon's guess)",
+      code_of(lambda: pc.local_dispatch({"op": "probe"}, D)) == "BAD_ARGS" and logins == [])
+check("10b expect that does not open → SEAL_INVALID", code_of(lambda: pc.local_dispatch({"op": "probe", "expect": "eA=="}, D)) == "SEAL_INVALID")
+check("10b the pair it holds → probe gets past the pair check (here it stops at the next gate: no certificate since §9)",
+      code_of(lambda: pc.local_dispatch({"op": "probe", "expect": node_seal(GOOD)}, D)) == "CERT_MISSING" and logins == [])
+pc.local_dispatch({"op": "start", "expect": node_seal(GOOD)}, D).run()
+check("10b the pair it holds → start runs", logins == ["start"], logins)
+pc.run_probe, pc.run_test_order, pc._local_start, pc._local_host = real_probe10, real_order10, real_start10, real_host10
+pc._LOCAL["secrets"] = held_before
 check("10 president_local is local-only: not in the api's list, accepted by the daemon's parser",
       "president_local" in ld.LOCAL_ONLY and "president_local" not in ld.ALLOWED | ld.CLOUD_ONLY
       and "president_local" in cl.HANDLERS)

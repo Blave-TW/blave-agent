@@ -18,6 +18,8 @@ const CERT_CENTER_URL = "https://pki.pscnet.com.tw/";
 const ACCOUNT_RE = /^[0-9]{11}$/;
 const PW_RE = /^[^\r\n\0]{1,128}$/, CA_PW_RE = /^[^\r\n\0]{0,128}$/;   // 交易密碼不 trim(同群益 PW_RE);憑證密碼可以是空的
 const OPS = ["setup", "cert", "secrets", "probe", "host", "test_order", "start", "stop"];   // = president_connect.LOCAL_OPS
+// 會讓 daemon 拿手上那組真的登入統一的步驟(= president_connect._LOGIN_OPS;host 切完環境就在那裡登入一次)
+const LOGIN_OPS = ["probe", "test_order", "start", "host"];
 const DEFERRED_WAIT_MS = 4000;   // 長步驟在 daemon 收下後才開始跑:回條等不到是常態,畫面看 president_connect 狀態走
 const RESEND_EVERY_MS = 30000;
 
@@ -91,8 +93,11 @@ function createPresident({ userData, home, platform = process.platform, seal, ho
   }
   function info() {
     const d = load();
-    return { saved: !!d, account: d ? d.account : null, certSaved: !!d && d.ca_password !== undefined, windows: platform === "win32", pickedOther: !!picked };
+    return { saved: !!d, account: d ? d.account : null, certSaved: !!d && d.ca_password !== undefined, rebindNeeded: !!d && !rebound(d), windows: platform === "win32", pickedOther: !!picked };
   }
+  /* daemon 手上的帳號是不是存著的這個:憑證那一步交過這個帳號(sealed_acct;回條 SENT 時憑證密碼還沒存)或憑證密碼在。
+     改帳號存了新的、還沒重綁 = false:daemon 記憶體裡還是舊帳號,這時送登入會拿舊帳號真的登一次(統一三次鎖帳號) */
+  const rebound = (d) => d.ca_password !== undefined || d.sealed_acct === d.account;
   function saveCreds(a) {
     const account = a && typeof a.account === "string" ? a.account.trim() : "", password = a && typeof a.password === "string" ? a.password : "";
     if (!ACCOUNT_RE.test(account)) return { code: "BAD_ACCOUNT" };
@@ -181,7 +186,8 @@ function createPresident({ userData, home, platform = process.platform, seal, ho
     if (!sealed) return { code: "DAEMON_DOWN" };
     // 新帳號 daemon 一律從測試主機開始(回條的 env 為準)
     const r = await send("cert", { sealed }, 30000);
-    if (r.code === "OK") write(Object.assign({}, d, { ca_password: caPw }, r.result && r.result.env ? { live: r.result.env === "live" } : {}));
+    if (r.code === "OK") write(Object.assign({}, d, { ca_password: caPw, sealed_acct: d.account }, r.result && r.result.env ? { live: r.result.env === "live" } : {}));
+    else if (r.code === "SENT") write(Object.assign({}, d, { sealed_acct: d.account }));
     return r;
   }
   /* host:{env:"test"|"live"} 或 {url:信上的網址}(一定是測試主機;正式只用 env)。daemon 收下就記住要去的環境——
@@ -190,11 +196,18 @@ function createPresident({ userData, home, platform = process.platform, seal, ho
     if (OPS.indexOf(name) < 0 || name === "cert" || name === "secrets") return { code: "BAD_ARGS" };
     const o = opts || {};
     let extra = {};
-    if (name === "probe" && o.afterUnlock === true) extra = { after_unlock: true };
     if (name === "host") {
       if (o.env === "test" || o.env === "live") extra = { env: o.env };
       else if (typeof o.url === "string" && o.url.trim() && o.url.length <= 200) extra = { url: o.url.trim() };
       else return { code: "BAD_ARGS" };
+    }
+    // 會登入的步驟:先擋明顯沒重綁的;daemon 手上是哪一組只有它自己知道(憑證那一步回 SENT 之後也可能失敗),
+    // 所以把存著的帳號與交易密碼封好交過去,daemon 對不上就回 SECRETS_STALE、不登入(president_connect._held_matches)
+    if (LOGIN_OPS.indexOf(name) >= 0) {
+      const d = load(); if (!d) return { code: "NO_CREDS" }; if (!rebound(d)) return { code: "NO_CA_PW" };
+      const h = host(); if (!h || typeof h.sealPresident !== "function") return { code: "DAEMON_DOWN" };
+      const expect = h.sealPresident(bundle(d)); if (!expect) return { code: "DAEMON_DOWN" };
+      extra = Object.assign(extra, { expect });
     }
     const r = await send(name, extra, name === "stop" ? 10000 : DEFERRED_WAIT_MS);
     if (name === "host" && (r.code === "OK" || r.code === "SENT")) { const d = load(); if (d) write(Object.assign({}, d, { live: extra.env === "live" })); }

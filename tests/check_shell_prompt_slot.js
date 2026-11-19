@@ -13,7 +13,9 @@ const STR = vm.runInNewContext(read("renderer/strings.js") + "\nSTRINGS");
 // ── 假 DOM:promptslot.js 與 sideCvPaint 碰到的節點;pop 內容是 createElement 建的 ──
 const mkEl = (id, tag) => { const n = { id, tag: tag || "div", hidden: false, attrs: {}, listeners: {}, dataset: {}, children: [], parent: null, className: "", textContent: "", title: "", w: 0,
   style: {}, getBoundingClientRect: () => ({ left: 12, top: 700, width: n.w }),
-  classList: { add(c) { n.className = (n.className + " " + c).trim(); }, contains(c) { return n.className.split(" ").includes(c); } },
+  classList: { add(c) { n.className = (n.className + " " + c).trim(); }, contains(c) { return n.className.split(" ").includes(c); },
+    toggle(c, on) { const has = n.className.split(" ").includes(c); if (on && !has) n.className = (n.className + " " + c).trim(); if (!on && has) n.className = n.className.split(" ").filter((x) => x !== c).join(" "); } },
+  appendChild(k) { k.parent = n; n.children.push(k); return k; }, cloneNode() { return mkEl(null, n.tag); },
   setAttribute(k, v) { this.attrs[k] = v; }, removeAttribute(k) { delete this.attrs[k]; }, addEventListener(ev, fn) { this.listeners[ev] = fn; }, focus() { doc.lastFocus = id || n; doc.active = n; },
   append(...ks) { for (const k of ks) { k.parent = n; n.children.push(k); } }, replaceChildren(...ks) { for (const k of n.children) k.parent = null; n.children = []; n.append(...ks); },
   all() { return n.children.flatMap((k) => [k, ...(k.all ? k.all() : [])]); }, querySelector(sel) { return n.all().find((k) => k.tag === sel) || null; },
@@ -24,7 +26,7 @@ const $ = (id) => dom[id] || (dom[id] = mkEl(id));
 // 列的順序同 index.html:齒輪、手機、pop、帳號膠囊、灰字、更新。寬與 margin:齒輪 28、手機 16+28、膠囊 8+寬、更新 8+28
 const ROW = ["ws-conn", "ph-pill", "ph-pop", "side-cv", "side-note", "up-pill"];
 ROW.forEach((id) => { $(id).parent = $("foot-row"); $("foot-row").children.push($(id)); });
-const STYLE = { "ph-pill": { marginLeft: "16px" }, "side-cv": { marginLeft: "8px" }, "side-note": { marginLeft: "8px" }, "up-pill": { marginLeft: "8px" }, "ph-pop": { position: "fixed" }, "foot-row": { paddingLeft: "6px" } };
+const STYLE = { "ph-pill": { marginLeft: "8px" }, "side-cv": { marginLeft: "8px" }, "side-note": { marginLeft: "8px" }, "up-pill": { marginLeft: "8px" }, "ph-pop": { position: "fixed" }, "foot-row": { paddingLeft: "6px" } };
 const getComputedStyle = (el) => ({ display: el.hidden ? "none" : "flex", position: "static", marginLeft: "0px", marginRight: "0px", paddingLeft: "0px", ...(STYLE[el.id] || {}) });
 const feat = [], opened = [];
 const BODY = { id: "body" };
@@ -54,10 +56,10 @@ t("§3.2 六條都成立 → 出", X.slotPhPlan(OK).draw === true);
 { const row = $("foot-row");
   $("ws-conn").w = 28; $("ph-pill").w = 28; $("ph-pop").w = 240; $("side-cv").w = 66; $("up-pill").w = 28;
   $("ph-pop").hidden = false; $("side-note").hidden = true; ["ws-conn", "ph-pill", "side-cv", "up-pill"].forEach((id) => { $(id).hidden = false; });
-  const need = 6 + 28 + 16 + 28 + 8 + 66 + 8 + 28;   // 188:繁中「免費試用」+ 更新 + 手機
+  const need = 6 + 28 + 8 + 28 + 8 + 66 + 8 + 28;   // 180:繁中「免費試用」+ 更新 + 手機(0.1.57 手機前 8)
   row.clientWidth = need; t("§4.3 剛好放得下(列寬 = 加總)→ 放得下;pop(fixed)不算寬", X.slotRowFits(row) === true);
   row.clientWidth = need - 1; t("§4.3 少 1px → 放不下", X.slotRowFits(row) === false);
-  $("ph-pill").hidden = true; row.clientWidth = need - 44; t("§4.3 藏起來的不算", X.slotRowFits(row) === true);
+  $("ph-pill").hidden = true; row.clientWidth = need - 36; t("§4.3 藏起來的不算(手機 28 + 前面 8)", X.slotRowFits(row) === true);
   row.clientWidth = 0; t("§4.3 列沒排出來(寬 0)→ 當放不下,等 ResizeObserver", X.slotRowFits(row) === false);
   t("§4.3 量法:不用 scrollWidth(透明熱區會被算進去)", !/scrollWidth/.test(cut(src, "function slotRowFits(")));
   t("§4.3 ResizeObserver 掛在列與列裡會變寬的三樣(不掛手機自己)", /new ResizeObserver\(\(\) => \(typeof sideCvPaint === "function" \? sideCvPaint\(\) : slotPaint\(\)\)\); \["foot-row", "side-cv", "side-note", "up-pill"\]/.test(src)); }
@@ -76,7 +78,7 @@ t("§3.2 六條都成立 → 出", X.slotPhPlan(OK).draw === true);
   reset(); ctx.PH = { ...PHOK, signedIn: false }; X.slotPaint(); t("畫面:沒登入不出(登入膠囊旁邊不會有手機)", $("ph-pill").hidden === true && feat.length === 0);
   reset(); ctx.__revoked = true; X.slotPaint(); t("畫面:登入失效(主行程 signedIn 仍 true)不出", $("ph-pill").hidden === true);
   reset(); doc.rail = true; X.slotPaint(); t("畫面:側欄收合不出", $("ph-pill").hidden === true);
-  reset(); $("up-pill").hidden = false; $("side-cv").w = 66; row.clientWidth = 6 + 28 + 16 + 28 + 8 + 66 + 8 + 28 - 1; X.slotPaint();
+  reset(); $("up-pill").hidden = false; $("side-cv").w = 66; row.clientWidth = 6 + 28 + 8 + 28 + 8 + 66 + 8 + 28 - 1; X.slotPaint();
   t("畫面:四樣放不下 → 手機讓位,其餘三樣不動", $("ph-pill").hidden === true && $("side-cv").hidden === false && $("up-pill").hidden === false);
   row.clientWidth += 1; X.slotPaint(); t("畫面:放得下 → 手機回來", $("ph-pill").hidden === false);
 
@@ -141,14 +143,19 @@ t("§3.2 六條都成立 → 出", X.slotPhPlan(OK).draw === true);
     t("§3.1 planView 回得出的值 = spec 表上 15 個(新增一個值這條就紅,要回來補表)", missing.length === 0 && extra.length === 0 && Object.keys(SPEC).length === 15, { missing, extra });
     // 真的 sideCvPaint／sideCvClick,planView／planVars 用假的
     const S = { view: "out", v: { n: 0, t: 14 }, feat: [], hit: [], busy: false, pending: false, reopen: false };
-    const ctx2 = { $, t: ctx.t, document: { get visibilityState() { return doc.visibilityState; }, documentElement: { classList: { contains: (c) => c === "ws-sc" && doc.rail } } }, Date,
+    const ctx2 = { $, t: ctx.t, document: { get visibilityState() { return doc.visibilityState; }, documentElement: { classList: { contains: (c) => c === "ws-sc" && doc.rail } },
+      createElement: (tag) => mkEl(null, tag), createElementNS: (ns, tag) => mkEl(null, tag) }, Date,
       planView: () => S.view, planVars: () => S.v, trackFeature: (n) => S.feat.push(n), slotPaint: () => S.hit.push("slot"),
       planSignIn: () => S.hit.push("signin"), planOpen: () => S.hit.push("open"), bindGo: (n) => S.hit.push("bind:" + n),
       window: { blave: { reopenOAuth: async () => { S.hit.push("reopen"); return S.reopen; } } } };
+    Object.defineProperty(ctx2, "LANG", { get: () => ctx.LANG });
+    Object.defineProperty(ctx2, "hasToken", { get: () => S.token !== false }); Object.defineProperty(ctx2, "acct", { get: () => S.acct || null }); Object.defineProperty(ctx2, "RPT", { get: () => ({ mark: !!S.mark }) });
     Object.defineProperty(ctx2, "planLoginBusy", { get: () => S.busy }); Object.defineProperty(ctx2, "oauthPending", { get: () => S.pending });
-    const decl = app.match(/^const SIDE_CV = \{[\s\S]*?\n\};\n/m)[0] + app.match(/^let sideCvGone = [^\n]*\n/m)[0] + app.match(/^let sideBooted = [^\n]*\n/m)[0] + app.match(/^const SIDE_CV_DAY = [^\n]*\n/m)[0] + app.match(/^const SIDE_CV_FEATURE = [^\n]*\n/m)[0];
+    const decl = app.match(/^const SIDE_CV = \{[\s\S]*?\n\};\n/m)[0] + app.match(/^let sideCvGone = [^\n]*\n/m)[0] + app.match(/^let sideBooted = [^\n]*\n/m)[0] + app.match(/^const SIDE_CV_DAY = [^\n]*\n/m)[0] + app.match(/^const SIDE_CV_FEATURE = [^\n]*\n/m)[0]
+      + app.match(/^const AM = [^\n]*\n/m)[0] + app.match(/^const AM_USER = [^\n]*\n/m)[0] + ["amSignedIn", "amAnchor", "amIsOpen", "amMark", "amFirstPaint"].map((f) => cut(app, "function " + f + "(") + "\n").join("");
     const F = new Function("ctx", "with (ctx) { " + decl + cut(app, "function sideCvPaint(") + "\n" + cut(app, "async function sideCvClick(") + "\n return { sideCvPaint, sideCvClick, gone: () => sideCvGone, boot: () => { sideBooted = true; }, newDay: () => { for (const k in SIDE_CV_DAY) delete SIDE_CV_DAY[k]; } }; }")(ctx2);
     ["side-cv", "side-note", "ws-conn", "rail-set"].forEach((id) => { $(id).hidden = false; $(id).attrs = {}; $(id).title = ""; });
+    ["ws-conn", "rail-set"].forEach((id) => { $(id).replaceChildren(mkEl(null, "svg.ic")); }); $("side-menu").hidden = true;
     // 開機:token 讀到之前 hasToken 還是初值 false,真的 planView 會回 out(登入的人也一樣)——這時不畫、不記曝光
     { const pv0 = new Function("hasToken", "authRevoked", "acct", cut(app, "function planView(") + "\nreturn planView();")(false, () => false, null);
       S.view = pv0; S.v = { n: 0, t: 14 }; F.sideCvPaint();
@@ -170,8 +177,25 @@ t("§3.2 六條都成立 → 出", X.slotPhPlan(OK).draw === true);
     const notes = [0, 1, 2, 3, 4, 14].map((n) => { S.view = "trial"; S.v = { n, t: 14 }; F.sideCvPaint(); return $("side-note").hidden ? "" : $("side-note").textContent; });
     t("§3.1 試用中:剩 1–3 天出灰字「試用剩 {n} 天」,其餘空;膠囊不出", JSON.stringify(notes) === JSON.stringify(["", "試用剩 1 天", "試用剩 2 天", "試用剩 3 天", "", ""]) && $("side-cv").hidden === true, notes);
     S.view = "trial"; S.v = { n: 3, t: 14 }; F.sideCvPaint();
-    t("§6.6 有灰字時齒輪的可及名稱帶狀態;齒輪與細軌齒輪的 title 是「設定」", $("ws-conn").attrs["aria-label"] === "設定, 試用剩 3 天" && $("ws-conn").title === "設定" && $("rail-set").attrs["aria-label"] === "設定" && $("rail-set").title === "設定");
-    S.view = "running"; F.sideCvPaint(); t("§6.6 沒灰字時齒輪就是「設定」", $("ws-conn").attrs["aria-label"] === "設定");
+    // 0.1.57 第一格改成開選單(spec first-strategy-sidebar §A3、§A6):名稱與 title 同字;zh 全形逗號接「有新報告」與灰字,細軌不接灰字
+    t("§A6 已登入有灰字:第一格「帳號，試用剩 3 天」、細軌「帳號」;title 同 aria-label", $("ws-conn").attrs["aria-label"] === "帳號，試用剩 3 天" && $("ws-conn").title === "帳號，試用剩 3 天" && $("rail-set").attrs["aria-label"] === "帳號" && $("rail-set").title === "帳號",
+      [$("ws-conn").attrs["aria-label"], $("rail-set").attrs["aria-label"]]);
+    S.view = "running"; F.sideCvPaint(); t("§A6 已登入沒灰字:「帳號」", $("ws-conn").attrs["aria-label"] === "帳號");
+    S.mark = true; F.sideCvPaint();
+    const dotOf = (id) => $(id).children.filter((k) => k.className === "am-dot");
+    t("§A5／§A6 有新報告:兩顆名稱都接「，有新報告」,右上角一顆 aria-hidden 的點", $("ws-conn").attrs["aria-label"] === "帳號，有新報告" && $("rail-set").attrs["aria-label"] === "帳號，有新報告"
+      && dotOf("ws-conn").length === 1 && dotOf("rail-set").length === 1 && dotOf("ws-conn")[0].attrs["aria-hidden"] === "true", $("ws-conn").attrs["aria-label"]);
+    $("side-menu").hidden = false; F.sideCvPaint(); t("§A5 選單開著時第一格不畫點(點在選單「報告」那一列)", dotOf("ws-conn").length === 0 && dotOf("rail-set").length === 0);
+    $("side-menu").hidden = true; S.mark = false; F.sideCvPaint(); t("§A5 沒新報告:不渲染點", dotOf("ws-conn").length === 0);
+    ctx.LANG = "en"; S.mark = true; S.view = "trial"; S.v = { n: 2, t: 14 }; F.sideCvPaint(); t("§A6 en 用半形逗號加空白", /^Account, New report, [^，]+$/.test($("ws-conn").attrs["aria-label"]), $("ws-conn").attrs["aria-label"]);
+    ctx.LANG = "zh"; S.mark = false; S.view = "running";
+    S.acct = { email: "alice@blave.org" }; F.sideCvPaint(); const face = () => $("ws-conn").children[0];
+    t("§A3 已登入:帳號鈕(.av)畫 email 第一個字、轉大寫、textContent", /\bav\b/.test($("ws-conn").className) && face().textContent === "A" && face().tag === "span");
+    S.acct = { email: "王小明@x.tw" }; F.sideCvPaint(); t("§A3 第一個字用 Array.from(中文字照放)", face().textContent === "王");
+    S.acct = {}; F.sideCvPaint(); t("§A3 讀不到 email:畫 user 圖示(svg),不留空圓", face().tag === "svg" && face().children.length === 2);
+    S.view = "out"; F.sideCvPaint(); t("§A3 沒登入:齒輪、不是 .av、名稱「選單」", !/\bav\b/.test($("ws-conn").className) && face().tag === "svg.ic" && $("ws-conn").attrs["aria-label"] === "選單");
+    S.view = "revoked"; F.sideCvPaint(); t("§A3 登入失效同沒登入", face().tag === "svg.ic" && $("ws-conn").attrs["aria-label"] === "選單");
+    S.view = "running"; S.acct = null;
     t("§4.3 這一格每次重畫都叫 slotPaint 重算手機", S.hit.filter((h) => h === "slot").length >= Object.keys(SPEC).length);
     // 埋點:出現類每種每天一次;看不到、收合時不送
     F.newDay(); S.feat.length = 0; doc.visibilityState = "hidden"; S.view = "out"; F.sideCvPaint(); doc.visibilityState = "visible"; doc.rail = true; $("side-cv").offsetParent = null; F.sideCvPaint(); doc.rail = false;   // 收合:.ws-foot 整塊 display none
@@ -218,9 +242,9 @@ t("§3.2 六條都成立 → 出", X.slotPhPlan(OK).draw === true);
   // ── §2、§3.5 結構 ──
   { const r = html.slice(html.indexOf('<div class="foot-row" id="foot-row">'), html.indexOf("</aside>"));
     const ids = [...r.matchAll(/id="([\w-]+)"/g)].map((m) => m[1]);
-    t("§2 列的順序:齒輪、手機、pop、帳號膠囊、灰字、更新(Tab 順序同畫面;pop 緊接手機)", ids.join() === "foot-row,ws-conn,ph-pill,ph-pop,side-cv,side-note,up-pill", ids);
-    t("§3.5 細軌:展開鈕在上;底部 .rail-bot 是更新圓鈕、它下面齒輪,齒輪開設定", /<div class="side-rail"><button class="rail-btn" id="rail-open"[\s\S]*?<div class="rail-bot"><button class="up-pill up-rail" id="up-rail"[^>]*>[\s\S]*?<\/button><button class="rail-btn" id="rail-set" type="button" aria-haspopup="dialog">/.test(html)
-      && /\$\("rail-set"\)\.addEventListener\("click", setOpen\);/.test(app));
+    t("§2 列的順序:第一格、它的選單(0.1.57,DOM 緊接第一格)、手機、pop、帳號膠囊、灰字、更新(Tab 順序同畫面;pop 緊接手機)", ids.join() === "foot-row,ws-conn,side-menu,ph-pill,ph-pop,side-cv,side-note,up-pill", ids);
+    t("§3.5／§A7 細軌:展開鈕在上;底部 .rail-bot 是更新圓鈕、它下面第一格,第一格開選單(0.1.57 不再直接開設定)", /<div class="side-rail"><button class="rail-btn" id="rail-open"[\s\S]*?<div class="rail-bot"><button class="up-pill up-rail" id="up-rail"[^>]*>[\s\S]*?<\/button><button class="rail-btn" id="rail-set" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="side-menu">/.test(html)
+      && /\$\(id\)\.addEventListener\("click", \(\) => \(amIsOpen\(\) \? amClose\(true\) : amOpen\(\)\)\);/.test(app) && !/addEventListener\("click", setOpen\)/.test(app));
     t("§7 舊節點拿掉:#up-pill-wrap、#up-pill-t、#ph-slot、#ph-x、#ws-conn-note", !/id="(up-pill-wrap|up-pill-t|ph-slot|ph-x|ws-conn-note)"/.test(html) && !/"(up-pill-wrap|up-pill-t|ph-slot|ph-x|ws-conn-note)"/.test(app + src)); }
 
   // ── §4 長相 ──
@@ -230,7 +254,15 @@ t("§3.2 六條都成立 → 出", X.slotPhPlan(OK).draw === true);
     t("§4.1 膠囊高 28、pill、1px border-frame、左右 space-8、12/500、不折行;熱區 -9 -1(高 44、寬同膠囊)", /height: 28px;/.test(rule(".cv-pill")) && /--radius-pill/.test(rule(".cv-pill")) && /border: 1px solid var\(--border-frame\);/.test(rule(".cv-pill")) && /padding: 0 var\(--space-8\);/.test(rule(".cv-pill"))
       && /font-size: 12px; font-weight: 500; line-height: 1; white-space: nowrap;/.test(rule(".cv-pill")) && /inset: -9px -1px;/.test(rule(".cv-pill::before")));
     t("§4.1 灰字 12、左右 space-4、不折行、ink-3", /font-size: 12px;/.test(rule(".row-note")) && /padding: 0 var\(--space-4\);/.test(rule(".row-note")) && /white-space: nowrap;/.test(rule(".row-note")) && /color: var\(--ink-3\);/.test(rule(".row-note")));
-    t("§4.1 間距:手機前 16、其餘 8(固定 margin-left,不靠相鄰選擇器)", /^#ph-pill \{ margin-left: var\(--space-16\); \}/m.test(css) && /^\.cv-pill, \.row-note, \.foot-row \.up-pill \{ margin-left: var\(--space-8\); \}/m.test(css));
+    t("§4.1 間距一律 8(spec sidebar-foot-spacing-2026-11-19;固定 margin-left,不靠相鄰選擇器);第一格熱區往左 16、往右 0(齒輪 -8 0 -8 -16、帳號鈕扣 1px 框 -9 -1 -9 -17)",
+      /^#ph-pill \{ margin-left: var\(--space-8\); \}/m.test(css) && /^#ws-conn::before \{ inset: -8px 0 -8px -16px; \}/m.test(css) && /^#ws-conn\.av::before \{ inset: -9px -1px -9px -17px; \}/m.test(css) && /^\.cv-pill, \.row-note, \.foot-row \.up-pill \{ margin-left: var\(--space-8\); \}/m.test(css));
+    // spec sidebar-foot-consistency-2026-11-19:底列每一樣都描邊;覆寫在基礎規則之後(同權重,後者勝),框佔 1px 所以熱區 -9
+    { const at = (x) => css.indexOf(x);
+      const add = [".foot-row .ic-btn, #rail-set { border: 1px solid var(--border-frame); border-radius: var(--radius-pill); }",
+        ".foot-row .ic-btn::before, #rail-set::before { inset: -9px; }", "#ws-conn::before { inset: -9px -1px -9px -17px; }"];
+      t("§4.1 底列一律描邊:齒輪／手機與細軌第一格 1px border-frame、pill;熱區 -9(28 − 2 + 18 = 44);第一格 -9 -1 -9 -17;都排在 -8 那幾行之後",
+        add.every((x) => at(x) >= 0) && at(add[1]) > at(".ic-btn::before { content: \"\"; position: absolute; inset: -8px; }")
+        && at(add[2]) > at("#ws-conn::before { inset: -8px 0 -8px -16px; }") && !/#rail-open/.test(add.join("")), add.map(at)); }
     t("§4.2 齒輪／手機滑過與步驟框開著:底 surface-muted、圖示 ink;膠囊滑過 surface-muted", /^\.ic-btn:hover, \.ic-btn\[aria-expanded="true"\] \{ background: var\(--surface-muted\); color: var\(--ink\); \}/m.test(css) && /^\.cv-pill:hover \{ background: var\(--surface-muted\); \}/m.test(css));
     t("§4.2 橘只有更新這一顆;沒有陰影、沒有寫死 hex", !/primary/.test(rule(".ic-btn") + rule(".cv-pill") + rule(".row-note") + rule(".foot-row")) && !/shadow|#[0-9a-f]{3,6}\b/i.test(rule(".ic-btn") + rule(".cv-pill") + rule(".row-note") + rule(".foot-row") + rule(".up-pill")));
     t("§4.2 減少動態:三種鈕的轉場關掉", css.includes("@media (prefers-reduced-motion: reduce) { .ic-btn, .cv-pill, .up-pill { transition: none; } }"));
@@ -244,7 +276,7 @@ t("§3.2 六條都成立 → 出", X.slotPhPlan(OK).draw === true);
   t("§7 拿掉 up.pillS、ph.stepPair;side.starting 留著(trade.js 頂列在用)", !("up.pillS" in STR.zh) && !("ph.stepPair" in STR.zh) && STR.zh["side.starting"] === "啟動中" && /side\.starting/.test(read("renderer/trade.js")));
 
   // ── §8 埋點 ──
-  t("§8.1 九個新名字接在 0.1.52 的 cx_key_page 後面、順序同 spec;之後只接 0.1.54 拉回 icon 鈕 sp_pull_icon", /"cx_key_page",\n[^\n]*\n[^\n]*\n\s*"side_cv_login", "side_cv_trial", "side_cv_plan", "side_cv_stopped",\n\s*"login_side", "login_side_again", "bind_side", "plan_side", "stopped_side",\n[^\n]*\n\s*"sp_pull_icon"\] \},/.test(tele));
+  t("§8.1 九個新名字接在 0.1.52 的 cx_key_page 後面、順序同 spec;之後接 0.1.54 拉回 icon 鈕 sp_pull_icon(0.1.57 的選單名字再接在後面)", /"cx_key_page",\n[^\n]*\n[^\n]*\n\s*"side_cv_login", "side_cv_trial", "side_cv_plan", "side_cv_stopped",\n\s*"login_side", "login_side_again", "bind_side", "plan_side", "stopped_side",\n[^\n]*\n\s*"sp_pull_icon",\n/.test(tele));
   t("§8.2 slot_ph_show／slot_ph_open 留著(手機圖示畫出／按下);slot_up_*、slot_ph_close、slot_ph_login 沒有送出點", /"slot_ph_show"/.test(src) && /"slot_ph_open"/.test(src) && !/slot_up_show|slot_up_open|slot_ph_close|slot_ph_login/.test(app + src));
   t("§8.2 upd_pill_shown 列裡或細軌看得到都算、每日一次;upd_go_pill 按圓鈕", /if \(p\.show && \(pill\.offsetParent !== null \|\| dot\.offsetParent !== null\)\)/.test(cut(app, "function upPillPaint(")) && /trackFeature\("upd_go_pill"\);/.test(cut(app, "function upPillClick(")));
   t("§7 主行程的提示格存檔拿掉:slot-state、slot-phone-set、slotPhone", !/slot-state|slot-phone-set|slotPhone|slotStateGet/.test(main + pre));

@@ -1370,11 +1370,13 @@ def _norm_order(row):
 _RC_CID_RE = re.compile(r"rc\d{12,}")
 
 
-def sweep_orphan_orders():
+def sweep_orphan_orders(on_each=None):
     """Cancel resting limit orders a dead reconciler left behind (chase posts
     them; a crash mid-chase strands one on the venue). Called once at
     reconciler startup — best-effort, never blocks the loop. Returns the count
-    cancelled."""
+    cancelled. on_each() runs before every venue call (the reconciler's
+    progress stamp: one slow cancel at a time stays under the hang watch)."""
+    tick = on_each if callable(on_each) else (lambda: None)
     env = read_env()
     vid = detect_venue(env)
     if vid is None:
@@ -1389,6 +1391,7 @@ def sweep_orphan_orders():
                       lambda s, oid: order.cancel_spot_order(env, s, oid)))
     n = 0
     for fetch, cancel in lanes:
+        tick()
         try:
             rows = fetch(env) or []
         except Exception as e:
@@ -1400,6 +1403,7 @@ def sweep_orphan_orders():
             sym, oid = row.get("symbol"), row.get("order_id")
             if not sym or not oid:
                 continue
+            tick()
             try:
                 cancel(sym, oid)
                 n += 1

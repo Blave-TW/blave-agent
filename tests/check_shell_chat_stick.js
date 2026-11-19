@@ -52,6 +52,7 @@ const ctx = {
   chatEdge: () => {}, TICK_WINDOW: 24, TICK_PITCH: 4, brNeedsUser: () => false, brHost: () => "", brReg: (h) => h,
   whereTag: () => new El("span"), stepWhere: () => "local", srSay: (x) => { said.push(x); }, LANG: "zh",
   SYS_RELANG: new WeakMap(), SYS_QUIET: false,   // faultCard().set 記換語言重畫用的函式(app.js sysRelang)
+  ResizeObserver: class { constructor(f) { env.roFire = f; env.roOn = []; } observe(el) { env.roOn.push(el); } },
 };
 const body = cut("function scrollChat", "/* ── agent 回覆的顯示") + cut("let busy = null;", "/* 停止(照雲端工作頁") + cut("function faultCard()", "/* 「再送一次」");
 // 舊程式沒有黏底那段(只有一行 scrollChat):照樣切得出來跑,這條測試對舊程式要紅
@@ -175,5 +176,25 @@ ok("錯誤通知(turn.error 那句、回合結束補出的錯誤與結束碼)走
   ok("同一張卡換回有句子的那態:act-only 拿掉、句子露出、第二顆回到 .btn-out(沒給 quiet)", !el.classList.contains("act-only") && text.hidden === false && card.b2.className === "btn-out" && said[said.length - 1] === "data.noPlan", { cls: el.className, b2: card.b2.className });
   const css = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "app.css"), "utf8");
   ok("act-only 的樣式:不放記號、鈕列不留上距、文字鈕拉開 space-16", /\.msg\.fault\.act-only \.fault-mark \{ display: none; \}/.test(css) && /\.msg\.fault\.act-only \.fault-act \{ margin-top: 0; column-gap: var\(--space-16\); \}/.test(css)); }
+
+// 0.1.57 驗收 S2:回合結束後內容晚長高(結果卡的圖)、建議托盤長出來把欄壓矮,都沒有 scroll 事件;停在 scrollTop 0 時瀏覽器也不補位
+{ box.scrollHeight = 500; box.clientHeight = 590; box._top = 0; M.scrollChat(true); box.flush();
+  box.scrollHeight = 749; if (env.roFire) env.roFire([]); box.flush();
+  ok("黏著、停在頂端時內容長高(沒有 scroll 事件):ResizeObserver 看著聊天欄,補捲到底", !!env.roOn && env.roOn.includes(box) && box.scrollTop === bottom(), [box.scrollTop, bottom()]);
+  box.clientHeight = 554; if (env.roFire) env.roFire([]); box.flush();
+  ok("建議托盤長出來把欄壓矮:照樣貼底", box.scrollTop === bottom(), [box.scrollTop, bottom()]);
+  userScrollTo(bottom() - 100); const t0 = box.scrollTop; box.scrollHeight += 200; if (env.roFire) env.roFire([]); box.flush();
+  ok("往上捲著在讀:內容長高、欄變矮都不拉下去", box.scrollTop === t0, [box.scrollTop, t0]); }
+// 分頁建好時 observe 它的 .chat-thread、收掉時 unobserve(不放的話關掉的對話留在記憶體):切 chattabs.js 的 tabMake／tabsDestroy 跑
+{ const cts = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "chattabs.js"), "utf8");
+  const cutC = (a, b) => { const i = cts.indexOf(a), j = cts.indexOf(b, i); if (i < 0 || j < 0) throw new Error("找不到標記:" + a); return cts.slice(i, j); };
+  const ro = { on: [], off: [], observe(el) { this.on.push(el); }, unobserve(el) { this.off.push(el); } };
+  const C = { tabs: new Map() }, host = new El("div");
+  const { tabMake, tabsDestroy } = new Function("chatRO", "CS", "document", "$", "tabNewState",
+    cutC("function tabMake", "\n}\n") + "\n}\n" + cutC("function tabsDestroy", "/* 關分頁") + "; return { tabMake, tabsDestroy };")(
+    ro, C, { createElement: (t) => new El(t) }, () => host, () => ({}));
+  const T = tabMake("s1");
+  tabsDestroy(T);
+  ok("分頁建好 observe 它的 thread、收掉時 unobserve 同一個", ro.on.includes(T.el) && ro.off.length === 1 && ro.off[0] === T.el, { on: ro.on.length, off: ro.off.length }); }
 
 process.exit(red ? 1 : 0);

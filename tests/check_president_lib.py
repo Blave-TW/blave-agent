@@ -519,6 +519,81 @@ fake = types.SimpleNamespace(daccount=FakeDaccount(Resp(ok=True, error="", data=
 snap3 = president_worker.read_account(fake, "7000001")
 check(snap3["equity"] is None and snap3["margin_error"] == "optequity missing",
       "optequity missing is the one margin failure (equity unknown, read error)", snap3)
+
+# 查無資料 from get_position (Wei 11-19: an account with no positions answered it, and 「確認登入」 failed on
+# _check). Empty ONLY when the same snapshot's margin shows nothing open; flagged positions_no_data.
+class NoDataDaccount:
+    def __init__(self, margin, position):
+        self.margin, self.position = margin, position
+
+    def get_margin(self, actno, cur):
+        return self.margin
+
+    def get_position(self, actno, g, t):
+        return self.position
+
+
+NOPOS = Resp(ok=False, error="查無資料!", data=None)
+ZERO_M = Resp(ok=True, error="", data=Resp(**dict(DM, iamt=0.0, mamt=0.0)))
+NONE_M = Resp(ok=True, error="", data=Resp(**dict(DM, iamt=None, mamt=None)))
+USED_M = Resp(ok=True, error="", data=Resp(**dict(DM, iamt=105150.0, mamt=0.0)))
+USED_MM = Resp(ok=True, error="", data=Resp(**dict(DM, iamt=0.0, mamt=80700.0)))
+NODATA_M = Resp(ok=False, error="查無資料!", data=None)
+nd = lambda margin, pos=NOPOS: types.SimpleNamespace(daccount=NoDataDaccount(margin, pos))  # noqa: E731
+for label, margin in (("iamt 0 / mamt 0", ZERO_M), ("margin 查無資料 too", NODATA_M)):
+    sn = president_worker.read_account(nd(margin), "7000001")
+    check(sn["positions"] == [] and sn["positions_no_data"] is True, f"get_position 查無資料 + {label} → empty, flagged positions_no_data", sn)
+# audit F-M1: a missing iamt / mamt is unknown, not 0 — one missing is enough to keep it an error
+ONE_NONE_M = Resp(ok=True, error="", data=Resp(**dict(DM, iamt=0.0, mamt=None)))
+for label, margin in (("iamt > 0", USED_M), ("mamt > 0", USED_MM), ("iamt / mamt None (fields missing)", NONE_M),
+                      ("iamt 0 but mamt None", ONE_NONE_M)):
+    e = raises(RuntimeError, lambda: president_worker.read_account(nd(margin), "7000001"))
+    check(e is not None and not isinstance(e, president_worker.RateLimited) and "get_position" in str(e),
+          f"get_position 查無資料 but {label} in the same snapshot → raises (never a silent flat with margin in use)", e)
+e = raises(RuntimeError, lambda: president_worker.read_account(nd(Resp(ok=False, error="系統忙碌中", data=None)), "7000001"))
+check(e is not None, "get_position 查無資料 while the margin read failed another way (no margin answer) → raises", e)
+for err in ("系統忙碌中,請稍後再試", "查無資料以外的錯誤", "MSG099 查無資料 的帳號"):
+    e = raises(RuntimeError, lambda: president_worker.read_account(nd(ZERO_M, Resp(ok=False, error=err, data=None)), "7000001"))
+    check(e is not None and not isinstance(e, president_worker.RateLimited), f"get_position other error {err!r} (zero margin) → raises", e)
+e = raises(president_worker.RateLimited, lambda: president_worker.read_account(
+    nd(ZERO_M, Resp(ok=False, error="超過每分鐘限制", data=None)), "7000001"))
+check(e is not None, "get_position rate-limited (zero margin) → RateLimited, as before", e)
+sn = president_worker.read_account(types.SimpleNamespace(daccount=FakeDaccount(Resp(ok=True, error="", data=Resp(**DM)))), "7000001")
+check(sn["positions_no_data"] is False and sn["positions"], "a normal read: positions_no_data False", sn["positions_no_data"])
+# 「確認登入」 (--once) on such an account now finishes: probe ok, empty positions, the flag in the probe file
+import io, contextlib  # noqa: E402,E401
+real_login, real_probe_path = president_worker._login, president_worker.PROBE_PATH
+president_worker.PROBE_PATH = os.path.join(TMP, "state", "president_probe_nodata.json")
+president_worker._login = lambda explicit=False: (types.SimpleNamespace(daccount=NoDataDaccount(ZERO_M, NOPOS), test_mode=False, logout=lambda: None), "7000001")
+with contextlib.redirect_stdout(io.StringIO()):
+    rc_nd = president_worker.run_once()
+president_worker._login = real_login
+nd_path, president_worker.PROBE_PATH = president_worker.PROBE_PATH, real_probe_path
+pr_nd = json.load(open(nd_path, encoding="utf-8")) if os.path.exists(nd_path) else {}
+check(rc_nd == 0 and pr_nd.get("ok") is True and pr_nd.get("positions") == [] and pr_nd.get("positions_no_data") is True,
+      "確認登入 on an account with no positions (get_position 查無資料, margin flat) → probe ok", pr_nd)
+# flatten stays stricter: an empty 查無資料 read is never a flat while the bot's book holds 統一 rows
+snapshot([], positions_no_data=True)
+check(account_president.positions_from_no_data() is True and account_president.position_rows() == [],
+      "account_president: the snapshot's positions_no_data is readable (positions_from_no_data)")
+sys.path.insert(0, os.path.join(ROOT, "manager"))
+import flatten as _fl  # noqa: E402
+os.chdir(TMP)  # flatten chdir's to the repo on import; the rest of this file works under TMP
+sys.path.remove(os.path.join(ROOT, "manager"))  # or `from manager import …` below finds manager/manager.py
+if getattr(sys.modules.get("manager"), "__file__", "").endswith(os.path.join("manager", "manager.py")):
+    del sys.modules["manager"]
+check(_fl._empty_read_untrusted(account_president, [], {"TXF": {"side": "long", "size": 1}}) is True
+      and _fl._empty_read_untrusted(account_president, [], {}) is False
+      and _fl._empty_read_untrusted(account_president, [{"symbol": "TXF"}], {"TXF": {"side": "long", "size": 1}}) is False
+      and _fl._empty_read_untrusted(types.SimpleNamespace(), [], {"TXF": {"side": "long", "size": 1}}) is False,
+      "flatten: 查無資料-empty + book holds rows → untrusted; empty book, rows read, or a lib without the flag → not")
+snapshot([], positions_no_data=False)
+check(_fl._empty_read_untrusted(account_president, [], {"TXF": {"side": "long", "size": 1}}) is False,
+      "flatten: a normal empty read (no 查無資料) is unchanged")
+_fsrc = open(os.path.join(ROOT, "manager", "flatten.py"), encoding="utf-8").read()
+_blk = _fsrc[_fsrc.index("months_by_key = _book_months(vid, ledger)"):_fsrc.index("except _SnapshotLag as e:")]
+check("if _empty_read_untrusted(acct, positions, ledger):\n                raise RuntimeError(" in _blk,
+      "flatten raises inside the read's try → its get_positions-failed path (error row, nothing closed, book kept)")
 # assets page (spec president-assets): update_date/time → epoch seconds in the snapshot, through
 # get_equity, through the runtime account reader into the entry; absent keys stay absent
 UPD = int(NOW_TP.timestamp())

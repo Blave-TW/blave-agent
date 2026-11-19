@@ -871,6 +871,10 @@ def main():
     if not PROXY_TOKEN:
         print("[web_bridge] BLAVE_PROXY_TOKEN not set; exiting", file=sys.stderr)
         sys.exit(1)
+    # this process takes the user's keys (command_listener's credentials): lib only through the finder, never
+    # the workspace on sys.path (audit 2026-11-19 M1; local_daemon._workspace_lib)
+    import secret_imports
+    secret_imports.install(WORKSPACE)
 
     signal.signal(signal.SIGTERM, on_term)
     if os.name == "nt":

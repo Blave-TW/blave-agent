@@ -160,10 +160,13 @@ function argsOk(cmd, a, trusted) {
   // 密文只驗形狀(base64、長度);內容由 daemon 解開後再驗
   if (cmd === "president_local") {
     if (PRESIDENT_OPS.indexOf(a.op) < 0) return false;
-    if (a.op === "cert" || a.op === "secrets") return keys.length === 2 && typeof a.sealed === "string" && a.sealed.length > 0 && a.sealed.length <= 8192 && /^[A-Za-z0-9+/]+={0,2}$/.test(a.sealed);
-    if (a.op === "probe") return keys.every((k) => k === "op" || k === "after_unlock") && (a.after_unlock === undefined || a.after_unlock === true);
+    const sealedOk = (v) => typeof v === "string" && v.length > 0 && v.length <= 8192 && /^[A-Za-z0-9+/]+={0,2}$/.test(v);
+    if (a.op === "cert" || a.op === "secrets") return keys.length === 2 && sealedOk(a.sealed);
+    // 會登入的四步(president_local.js LOGIN_OPS = runtime _LOGIN_OPS)必帶 expect:封好的存檔帳密,daemon 比對手上那組
+    if (["probe", "test_order", "start", "host"].indexOf(a.op) >= 0 && !sealedOk(a.expect)) return false;
     // 主機只收兩種形狀;網址是不是統一那兩台由 runtime normalize_host 決定
-    if (a.op === "host") return keys.length === 2 && ((a.env === "test" || a.env === "live") || (typeof a.url === "string" && a.url.length > 0 && a.url.length <= 200 && !/[\r\n]/.test(a.url)));
+    if (a.op === "host") return keys.length === 3 && ((a.env === "test" || a.env === "live") || (typeof a.url === "string" && a.url.length > 0 && a.url.length <= 200 && !/[\r\n]/.test(a.url)));
+    if (a.op === "probe" || a.op === "test_order" || a.op === "start") return keys.length === 2;
     return keys.length === 1;
   }
   if (cmd === "capital_local") {
@@ -185,7 +188,7 @@ function argsOk(cmd, a, trusted) {
   }
   return keys.length === 0;   // restart_reconciler / retest_accounts / close_all / manage_cancel:不收參數
 }
-function createDaemonHost({ python, script, base, workspace, env, log = () => {}, spawnFn = spawn, lockRetryMs = LOCK_RETRY_MS, lockSettleMs = LOCK_SETTLE_MS,
+function createDaemonHost({ python, script, base, workspace, env, extraEnv = {}, log = () => {}, spawnFn = spawn, lockRetryMs = LOCK_RETRY_MS, lockSettleMs = LOCK_SETTLE_MS,
   platform = process.platform, stopKillMs = STOP_KILL_MS, stopGiveUpMs = STOP_GIVE_UP_MS }) {
   const stateDir = path.join(workspace, "state");
   const inDir = path.join(stateDir, "local_cmd", "in"), ackDir = path.join(stateDir, "local_cmd", "ack");
@@ -206,7 +209,7 @@ function createDaemonHost({ python, script, base, workspace, env, log = () => {}
       c = spawnFn(python, [script, "--secret-stdin"], {
         cwd: workspace, stdio: ["pipe", "ignore", "pipe"], windowsHide: true,
         // BLAVE_AGENT_LOCAL 是 daemon 的啟動閘門,必須由這裡帶;其餘是呼叫端給的最小環境(不含任何 Blave 憑證)
-        env: { ...env, BLAVE_AGENT_LOCAL: "1", BLAVE_AGENT_BASE: base, BLAVE_AGENT_WORKSPACE: workspace },
+        env: { ...env, ...extraEnv, BLAVE_AGENT_LOCAL: "1", BLAVE_AGENT_BASE: base, BLAVE_AGENT_WORKSPACE: workspace },
       });
     } catch (err) {   // EPERM 這類是同步 throw:start() 會從計時器重入,不接就是主行程未捕捉例外
       lastExit = { code: null, sig: null, at: Date.now(), error: String((err && err.code) || err) };

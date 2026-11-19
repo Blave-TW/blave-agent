@@ -7,7 +7,7 @@ integration. A key pasted in chat and bound with `lib.venue.bind` (AGENTS.md ›
 API Keys) lands in the same `.env` through the same writer — continue here from rule 2
 just like a web handoff.
 This file is that procedure. The goal: `lib/account_{id}.py` + `lib/order_{id}.py`
-exist and `manager/reconciler.py` is wired through them.
+exist; the reconciler reaches them through `lib/venue_wiring.py` (rule 7).
 
 **Taiwan brokers (`sinopac`/`president`/`capital`) are NOT covered by this file, even
 though their web handoff message matches the trigger above** — see AGENTS.md's Broker
@@ -44,7 +44,8 @@ do not assume casing or invent names.
    (`lib/account_paper.py` + `lib/order_paper.py` — simulated venue, no keys;
    the web handoff for it needs only rule 5 plus one sentence on how fills
    are priced, see `references/lib.md`) and SinoPac
-   (`lib/order_sinopac.py`) are implemented — extend, never rewrite. For everything else, work from
+   (`lib/order_sinopac.py`) are implemented and read-only for you (the runtime refuses the edit; if one lacks
+   something, tell the user what is missing). For everything else, work from
    `lib/account_TEMPLATE.py` and the patterns in `lib/order_bingx.py`
    (see `references/lib.md`, `references/manager.md` § Account library).
    **If both files already ship for this venue, skip straight to rule 5, and once
@@ -160,14 +161,22 @@ do not assume casing or invent names.
    `_order_intent` logic keys off reduce semantics, not order type, so limit orders
    classify correctly without guard changes.
 
-7. **Reconciler wiring is AUTOMATIC for official venues** — the template's
-   `get_positions`/`place_order` route through `lib/venue_wiring.py`, which
-   detects the bound venue and maps the USD-diff contract (swap + spot) for
-   you; do not touch `manager/reconciler.py` for Binance/BingX/OKX, and a
-   rebind to another official venue needs no reconciler change. For a venue
-   WITHOUT official libs, replace the two function bodies in the same session
-   as the order lib (order library → reconciler is one atomic task —
-   AGENTS.md); their docstrings carry the contract.
+7. **Reconciler wiring is AUTOMATIC, and never yours to change** —
+   `manager/reconciler.py` routes `get_positions`/`place_order` through
+   `lib/venue_wiring.py`, which detects the bound venue and maps the USD-diff
+   contract (swap + spot); a rebind to another supported venue needs no change.
+   The reconciler, flatten, `lib/venue_wiring.py`, `lib/venue_traits.py` and the
+   official `lib/order_*.py` / `lib/account_*.py` run where the user's keys and
+   broker passwords are, so they are read-only for you (the runtime refuses the
+   edit; only a Blave update changes them). For a venue Blave does not support
+   yet, do what you can and say plainly what is missing:
+   - yours: `lib/account_{id}.py` and `lib/order_{id}.py` written from the
+     templates (rules 2–6), checked with read-only calls, and any reusable
+     helper in a new `lib/` file;
+   - needs Blave to ship code: binding the venue on the web / desktop (the bind
+     list and `lib/venue_traits.py`'s row), any reconciler or `lib/venue_wiring.py`
+     change, and live trading on it. Tell the user that live orders on this
+     venue wait for that; never wire it into the reconciler yourself.
    For a strategy on Binance bars (`fetch_kline`) the wiring refuses an ENTRY
    into a venue's stock swap when Binance lists the same ticker as a coin —
    OKX `BB-USDT-SWAP` / `ON-USDT-SWAP` / `QNT-USDT-SWAP` and Bybit `ONUSDT`

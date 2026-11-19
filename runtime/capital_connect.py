@@ -621,11 +621,11 @@ def admin_password():
     _refuse("ADMIN_PASSWORD_MISSING", "the machine's Administrator password is not on file")
 
 
-def _run_quiet(argv, timeout, what):
+def _run_quiet(argv, timeout, what, env=None):
     """subprocess.run whose failures never carry argv: a TimeoutExpired's str()
     embeds the full command line, and several here hold a password."""
     try:
-        return subprocess.run(argv, capture_output=True, timeout=timeout, **_kw())
+        return subprocess.run(argv, capture_output=True, timeout=timeout, **_kw(**({"env": env} if env is not None else {})))
     except subprocess.TimeoutExpired:
         raise RuntimeError(f"{what} timed out")
     except OSError as e:

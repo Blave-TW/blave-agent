@@ -46,10 +46,24 @@ Run: python lib/president_worker.py              (daemon)
      python lib/president_worker.py --install    (Windows: NSSM service blave-agent-president)
      python lib/president_worker.py --uninstall
 """
-import hashlib
-import json
 import os
 import sys
+
+# Before any other import, in the process itself (not when a test imports this file): the workspace folders come
+# off sys.path and only lib/ is reachable from the workspace, through lib/secret_imports.py (audit 2026-11-19 M1).
+# os is loaded at interpreter startup and runpy is imported only once the workspace is off sys.path.
+# Same block in lib/president_worker.py, lib/capital_worker.py, lib/sinopac_worker.py, manager/reconciler.py,
+# manager/flatten.py.
+if __name__ == "__main__" and not __package__:
+    _WS = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+    _OWN = {os.path.normcase(os.path.realpath(d)) for d in (_WS, os.path.join(_WS, "lib"), os.path.join(_WS, "manager"))}
+    sys.path[:] = [p for p in sys.path if os.path.normcase(os.path.realpath(p or os.curdir)) not in _OWN]
+    import runpy
+    _imports = runpy.run_path(os.path.join(_WS, "lib", "secret_imports.py"))
+    _imports["install"](_WS, _imports["SCRIPT_SIBLINGS"])
+
+import hashlib
+import json
 import threading
 import time
 from datetime import datetime, time as dtime, timedelta, timezone
@@ -98,6 +112,13 @@ MAINTENANCE = (
 CLOSES = ((dtime(13, 45), range(0, 5)), (dtime(5, 0), range(1, 6)))  # day Mon–Fri, night ends Tue–Sat
 LOGIN_RETRY_S = 300
 _RATE_LIMITED = "超過每分鐘限制"  # unitrade Error.MSG012
+_NO_DATA = "查無資料"  # unitrade's empty answer, sent as 「查無資料!」
+
+
+def _no_data(resp):
+    """The call answered 查無資料 and nothing else (the trailing ! the SDK adds, whitespace) — not an
+    error text that merely contains it."""
+    return resp is not None and not resp.ok and str(getattr(resp, "error", "") or "").strip().rstrip("!！").strip() == _NO_DATA
 MARGIN_CURRENCY = "NTT"
 
 
@@ -278,7 +299,7 @@ def read_account(api, actno):
     snap = {"ok": True, "error": None, "equity": None, "available": None,
             "initial_margin": None, "maintenance_margin": None, "day_flow": None,
             "margin_updated": None, "margin_updated_at": None, "margin_error": None, "currency": "TWD",
-            "positions": [], "maintenance": None,
+            "positions": [], "positions_no_data": False, "maintenance": None,
             # what the order lib and the reconciler compare with their last send
             "query_started_at": time.time()}
     # currency "NTT": "" answers 查無資料 on the live account too (10-02); .data is
@@ -301,11 +322,24 @@ def read_account(api, actno):
         snap["margin_error"] = president_vault.sanitize(
             getattr(m, "error", "") or ("optequity missing" if d is not None else "no data"))
     snap["listed"] = _listed_contracts(api)
-    p = _check(api.daccount.get_position(actno, "", ""), "get_position")
-    for row in p.data or []:
-        r = position_row(row)
-        if r and r["net"]:
-            snap["positions"].append(r)
+    p = api.daccount.get_position(actno, "", "")
+    # An account with no positions answers get_position with 查無資料 (Wei 11-19: a real user could not
+    # finish 「確認登入」 on it). It counts as an empty list ONLY when the same snapshot's margin says
+    # nothing is open: margin answered 查無資料 too, or it answered with iamt and mamt both present and 0.
+    # Margin in use (or a margin read that failed some other way) keeps it an error: a silent flat while
+    # positions exist would have the reconciler open them again. positions_no_data marks where it came from.
+    # A missing iamt / mamt is unknown, not 0: only two numbers that are both 0 say nothing is open.
+    margin_no_data = _no_data(m)
+    margin_flat = (d is not None and snap["equity"] is not None
+                   and snap["initial_margin"] == 0 and snap["maintenance_margin"] == 0)
+    if _no_data(p) and (margin_no_data or margin_flat):
+        snap["positions_no_data"] = True
+    else:
+        p = _check(p, "get_position")
+        for row in p.data or []:
+            r = position_row(row)
+            if r and r["net"]:
+                snap["positions"].append(r)
     snap["data_at"] = int(time.time())
     # which account, without writing the account number down
     snap["account_fp"] = hashlib.sha256(f"president-account-v1\0{actno}".encode()).hexdigest()[:16]

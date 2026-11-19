@@ -16,10 +16,24 @@ COM apartment and message pump (measured 2026-11-06 on win-test-6: quote events
 arrive there while this thread's account reads go on unchanged), never logs in
 and never takes this worker down. Not started by --once.
 """
-import json
 import os
-import re
 import sys
+
+# Before any other import, in the process itself (not when a test imports this file): the workspace folders come
+# off sys.path and only lib/ is reachable from the workspace, through lib/secret_imports.py (audit 2026-11-19 M1).
+# os is loaded at interpreter startup and runpy is imported only once the workspace is off sys.path.
+# Same block in lib/president_worker.py, lib/capital_worker.py, lib/sinopac_worker.py, manager/reconciler.py,
+# manager/flatten.py.
+if __name__ == "__main__" and not __package__:
+    _WS = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+    _OWN = {os.path.normcase(os.path.realpath(d)) for d in (_WS, os.path.join(_WS, "lib"), os.path.join(_WS, "manager"))}
+    sys.path[:] = [p for p in sys.path if os.path.normcase(os.path.realpath(p or os.curdir)) not in _OWN]
+    import runpy
+    _imports = runpy.run_path(os.path.join(_WS, "lib", "secret_imports.py"))
+    _imports["install"](_WS, _imports["SCRIPT_SIBLINGS"])
+
+import json
+import re
 import threading
 import time
 from pathlib import Path

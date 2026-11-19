@@ -777,6 +777,12 @@ html.ws-sc .side-gate { display: none; }
 .fog-card { position: absolute; z-index: 1; left: 50%; top: 48px; transform: translateX(-50%); width: 360px; max-width: calc(100% - 32px); box-sizing: border-box;
   padding: var(--space-24); background: var(--surface-card); border-radius: var(--radius-lg); box-shadow: var(--shadow-md); text-align: center; }
 .fog-card p { margin: 0 0 var(--space-16); font-size: 14px; line-height: 1.6; color: var(--ink); }
+/* 自動下單清單空那張卡(spec first-strategy-sidebar §B3):主鈕旁隔 12 一顆文字連結「連接帳戶」,常駐底線、熱區高 44 */
+.fog-acts { display: inline-flex; align-items: center; gap: var(--space-12); }
+.fog-ln { position: relative; min-height: 0; padding: 0; border: 0; background: none; font-size: 13px; color: var(--ink-2); text-decoration: underline; text-underline-offset: 3px;
+  transition: color var(--motion-fast) var(--ease-standard); }
+.fog-ln::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 44px; transform: translateY(-50%); }
+.fog-ln:hover { color: var(--ink); }
 .fog .amt-in.fog-amt { display: inline-flex; align-items: center; justify-content: flex-end; border-color: var(--border-hairline); }
 .fog-tabs { display: flex; gap: var(--space-24); padding-bottom: var(--space-8); margin-bottom: var(--space-24); box-shadow: inset 0 -1px 0 var(--border-hairline); font-size: 13px; color: var(--ink-3); }
 .fog-tab.on { color: var(--ink); font-weight: 600; }

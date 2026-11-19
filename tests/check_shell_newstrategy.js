@@ -92,6 +92,31 @@ if (!process.versions.electron) {
     const missing = keys.filter((k) => !(k in STR.zh) || !(k in STR.en));
     ok("② 用到的 " + keys.length + " 個 ns.* key zh / en 都齊;zh 全形標點", missing.length === 0 && Object.keys(STR.zh).filter((k) => k.startsWith("ns.")).every((k) => !/[一-鿿][,.?:;!]/.test(STR.zh[k])), missing); }
 
+  // ── 0.1.57 範例列(spec first-strategy-sidebar §B5、§9.3)──
+  { const tr = (L) => (k) => (k in STR[L] ? STR[L][k] : "<missing " + k + ">");
+    const WANT = { crypto: [["BTCUSDT", "1h"], ["ETHUSDT", "4h"], ["BTCUSDT", "1d"]], twstock: [["2330", "1d"], ["0050", "1d"], ["2317", "1d"]], txf: [["TXF", "1d"], ["TXF", "1d"], ["TXF", "1d"]], usstock: [["AAPL", "1d"], ["SPY", "1d"], ["NVDA", "1d"]] };
+    const NAMES = { zh: ["均線黃金交叉", "RSI 布林反轉", "突破前高"], en: ["MA Golden Cross", "RSI Bollinger Reversal", "Breakout"] };
+    const LOGIC = { zh: ["短均線上穿長均線做多，下穿平倉。", "RSI 超賣且觸及布林下軌時做多，回到中軌平倉。", "收盤突破 20 日高點做多，跌破 10 日低點平倉。"],
+      en: ["Go long when the short MA crosses above the long MA; exit when it crosses below.", "Go long when RSI is oversold and price touches the lower band; exit at the middle band.", "Go long when the close breaks the 20-day high; exit below the 10-day low."] };
+    const bad = [];
+    for (const L of ["zh", "en"]) for (const m of Object.keys(WANT)) for (let i = 0; i < 3; i++) {
+      const f = P.nsExFields(m, i, tr(L)), w = { name: NAMES[L][i], symbol: WANT[m][i][0], timeframe: WANT[m][i][1], logic: LOGIC[L][i] };
+      if (JSON.stringify(f) !== JSON.stringify(w)) bad.push(L + "/" + m + "/" + i + ": " + JSON.stringify(f));
+    }
+    ok("① 範例:4 市場 × 3 範例 × 4 欄 × 2 語逐字照 §9.3(名稱與邏輯走字串表、標的與週期兩語同字、指標不填)", bad.length === 0, bad.join(" | "));
+    ok("① 範例的市場:twstock／txf／usstock 用各自那組,crypto、all、沒選都用加密那組", ["twstock", "txf", "usstock"].every((m) => P.nsExMkt(m) === m) && ["crypto", "all", null, undefined, "x"].every((m) => P.nsExMkt(m) === "crypto"));
+    const paint = cutFn(src, "nsExPaint");
+    ok("② 範例列:#ns-ex 在 #ns-hint 下、欄位上;籤都是 type=button、aria-pressed;按了填四格、nsRefresh、送 ns_example,不送出;語言或主要市場變了整組重建",
+      html.indexOf('id="ns-ex"') > html.indexOf('id="ns-hint"') && html.indexOf('id="ns-ex"') < html.indexOf('id="ns-name"') && /<span class="l" data-i18n="ns\.ex"><\/span>/.test(html)
+      && /b\.type = "button"; b\.className = "ns-ex-b"; b\.setAttribute\("aria-pressed", "false"\);/.test(paint) && /\["name", "symbol", "timeframe", "logic"\]\.forEach/.test(paint) && /nsExSel\(b\); nsRefresh\(\);\s*trackFeature\("ns_example"\);/.test(paint)
+      && !/nsSend|requestSubmit|\.submit\(/.test(paint) && /const row = \$\("ns-ex-chips"\), mkt = nsExMktNow\(\), key = LANG \+ "\|" \+ mkt;\n\s*if \(NS\.exKey === key\) return;/.test(paint)
+      && /<div class="ns-ex" id="ns-ex"><span class="l" data-i18n="ns\.ex"><\/span><span class="ns-ex-chips" id="ns-ex-chips"><\/span><\/div>/.test(html));
+    ok("② 範例的選中狀態:動欄位(input)、送出成功(reset 之後)、關框都清;nsOpen／nsRepaint 會重畫範例列;主要市場換了 mktApply 叫 nsRepaint",
+      /g\("ns-modal"\)\.addEventListener\("input", \(\) => \{ nsExSel\(null\); nsRefresh\(\); \}\);/.test(src) && /\$\("ns-modal"\)\.reset\(\); nsExSel\(null\);/.test(cutFn(src, "nsSend"))
+      && /nsExSel\(null\);/.test(cutFn(src, "nsClose")) && /nsExPaint\(\);/.test(cutFn(src, "nsOpen")) && /nsExPaint\(\);/.test(cutFn(src, "nsRepaint"))
+      && /if \(typeof nsRepaint === "function"\) nsRepaint\(\);/.test(cutFn(read(path.join(R, "market.js")), "mktApply")));
+    ok("② 框底拿掉「不知道從哪開始？」(ns.libHint 字串與引用都沒了),#ns-lib 文字連結留著", !/ns\.libHint/.test(html + src) && !("ns.libHint" in STR.zh) && !("ns.libHint" in STR.en) && /<span class="ns-lib-hint"><button type="button" class="btn-quiet" id="ns-lib" data-i18n="ns\.libLink">/.test(html)); }
+
   // ── ③ 交給 Electron ──
   const bin = GATE.bin(SHELL, "③");
   if (!bin) { console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0); }
@@ -129,6 +154,11 @@ app.whenReady().then(async () => {
   let r = await js(`(async () => { document.getElementById("strat-add").click(); await new Promise((r) => setTimeout(r, 120)); return true; })()`);
   let b = await box();
   ok("③ ＋ → 開框:440 寬、焦點在名稱欄、預覽「—」(.empty)、送出 disabled + aria-describedby=ns-hint、本機不掛雲端記號、底下 inert", b.open && Math.round(b.w) === 440 && b.focus === "ns-name" && b.preview === (await T("ns.previewEmpty")) && b.empty && b.dis && b.desc === "ns-hint" && !b.cloud && b.env && b.where && b.inert && b.msg === "", JSON.stringify(b));
+  { // 設計稽核 0157 M3:en「Breakout」會折行;籤包在容器裡、標籤自成一欄,折行時兩排的列距 16(28+16=44),熱區不重疊
+    const ex = await js(`(() => { setLang("en"); nsExPaint(); const l = document.querySelector("#ns-ex .l").getBoundingClientRect(), bs = [...document.querySelectorAll("#ns-ex-chips .ns-ex-b")].map((b) => b.getBoundingClientRect());
+      const rows = [...new Set(bs.map((r) => Math.round(r.top)))].sort((a, b) => a - b); return { n: bs.length, right: bs.every((r) => r.left >= l.right), h: bs.map((r) => Math.round(r.height)), rows, gap: rows.length > 1 ? rows[1] - (rows[0] + 28) : null }; })()`);
+    ok("③ en 範例籤:三顆都在標籤右邊那一欄、高 28;折行時列距 16(兩排熱區相接不重疊)", ex.n === 3 && ex.right && ex.h.every((x) => x === 28) && (ex.gap === null || ex.gap === 16), JSON.stringify(ex));
+    await js(`setLang("zh"); nsExPaint();`); }
   await js(`(() => { const f = document.getElementById("ns-modal"); f.elements.timeframe.value = "4h"; f.dispatchEvent(new Event("input", { bubbles: true })); })()`); b = await box();
   ok("③ 填一格(週期 4h)→ 預覽即時 = 組句(雲端版實填量到的原句)、送出 enabled、aria-describedby 拿掉", b.preview === "幫我建立策略。週期：4h。" && !b.empty && !b.dis && b.desc === null, JSON.stringify(b));
   // 失敗:submitMessage 回 false(上一輪還在跑那一句由對話講)→ 框留著、欄位不清、腳那一句、鈕回復

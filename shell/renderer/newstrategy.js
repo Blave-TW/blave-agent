@@ -41,9 +41,23 @@ function ideaCompose(mkt, topic, s) {
   const sub = { mkt: s.mkt[mkt], topic: tp ? s.topicTpl.split("{t}").join(tp) : "" };
   return s.msg.replace(/\{(mkt|topic)\}/g, (_m, k) => sub[k]);
 }
+/* 新增策略框的範例(spec first-strategy-sidebar §9.3):三組名稱與邏輯四個市場共用(ns.ex.<1–3>.name／logic,tr 由呼叫端代),
+   標的與週期兩語同字、照主要市場換;crypto、all、沒選都用加密那組。標的寫成不用再問的代號(nsCompose 不從代號猜市場) */
+const NS_EX_SYM = {
+  crypto: [["BTCUSDT", "1h"], ["ETHUSDT", "4h"], ["BTCUSDT", "1d"]],
+  twstock: [["2330", "1d"], ["0050", "1d"], ["2317", "1d"]],
+  txf: [["TXF", "1d"], ["TXF", "1d"], ["TXF", "1d"]],
+  usstock: [["AAPL", "1d"], ["SPY", "1d"], ["NVDA", "1d"]],
+};
+function nsExMkt(v) { return v === "twstock" || v === "txf" || v === "usstock" ? v : "crypto"; }
+const NS_EX_KEYS = [["ns.ex.1.name", "ns.ex.1.logic"], ["ns.ex.2.name", "ns.ex.2.logic"], ["ns.ex.3.name", "ns.ex.3.logic"]];   // 字面 key:字串閘門只認字面
+function nsExFields(mkt, i, tr) {
+  const [symbol, timeframe] = NS_EX_SYM[nsExMkt(mkt)][i];
+  return { name: tr(NS_EX_KEYS[i][0]), symbol, timeframe, logic: tr(NS_EX_KEYS[i][1]) };
+}
 /* ── 純邏輯到此 ── */
 
-const NS = { sending: false, opener: null, fail: false };   // fail = 上一次送出失敗:腳那一句留到下次送出 / 關框(讓人原樣重送)
+const NS = { sending: false, opener: null, fail: false, exKey: "" };   // fail = 上一次送出失敗:腳那一句留到下次送出 / 關框(讓人原樣重送)
 function nsStrings() { return { lead: t("ns.msgLead"), symbol: t("ns.msgSymbol"), timeframe: t("ns.msgTimeframe"), indicators: t("ns.msgIndicators"), logic: t("ns.msgLogic") }; }
 function nsFields() { const f = $("ns-modal"), o = {}; NS_FIELDS.forEach((k) => { const el = f.elements[k]; o[k] = el ? el.value : ""; }); return o; }
 // 閘門同「新增報告」的鈕(停機 / 逾時 / 回合中);這個框沒有 pending 態
@@ -58,6 +72,27 @@ function nsRefresh() {
   if (msg) $("ns-submit").removeAttribute("aria-describedby"); else $("ns-submit").setAttribute("aria-describedby", "ns-hint");   // 空表單停用的原因就是頂端那一句;閘門停用的原因在 ns-msg
   if (!NS.sending) $("ns-msg").textContent = st === "busy" ? t("turn.busy") : st === "stopped" ? t("ho.gate.stopped") : st === "stale" ? t("ho.gate.stale") : NS.fail ? t("modal.sendFailed") : "";
 }
+/* 範例列:語言或主要市場變了就整組重建(選中狀態跟著清);按一顆填名稱、標的、週期、邏輯四格(指標不動)、更新預覽、不送出 */
+function nsExMktNow() { return nsExMkt(typeof MKT === "undefined" ? null : MKT.v); }
+function nsExPaint() {
+  const row = $("ns-ex-chips"), mkt = nsExMktNow(), key = LANG + "|" + mkt;
+  if (NS.exKey === key) return;
+  NS.exKey = key;
+  row.querySelectorAll(".ns-ex-b").forEach((b) => b.remove());
+  [0, 1, 2].forEach((i) => {
+    const b = document.createElement("button"); b.type = "button"; b.className = "ns-ex-b"; b.setAttribute("aria-pressed", "false");
+    b.textContent = t(NS_EX_KEYS[i][0]);
+    b.addEventListener("click", () => {
+      if (NS.sending) return;
+      const f = $("ns-modal"), v = nsExFields(nsExMktNow(), i, t);
+      ["name", "symbol", "timeframe", "logic"].forEach((k) => { f.elements[k].value = v[k]; });
+      nsExSel(b); nsRefresh();
+      trackFeature("ns_example");
+    });
+    row.appendChild(b);
+  });
+}
+function nsExSel(on) { $("ns-ex").querySelectorAll(".ns-ex-b").forEach((b) => b.setAttribute("aria-pressed", b === on ? "true" : "false")); }
 function nsPaintEnv() {
   const cloud = libEnv() === "cloud";
   $("ns-modal").querySelector(".modal-head").classList.toggle("cloud", cloud);
@@ -69,7 +104,7 @@ function nsOpen(opener) {
   if (!sc.hidden) return;
   if (typeof envCanSwitch === "function" && !envCanSwitch()) return;   // 別的框開著 / 選字中
   NS.opener = opener || document.activeElement; NS.fail = false;
-  nsPaintEnv(); nsRefresh();
+  nsPaintEnv(); nsExPaint(); nsRefresh();
   $("view-ws").inert = true; $("set-scrim").inert = true;
   sc.hidden = false;
   requestAnimationFrame(() => sc.classList.add("open"));
@@ -82,13 +117,13 @@ function nsClose() {
   if (sc.hidden || NS.sending) return;   // 送出中框留著(等 r.started 才關)
   sc.classList.remove("open"); sc.hidden = true;
   $("view-ws").inert = false; $("set-scrim").inert = false;
-  $("ns-msg").textContent = ""; NS.fail = false;
+  $("ns-msg").textContent = ""; NS.fail = false; nsExSel(null);
   const o = NS.opener; NS.opener = null;
   if (o && o.isConnected && o.offsetParent) o.focus();
 }
 // 回合開始 / 結束、換語言:框開著就重算(閘門句、預覽句的語言);找點子框同一條
 function nsSync() { if (!$("ns-scrim").hidden) nsRefresh(); if (!$("idea-scrim").hidden) ideaRefresh(); }
-function nsRepaint() { if (!$("ns-scrim").hidden) { nsPaintEnv(); nsRefresh(); } if (!$("idea-scrim").hidden) ideaRefresh(); }
+function nsRepaint() { if (!$("ns-scrim").hidden) { nsPaintEnv(); nsExPaint(); nsRefresh(); } if (!$("idea-scrim").hidden) ideaRefresh(); }
 // 送出(同 §1.5 的流程):成功(跑起來)→ 關框、清欄、strategy_new;失敗 → 框留著、欄位不清、鈕回復,那一句放 foot-msg
 async function nsSend() {
   if (NS.sending) return;
@@ -107,7 +142,7 @@ async function nsSend() {
   if (!ok) { NS.fail = true; nsRefresh(); return; }   // 框留著、欄位不清、鈕回復,腳放那一句
   fm.textContent = "";
   nsClose();
-  $("ns-modal").reset(); nsRefresh();
+  $("ns-modal").reset(); nsExSel(null); nsRefresh();   // reset 不觸發 input:選中狀態另外清
   libTrack("strategy_new");
 }
 
@@ -180,7 +215,7 @@ async function ideaSend() {
   const g = (id) => document.getElementById(id);
   g("strat-add").addEventListener("click", () => nsOpen(g("strat-add")));
   g("chat-ns").addEventListener("click", () => nsOpen(g("chat-ns")));   // 歡迎頁 chip:開框、不送訊息
-  g("ns-modal").addEventListener("input", nsRefresh);
+  g("ns-modal").addEventListener("input", () => { nsExSel(null); nsRefresh(); });   // 動了任何欄位:範例的選中狀態清掉、欄位內容留著
   g("ns-modal").addEventListener("submit", (e) => { e.preventDefault(); nsSend(); });   // CSP form-action 'none':原生送出一律擋;Enter 與點鈕都走這裡
   g("ns-cancel").addEventListener("click", () => nsClose());
   g("ns-close").addEventListener("click", () => nsClose());

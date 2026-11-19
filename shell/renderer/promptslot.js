@@ -100,6 +100,7 @@ function slotPaint() {
 }
 $("ph-pill").addEventListener("click", () => {
   if (slotPopOpen()) { slotPopClose(true); return; }
+  if (typeof amClose === "function") amClose(false);   // 第一格的選單(app.js):兩個浮層不同時在
   // 側欄 overflow:hidden、最窄 180 比 popover 窄:fixed 才不被裁,位置開的時候量;左緣對齊圖示、往上開
   slotPopPaint();
   const r = $("ph-pill").getBoundingClientRect(), pop = $("ph-pop");

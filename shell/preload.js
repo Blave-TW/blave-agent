@@ -65,6 +65,15 @@ contextBridge.exposeInMainWorld("blave", {
   authState: () => ipcRenderer.invoke("auth-state"),   // 登入狀態的單一來源:out / in / revoked
   balance: () => ipcRenderer.invoke("balance"),   // Blave 餘額:{ balance, trial } 或 null(讀不到);憑證在主行程
   planStart: (opts) => ipcRenderer.invoke("plan-start", opts),
+  // 改價 v3 付款框(renderer/planv3.js):報價、試用綁卡、綁卡付第一期、框內開主機、只開 888 階、付款頁回程
+  plan3Quote: () => ipcRenderer.invoke("plan3-quote"),
+  plan3BindTrial: (o) => ipcRenderer.invoke("plan3-bind-trial", o),
+  plan3BindPay: (o) => ipcRenderer.invoke("plan3-bind-pay", o),
+  plan3Addon: (o) => ipcRenderer.invoke("plan3-addon", o),
+  plan3AgentStart: (o) => ipcRenderer.invoke("plan3-agent-start", o),
+  plan3BindResult: () => ipcRenderer.invoke("plan3-bind-result"),
+  plan3BindDrop: () => ipcRenderer.invoke("plan3-bind-drop"),
+  strategyDataNeed: (name) => ipcRenderer.invoke("strategy-data-need", name),
   publicPricing: () => ipcRenderer.invoke("public-pricing"),
   txfQuote: () => ipcRenderer.invoke("txf-quote"),   // 台指期指數(雲端視角口數列的參考金額);問不到 = null
   twNames: () => ipcRenderer.invoke("tw-names"),   // 台股代號 → 名字 { "1438": "三地開發" };拿不到 = {}

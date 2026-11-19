@@ -922,7 +922,7 @@ body.resizing * { cursor: col-resize !important; }
   padding-top: var(--space-16);  /* 不畫分隔線(Wei):靠間距分開;16 = 清單最後一列到鈕的距離 */
 }
 /* 左下角一列(spec sidebar-conversion-2026-11-10 §4;mockup-final.html)。列高 44,每樣視覺 28;靠左:齒輪、手機、帳號那一格、更新。
-   間距照前一樣算:圖示之間 16,其餘一律 8。手機前面一定是齒輪,所以用固定的 margin-left,不用相鄰選擇器(中間夾著 pop 與藏起來的節點)。
+   間距一律 8;齒輪熱區往左 16、往右 0(spec sidebar-foot-spacing-2026-11-19)。手機前面一定是第一格,所以用固定的 margin-left,不用相鄰選擇器(中間夾著選單、pop 與藏起來的節點)。
    照這組間距相鄰熱區剛好相接、不重疊 */
 .foot-row { display: flex; align-items: center; min-height: 44px; padding-left: var(--space-6); }   /* 6:齒輪圖示左緣對齊策略列的字 */
 .ic-btn {
@@ -932,14 +932,16 @@ body.resizing * { cursor: col-resize !important; }
   transition: color var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard);
 }
 .ic-btn .ic { stroke-width: 1.75; }
-.ic-btn::before { content: ""; position: absolute; inset: -8px; }   /* 28 + 16 = 44 */
+.ic-btn::before { content: ""; position: absolute; inset: -8px; }   /* 28 + 16 = 44;手機用這個 */
+/* 第一格:8 的空隙全歸手機,所以往右不長、往左多長 16(左邊有列內距 6+側欄內距 12=18 可用)。仍是 44×44 */
+#ws-conn::before { inset: -8px 0 -8px -16px; }
 .ic-btn:hover, .ic-btn[aria-expanded="true"] { background: var(--surface-muted); color: var(--ink); }
-#ph-pill { margin-left: var(--space-16); }
+#ph-pill { margin-left: var(--space-8); }
 .cv-pill, .row-note, .foot-row .up-pill { margin-left: var(--space-8); }
 .ic-btn[hidden], .cv-pill[hidden], .row-note[hidden] { display: none; }
 /* 帳號那一格:描邊、不填色、不用橘。熱區高 44、寬同膠囊(1px 框不在 padding box 裡,所以是 -9／-1) */
 .cv-pill {
-  position: relative; flex: none; height: 28px; min-height: 0; padding: 0 var(--space-8);
+  position: relative; flex: none; height: 28px; min-height: 0; min-width: 44px; padding: 0 var(--space-8);   /* min-width:「登入」兩字 24+16+2=42;兩側空隙已被手機與更新的熱區占用,無法溢出補 */
   border: 1px solid var(--border-frame); border-radius: var(--radius-pill); background: none; color: var(--ink);
   font-size: 12px; font-weight: 500; line-height: 1; white-space: nowrap;
   transition: background var(--motion-fast) var(--ease-standard);
@@ -967,6 +969,35 @@ body.resizing * { cursor: col-resize !important; }
 .rail-bot { margin-top: auto; display: flex; flex-direction: column; align-items: center; gap: var(--space-16); }
 .rail-bot .rail-btn .ic { stroke-width: 1.75; }   /* 細軌的齒輪跟列裡那顆同一個圖示 */
 html.ws-sc .side-rail { flex: 1 1 auto; }
+/* 第一格的帳號鈕、新報告的點與選單(spec first-strategy-sidebar §A3–A5)。選單項目同 .cs-menu .mi(canon Dropdown menu 的 Terminal 項目);
+   選單 position: fixed、開的時候量位置(同 .ph-pop),開在第一格後面:列裡那顆或細軌那顆 */
+/* 底列每一樣都描邊（spec sidebar-foot-consistency-2026-11-19）:齒輪、手機和帳號鈕、膠囊同一個框;只有更新是實心橘。
+   1px 框不在 padding box 裡,所以熱區是 -9(28 − 2 + 18 = 44) */
+.foot-row .ic-btn, #rail-set { border: 1px solid var(--border-frame); border-radius: var(--radius-pill); }
+.foot-row .ic-btn::before, #rail-set::before { inset: -9px; }
+#ws-conn::before { inset: -9px -1px -9px -17px; }   /* 往右不長、往左多長 16,扣掉 1px 框 */
+.ic-btn.av, .rail-btn.av { border: 1px solid var(--border-frame); border-radius: var(--radius-pill); color: var(--ink-2); font-size: 12px; font-weight: 600; line-height: 1; }
+.rail-btn.av::before { inset: -9px; }   /* 1px 框不在 padding box 裡:28 − 2 + 18 = 44 */
+#ws-conn.av::before { inset: -9px -1px -9px -17px; }   /* 同齒輪:往右不長、往左多長 16,扣掉 1px 框 */
+.ic-btn.av:hover, .ic-btn.av[aria-expanded="true"], #rail-set[aria-expanded="true"] { background: var(--surface-muted); color: var(--ink); }
+.av .ic { width: 16px; height: 16px; stroke-width: 1.75; }
+.am-dot { position: absolute; top: -1px; right: -1px; width: 6px; height: 6px; border-radius: var(--radius-pill); background: var(--ink-2); box-shadow: 0 0 0 2px var(--bg-body); pointer-events: none; }
+.side-menu { position: fixed; z-index: 40; width: 208px; padding: var(--space-6); background: var(--surface-card); border-radius: var(--radius-lg); box-shadow: var(--shadow-md); }
+.side-menu[hidden] { display: none; }
+.am-who { margin: 0; padding: var(--space-6) calc(var(--space-4) + var(--space-6)); font-size: 12px; color: var(--ink-3); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.am-i { display: flex; align-items: center; gap: var(--space-8); width: 100%; min-height: 44px; padding: var(--space-6) calc(var(--space-4) + var(--space-6)); border: 0; border-radius: var(--radius-xs); background: none; font-size: 13px; color: var(--ink-2); text-align: left;
+  transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard); }
+/* .am-i min-height 44:熱區＝列本身,項目相鄰、沒有空隙可溢出(a11y-verification › 熱區);zh／en 列高也因此一樣 */
+.am-i:hover { background: var(--surface-muted); color: var(--ink); }
+.am-i:focus-visible { outline-offset: -2px; }
+.am-i[aria-current="page"] { font-weight: 600; }
+.am-i .l { flex: none; white-space: nowrap; }
+.am-i .v { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; font-size: 12px; color: var(--ink-3); transition: color var(--motion-fast) var(--ease-standard); }
+.am-i:hover .v { color: var(--ink-2); }
+.am-i .ic { flex: none; margin-left: auto; width: 12px; height: 12px; stroke-width: 2; color: var(--ink-3); }
+.am-i .nav-new { margin-left: auto; }
+.am-gap { height: var(--space-8); }
+@media (prefers-reduced-motion: reduce) { .am-i, .am-i .v { transition: none; } }
 .ph-pop {
   position: fixed; z-index: 40; width: 240px; padding: var(--space-16);
   background: var(--surface-card); box-shadow: var(--shadow-md); border-radius: var(--radius-lg);
@@ -1910,6 +1941,15 @@ html[data-platform="win32"] .mode, html[data-platform="win32"] .envm, html[data-
 .f-input::placeholder, .f-area::placeholder { color: var(--ink-3); }
 .f-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-12); }
 .ns-hint { margin: 0; font-size: 12px; line-height: 1.5; color: var(--ink-3); text-wrap: pretty; }
+/* 新增策略框的範例列(spec first-strategy-sidebar §B5):列距上 16(gap 12 + 4)、籤高 28、熱區高 44 */
+.ns-ex { display: flex; align-items: flex-start; gap: var(--space-8); margin-top: var(--space-4); }
+.ns-ex .l { font-size: 12px; color: var(--ink-3); line-height: 28px; flex: none; }
+.ns-ex-chips { display: flex; flex-wrap: wrap; gap: var(--space-16) var(--space-8); }   /* 列距 16:28+16=44,兩排熱區剛好相接 */
+.ns-ex-b { position: relative; height: 28px; min-height: 0; padding: 0 var(--space-8); border: 1px solid var(--border-frame); border-radius: var(--radius-xs); background: none;
+  font-size: 12px; color: var(--ink-2); white-space: nowrap; transition: color var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard); }
+.ns-ex-b::before { content: ""; position: absolute; left: -1px; right: -1px; top: -9px; bottom: -9px; }
+.ns-ex-b:hover { border-color: var(--ink-3); color: var(--ink); }
+.ns-ex-b[aria-pressed="true"] { background: var(--surface-muted); font-weight: 600; }
 .cf-quote { margin: 0; padding: var(--space-8) var(--space-12); border-left: 2px solid var(--border-frame); font-size: 12px; line-height: 1.6; color: var(--ink-2); white-space: pre-wrap; overflow-wrap: anywhere; }
 .cf-quote.empty { color: var(--ink-3); }
 .foot-msg { flex-basis: 100%; min-height: 0; font-size: 12px; line-height: 1.45; color: var(--ink-2); }

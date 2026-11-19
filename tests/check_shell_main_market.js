@@ -326,7 +326,7 @@ const CA = { token: "tA", appSecret: "sA", who: A }, CB = { token: "tB", appSecr
   const T = require(path.join(SHELL, "telemetry.js"));
   ok("③ 埋點:mkt_q／mkt_set 值逐序同 spec §9、畫面送得、每日去重(值同 api desktop_telemetry)",
     JSON.stringify(T.EVENTS.mkt_q) === JSON.stringify({ act: ["shown", "skip", "crypto", "twstock", "txf", "usstock"] }) && JSON.stringify(T.EVENTS.mkt_set) === JSON.stringify({ v: ["all", "crypto", "twstock", "txf", "usstock"] })
-    && T.FROM_RENDERER.includes("mkt_q") && T.FROM_RENDERER.includes("mkt_set") && /"mkt_q", "mkt_set"\];\n\/\/ 每日一則/.test(read(path.join(SHELL, "telemetry.js"))));
+    && T.FROM_RENDERER.includes("mkt_q") && T.FROM_RENDERER.includes("mkt_set") && /"mkt_q", "mkt_set"(?:, "[a-z_]+")*\];\n\/\/ 每日一則/.test(read(path.join(SHELL, "telemetry.js"))));   // 0.1.57 改價 v3 十個接在後面
   const STR = (() => { const sb = {}; vm.runInNewContext(read(path.join(R, "strings.js")) + "\nthis.S = STRINGS;", sb); return sb.S; })();
   const want = { "cn.mkt.step": ["最後一步", "Last Step"], "cn.mkt.q": ["主要做哪個市場？", "Which Market Do You Mainly Trade?"], "cn.mkt.foot": ["之後可以在設定改。", "You can change this in Settings."],
     "cn.mkt.skip": ["跳過", "Skip"], "set.mkt": ["主要市場", "Main market"], "set.mkt.all": ["不指定", "No preference"] };

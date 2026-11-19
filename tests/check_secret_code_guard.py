@@ -40,7 +40,7 @@ FILES = ["lib/president_vault.py", "lib/president_worker.py", "lib/order_preside
          "manager/reconciler.py", "manager/flatten.py", "lib/winreplace.py"]
 t("① 十一支都在每個回合的 Edit 規則裡(錨在 workspace)", all(f"Edit(/{f})" in at.PROTECTED_EDIT_RULES for f in FILES),
   [f for f in FILES if f"Edit(/{f})" not in at.PROTECTED_EDIT_RULES])
-t("① 清單本身就是這十一支", sorted(at.SECRET_CODE_FILES) == sorted(FILES))
+t("① 清單含這十一支(整份清單＝匯入圖,由 tests/check_secret_code_graph.py 釘住)", set(FILES) <= set(at.SECRET_CODE_FILES))
 t("① 含 lib/winreplace.py(四支 vault 檔都 import 它,改它等於改它們)",
   "lib/winreplace.py" in at.SECRET_CODE_FILES and all(
       "winreplace" in open(os.path.join(ROOT, f), encoding="utf-8").read()
@@ -59,6 +59,14 @@ DENY = [
     "powershell -c \"Set-Content lib\\president_vault.py 'x'\"", "git checkout lib/president_worker.py",
     "tee lib/account_president.py < x", "Copy-Item x.py lib\\capital_worker.py",
     "python3 -c \"open('lib/president_vault.py','rb+')\"", "python3 -c \"open('lib/president_vault.py', mode='wb')\"",
+    # 匯入圖裡的一般檔名(稽核 2026-11-19 M1):走 lib/… manager/… 路徑才算
+    "echo x > lib/data.py", "sed -i 's/a/b/' lib/portfolio.py", "cp x.py lib/president_quote.py",
+    "cat evil >> lib/execute.py", "Copy-Item x.py lib\\guard.py", f"cp x.py {WS}/lib/events.py",
+    "python3 -c \"open('lib/order_binance.py','w')\"", "rm lib/__init__.py", "echo x > ./lib/notify.py",
+    # the same path spelled another literal way (follow-up audit S-2), and the files it found unfrozen (M-2)
+    "sed -i s/a/b/ lib//data.py", "sed -i s/a/b/ lib/./data.py", "sed -i s/a/b/ \"$PWD/lib/data.py\"",
+    "sed -i s/a/b/ ${PWD}/lib/guard.py", "cp x manager/../lib/portfolio.py", "echo x > LIB/data.py",
+    "cp e.py lib/error_report.py", "cp e.py lib/secret_imports.py",
 ]
 ALLOW = [
     "cat lib/president_vault.py", "grep -n live lib/president_vault.py",
@@ -69,6 +77,9 @@ ALLOW = [
     "python3 -c \"print(open('lib/president_vault.py').read())\"", "python3 -c \"open('manager/reconciler.py', encoding='utf-8').read()\"",
     "python3 -c \"print(open('AGENTS.md').read())\"", "python3 -c \"open('lib/account_capital.py').read()\"",
     "python3 -c \"open('lib/president_vault.py', 'rb').read()\"",
+    # 策略自己的 data.py、自建的整合檔不在清單
+    "echo x > strategies/foo/data.py", "cp a.py strategies/x/guard.py", "echo x > lib/order_myvenue.py",
+    "sed -n 1,20p lib/data.py", "python3 -c \"from lib import data\"",
 ]
 bad = [c for c in DENY if not at.secret_code_bash_denied(c)]
 t("② 寫入／搬／刪／換掉這幾支 → deny", not bad, bad)
@@ -84,7 +95,8 @@ GREP_READS = [
 for ps in (False, True):
     bad = [c for c in GREP_READS if at.secret_code_bash_denied(c, ps) or at.mirror_bash_denied(c, ps)]
     t(f"② grep 讀這幾支(含 -ni／-ri／-rni／-ac、兩個字母的搜尋字)→ 放行({'PowerShell' if ps else 'Bash'})", not bad, bad)
-KNOWN_GAPS = ["f=lib/president_vault; echo x > $f.py", "python -c \"open('lib/president_'+'vault.py','w')\""]
+KNOWN_GAPS = ["f=lib/president_vault; echo x > $f.py", "python -c \"open('lib/president_'+'vault.py','w')\"",
+              "cd lib && echo x > data.py"]
 t("② KNOWN_GAPS:執行時組出來的路徑擋不到(釘住現況)", not any(at.secret_code_bash_denied(c) for c in KNOWN_GAPS))
 
 # ④ amounts.ui.json
@@ -115,6 +127,17 @@ t("④ 讀它、寫 manager/ 其他檔 → 放行", not bad, bad)
 M_GAPS = ["f=manager/amounts.ui; echo x > $f.json", "python3 -c \"open('manager/amounts' + '.ui.json', 'w')\""]
 t("④ KNOWN_GAPS:組出來的路徑擋不到", not any(at.mirror_bash_denied(c) for c in M_GAPS))
 
+# ⑥ Write / Edit: the frozen files in any case the disk accepts (the Edit rules compare the literal path)
+t("⑥ secret_code_path: LIB/Data.py, ./lib/../lib/guard.py → frozen; strategies/x/data.py, lib/order_mine.py → not",
+  at.secret_code_path(os.path.join(WS, "lib", "guard.py")) and at.secret_code_path("./lib/../lib/guard.py")
+  and at.secret_code_path(os.path.join(WS, "LIB", "Data.py")) == (sys.platform in ("darwin", "win32"))
+  and not at.secret_code_path(os.path.join(WS, "strategies", "x", "data.py"))
+  and not at.secret_code_path(os.path.join(WS, "lib", "order_mine.py")))
+t("⑤ Edit 規則也蓋基底直譯器、runtime 目錄、<base>/current",
+  all(f"Edit({at._abs_rule_path(d)}/**)" in at.PROTECTED_EDIT_RULES
+      for d in (sys.base_prefix, os.path.join(os.path.dirname(WS), "current"), os.path.join(ROOT, "runtime"))))
+
+
 # ③ hook
 @dataclasses.dataclass
 class _Options:
@@ -133,6 +156,32 @@ m_out = asyncio.run(fn({"tool_input": {"command": "echo '{}' > manager/amounts.u
 t("④ 同一道 hook:寫 amounts.ui.json deny、理由是它自己的(只有 daemon 寫、網頁改金額)",
   (m_out.get("hookSpecificOutput") or {}).get("permissionDecisionReason") == at.MIRROR_DENY_REASON
   and "only the Blave daemon writes it" in at.MIRROR_DENY_REASON)
+# ⑤ site-packages / .pth / sitecustomize(稽核 2026-11-19 M1):每個 Python 行程啟動就載入,含拿密碼的那幾支
+venv = os.path.join(os.path.dirname(WS), "venv")
+t("⑤ Edit 規則:venv 整棵、user site、任何地方的 .pth／sitecustomize／usercustomize",
+  f"Edit({at._abs_rule_path(venv)}/**)" in at.PROTECTED_EDIT_RULES
+  and f"Edit({at._abs_rule_path(at.site.getusersitepackages())}/**)" in at.PROTECTED_EDIT_RULES
+  and all(f"Edit(//**/{g})" in at.PROTECTED_EDIT_RULES for g in ("*.pth", "sitecustomize.py", "usercustomize.py")))
+S_DENY = [
+    "cp e.py ../current/events.py", f"cp e.py {os.path.join(sys.base_prefix, 'lib', 'hashlib.py')}",
+    f"echo 'import os' > {venv}/lib/python3.12/site-packages/x.pth", "cp evil.pth ../venv/lib/python3.12/site-packages/",
+    "python3 -c \"open('/opt/blave-agent/venv/lib/python3.10/site-packages/a.pth','w')\"",
+    "tee ~/.local/lib/python3.10/site-packages/sitecustomize.py < x", "echo x >> usercustomize.py",
+    "Set-Content C:\\blave-agent\\venv\\Lib\\site-packages\\x.pth 'import os'", "sed -i 's/a/b/' ../venv/pyvenv.cfg",
+]
+S_ALLOW = [
+    f"ls {venv}/lib/python3.12/site-packages > tmp/pkgs.txt", f"{venv}/bin/python strategies/x/run.py > tmp/out.log 2>&1",
+    f"{venv}/bin/python -c \"open('strategies/x/out.json','w').write('{{}}')\"", "pip show requests",
+    "grep -r version ../venv/lib/python3.12/site-packages/requests/__version__.py",
+]
+bad = [c for c in S_DENY if not at.site_bash_denied(c, c.startswith("Set-Content"))]
+t("⑤ Bash 寫 site-packages／.pth／*customize／pyvenv.cfg → deny", not bad, bad)
+bad = [c for c in S_ALLOW if at.site_bash_denied(c)]
+t("⑤ 讀它、用絕對路徑跑 venv 的 python 寫別的檔 → 放行", not bad, bad)
+S_GAPS = [f"cp evil {venv}/bin/python", "pip install some-package"]
+t("⑤ KNOWN_GAPS:蓋掉 venv 的 python 本身(只有 Edit 規則)、pip install(券商文件要用)擋不到", not any(at.site_bash_denied(c) for c in S_GAPS))
+s_out = asyncio.run(fn({"tool_input": {"command": "echo x > ../venv/lib/python3.12/site-packages/a.pth"}}, None, None)) if fn else {}
+t("⑤ 同一道 hook,理由是它自己的", (s_out.get("hookSpecificOutput") or {}).get("permissionDecisionReason") == at.SITE_DENY_REASON)
 src = open(os.path.join(ROOT, "runtime", "agent_turn.py"), encoding="utf-8").read()
 mount = src[src.index("def _mount_turn_hooks("):src.index("SCHED_OUTCOME = {}")]
 t("③ 每個回合都掛(在 sink / scheduled 分支之前)", mount.index("_secret_code_bash_guard_hooks(options)") < mount.index("if isinstance(sink, LocalSink)"))

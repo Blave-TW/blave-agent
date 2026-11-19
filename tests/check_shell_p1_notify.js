@@ -225,7 +225,7 @@ t("狀態:全部平倉延到開盤與取消延後不發,水位線照推;要再�
   p1CoolStamp(seen, "other", T0 + 3300 * 1000);
   t("冷卻:蓋新章時清掉過期的 key", !Object.prototype.hasOwnProperty.call(seen, k0) && Object.keys(seen).join() === "other");
   t("接線:p1Sync 冷卻中的整則跳過(不加 Dock 數字),過了 60 秒節流才蓋章",
-    /for \(const e of show\) \{\n    if \(p1Cooling\(p1ErrCool, e\.cool, Date\.now\(\)\)\) continue;\n    p1Badge\+\+;/.test(src)
+    /for \(const e of show\) \{\n    if \(p1Cooling\(p1ErrCool, e\.cool, Date\.now\(\)\)\) continue;\n    if \(P2_NOTIFY_TYPES\.indexOf\(e\.type\) < 0\) p1Badge\+\+;/.test(src)
     && /p1LastShown\[throttle\] = Date\.now\(\);\n    p1CoolStamp\(p1ErrCool, e\.cool, Date\.now\(\)\);/.test(src));
   const apiPy = path.join(process.env.BLAVE_API_DIR || path.join(__dirname, "..", "..", "api"), "openclaw", "agent_events.py");
   if (!fs.existsSync(apiPy)) console.log("SKIP  api 端拒單冷卻與模擬帳戶降級比對(需要 monorepo 版面或 BLAVE_API_DIR)");
@@ -233,4 +233,17 @@ t("狀態:全部平倉延到開盤與取消延後不發,水位線照推;要再�
     t("…api 拒單冷卻同秒數、同三個欄位、同去數字規則;模擬帳戶拒單降 P2(api 還沒上就紅,出貨順序 api 先)",
       new RegExp('"p1_cooldown_s": ' + P1_ERR_COOL_S + "\\b").test(spec) && /"p1_cool_on": \("exchange", "symbol", "error"\)/.test(spec)
       && py.includes('re.sub(r"\\d[\\d.,]*", "#", v)') && /if event_type == "order_error" and \(data or \{\}\)\.get\("exchange"\) == "paper":\n\s+return P2/.test(py)); } }
+{ // 0.1.58:反覆卡住已暫停(P1)發本機通知;睡醒(P2)也發但不亮紅點(Wei 11-17);卡住已重啟(P2)不發
+  o = p1Pick([ev(900, "reconciler_hang_halted", {}), ev(901, "machine_woke", { minutes: 120, held: true }), ev(902, "reconciler_hang_restarted", {})], 899, NOW);
+  t("0.1.58 反覆卡住、睡醒發,卡住已重啟不發", types(o) === "reconciler_hang_halted:900,machine_woke:901" && o.mark === 902);
+  t("0.1.58 hang_watch 的 HALT 不在自動名單(P1 由 reconciler_hang_halted 承載)", HALT_AUTO_SOURCES.indexOf("hang_watch") < 0
+    && p1FromState(R({ halted: true, at: NOW - 5, source: "hang_watch" }), { halt: 0, err: 0 }, NOW).show.length === 0);
+  var tmLabels = { dur_min: "{m} 分鐘", dur_hour: "{h} 小時", dur_hour_min: "{h} 小時 {m} 分" };
+  t("0.1.58 內文 {keys} 換成標的、{d} 換成睡多久", p1Fill("送單時卡住，{keys} 可能已成交。", { keys: "BTCUSDT#market(market), ETHUSDT@spot#market(market)" })
+    === "送單時卡住，BTCUSDT, ETHUSDT 可能已成交。" && p1Fill("睡了 {d}", { minutes: 125 }) === "睡了 2 小時 5 分"
+    && p1Fill("睡了 {d}", { minutes: 120 }) === "睡了 2 小時" && p1Fill("睡了 {d}", { minutes: 45 }) === "睡了 45 分鐘");
+  t("0.1.58 卡住送單那則走 _hang 字、睡醒有等重算走 _held 字;睡醒不加紅點、紅點只看 P1",
+    /const variant = hang \? "_hang" : held \? "_held" :/.test(src) && /if \(P2_NOTIFY_TYPES\.indexOf\(e\.type\) < 0\) p1Badge\+\+;/.test(src)
+    && /if \(show\.some\(\(e\) => P2_NOTIFY_TYPES\.indexOf\(e\.type\) < 0\) && app\.dock\)/.test(src)
+    && /ev_execution_interrupted_hang: "Trading auto-paused"/.test(src) && /ev_machine_woke_held_n: /.test(src)); }
 console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);

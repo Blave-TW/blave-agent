@@ -212,6 +212,19 @@ def update_hold_fresh(state=None):
 STOP_MARK_NAME = "reconciler_stop_mark"   # = command_listener.RECONCILER_STOP_MARK (state/)
 
 
+def last_sign_of_life(state_dir):
+    """Newest of the heartbeat (loop top) and the progress stamp (every order leg and read inside a
+    round, manager/reconciler PROGRESS_PATH): a long round whose legs keep moving is alive. None =
+    neither file. A reconciler from before the stamp leaves only the heartbeat — as before."""
+    times = []
+    for name in ("reconciler", "reconciler_progress"):
+        try:
+            times.append(os.path.getmtime(os.path.join(state_dir, "heartbeat", name)))
+        except OSError:
+            pass
+    return max(times) if times else None
+
+
 def heartbeat_live(state_dir, now=None):
     """The reconciler's heartbeat is fresh AND newer than the runtime's stop mark. A mark
     written after the last beat is a confirmed stop (unbind, restart) — the heartbeat stays

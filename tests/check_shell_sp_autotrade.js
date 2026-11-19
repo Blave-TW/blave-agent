@@ -92,8 +92,8 @@ if (!process.versions.electron) {
   ok("② 頁首搬家鈕兩個方向都是 icon 鈕:只放 icon、aria-label 只放 ho.up.btn／ho.down.aria、拿掉原生 title、aria-describedby 接同字 tooltip;不再有「拉回…」文字鈕",
     /const label = t\(cloud \? "ho\.down\.aria" : "ho\.up\.btn"\);/.test(hp) && /b\.className = "rp-ic"; b\.removeAttribute\("title"\); b\.setAttribute\("aria-label", label\); b\.setAttribute\("aria-describedby", "rp-ho-tip"\); b\.appendChild\(hoIcon\(dir\)\);/.test(hp)
     && /tip\.textContent = label;/.test(hp) && !/btn-out|\.title =|ho\.down\.btn/.test(hp) && !/"ho\.down\.btn"/.test(fs.readFileSync(path.join(R, "strings.js"), "utf8")));
-  ok("② 拉回那顆記 sp_pull_icon、送上雲端那顆照記 sp_cloud_icon;sp_pull_icon 在 telemetry.js 白名單最後",
-    /if \(b\.dataset\.dir === "up"\) trackFeature\("sp_cloud_icon"\); else trackFeature\("sp_pull_icon"\);/.test(hp) && /"sp_pull_icon"\] \},/.test(fs.readFileSync(path.join(SHELL, "telemetry.js"), "utf8")));
+  ok("② 拉回那顆記 sp_pull_icon、送上雲端那顆照記 sp_cloud_icon;sp_pull_icon 接在 0.1.54 那段最後(0.1.57 的名字再接在它後面)",
+    /if \(b\.dataset\.dir === "up"\) trackFeature\("sp_cloud_icon"\); else trackFeature\("sp_pull_icon"\);/.test(hp) && /"sp_pull_icon",\n\s*\/\/ 0\.1\.57/.test(fs.readFileSync(path.join(SHELL, "telemetry.js"), "utf8")));
   const SP_EV = ["sp_auto_open", "sp_amt_saved", "sp_cx_opened", "sp_start_opened", "sp_cloud_icon", "sp_pull_icon"];
   ok("② 埋點六個 sp_* 都有送出點、名字 ≤16", SP_EV.every((n) => new RegExp('trackFeature\\([^;\\n]*"' + n + '"').test(tr + po + ho) && n.length <= 16), J(SP_EV.filter((n) => !new RegExp('trackFeature\\([^;\\n]*"' + n + '"').test(tr + po + ho))));
 

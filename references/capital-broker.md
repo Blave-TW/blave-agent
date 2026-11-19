@@ -737,8 +737,8 @@ Step 7b are not for you to call.
 `SYMBOL` — which declares the traded contract; data auto-aliases to the TXF series
 (`references/lib.md`): `TXF` → `TX00` / 200, `MXF` → `MTX00` / 50, `TMF` → `TM0000` / 10.
 The order library ships as `lib/order_capital.py` (live-tested paths only — surface and
-units in `references/lib.md`; do NOT hand-write SKCOM order calls anymore); reconciler wiring is
-the hand-wired signed-diff pattern per `references/manager.md`, and the reconciler service needs
+units in `references/lib.md`; do NOT hand-write SKCOM order calls anymore); the reconciler's 群益
+wiring ships with it (read-only for you, `references/manager.md`), and the reconciler service needs
 the `.\Administrator` ObjectName exception there (602).
 
 **Contract months and settlement in the book** (`references/manager.md` § Contract months): each

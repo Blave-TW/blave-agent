@@ -31,6 +31,7 @@ const ANY = [   // 機器層級:任何一條在跑都算
   ["關視窗只收起來", /const trading = tradeMaybeLive\(\), turn = anyTurn\(\), phone = /],
   ["結束前草稿那道併框(含排隊)", /const more = !!tradeMaybeLive\(\) \|\| anyTurnOrQueued\(\) \|\| twLots\(\)\.held;/],
   ["結束前的回合確認框(含排隊)", /if \(!quitting && !quitConfirmed && anyTurnOrQueued\(\)\) \{/],
+  ["venv 版本對不上時不搬(enginesetup.retireStale)", /^    venvInUse: \(\) => anyTurn\(\) \|\| !!\(_tradeHost && _tradeHost\.status\(\)\.running\), envPath:/],
 ];
 const ONE = [   // 那一條自己
   ["deleteSession", /if \(!okSessionId\(id\) \|\| turns\.has\(id\) \|\| \(typeof _relay !== "undefined" && _relay && _relay\.isMobile\(id\)\)\) return false;/],

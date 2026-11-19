@@ -15,7 +15,7 @@ const cutHandler = (s, anchor) => {
   throw new Error("unbalanced " + anchor);
 };
 // 初始 hidden 照 index.html(不自己猜):中欄各視圖、側欄入口
-const IDS = ["main-empty", "tr", "po", "rp", "lib", "rpt", "cv-empty", "po-nav", "tr-nav", "lib-nav", "rpt-nav", "strat-list", "view-ws"];
+const IDS = ["main-empty", "tr", "po", "rp", "lib", "rpt", "cv-empty", "po-nav", "tr-nav", "lib-nav", "strat-list", "view-ws"];
 const initHidden = (id) => new RegExp('id="' + id + '"[^>]*\\shidden[\\s>]').test(html);
 const mkEl = (id) => { const attrs = {}; return { id, hidden: initHidden(id), attrs, setAttribute: (k, v) => { attrs[k] = String(v); }, removeAttribute: (k) => { delete attrs[k]; }, hasAttribute: (k) => k in attrs, querySelectorAll: () => [], focus() {}, offsetParent: null }; };
 
@@ -40,7 +40,7 @@ async function boot() {
   return ctx;
 }
 const view = (ctx) => ["main-empty", "tr", "po", "rp", "lib", "rpt"].filter((id) => !ctx.els[id].hidden).join(",");
-const marked = (ctx) => ["po-nav", "tr-nav", "lib-nav", "rpt-nav"].filter((id) => ctx.els[id].hasAttribute("aria-current")).join(",");
+const marked = (ctx) => ["po-nav", "tr-nav", "lib-nav"].filter((id) => ctx.els[id].hasAttribute("aria-current")).join(",");
 const flush = () => new Promise((r) => setTimeout(r, 0));
 
 (async () => {

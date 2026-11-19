@@ -3,6 +3,7 @@
    用戶可能還在選 AI。重試接著上一次:上一次停在 fail 的快照沿用(步驟、時間、已下載量),做完的步驟與套件不重做。
    純函式(pipLine / pipCurName / pipError / failKind / depsTodo)另外匯出給 tests/check_shell_engine_setup.js。 */
 "use strict";
+const path_ = require("path");
 
 // --progress-bar=raw:stdout 印「Progress <目前> of <總數>」(bytes;每個檔各自從 0 算,一秒最多四行)。
 // 不能帶 -q:-q 會連這一行一起關掉。小於 512 KB 的檔 pip 不印 Progress,只有 Downloading 那一行的大小。
@@ -204,6 +205,30 @@ async function waitPidLock(fs, file, o) {
   return { timedOut: false, held: true };
 }
 
+/* 建 venv、pip、compileall 的環境:用戶系統層的 PYTHONHOME／PYTHONPATH(GIS、舊安裝程式常設)會讓隨包 3.12 找錯標準庫
+   (-m venv 報 No module named 'encodings')或載到別顆的 pip;PIP_* 會換索引。--isolated 只擋 pip 自己的設定,擋不到直譯器層。
+   一律從 penv 拔掉這兩類,再疊我們自己的 pyEnv(PYTHONUTF8、PYTHONPYCACHEPREFIX 照帶) */
+const PY_ENV_DROP = /^(PYTHON|PIP_)/i;
+function pyChildEnv(penv, pyEnv, envPath, extra) {
+  const env = {};
+  for (const k of Object.keys(penv)) if (!PY_ENV_DROP.test(k)) env[k] = penv[k];
+  return { ...env, ...pyEnv, PATH: envPath, ...extra };
+}
+// 這顆 Python 的 major.minor,只看檔案佈局不起行程:mac／Linux 的 lib/python3.N/、Windows 的 python3NN.dll。系統的(非絕對路徑)不知道 → null
+function basePyMinor(py, win, readdir) {
+  if (!path_.isAbsolute(py)) return null;
+  const root = win ? path_.dirname(py) : path_.dirname(path_.dirname(py));
+  try {
+    const re = win ? /^python3(\d+)\.dll$/i : /^python3\.(\d+)$/;
+    for (const n of readdir(win ? root : path_.join(root, "lib"))) { const m = re.exec(n); if (m) return "3." + m[1]; }
+  } catch (_) { /* 讀不到就不比 */ }
+  return null;
+}
+// venv 自己記的版本(pyvenv.cfg 的 version = 3.12.14)→ "3.12";給還沒寫 .blave-python 的既有 venv 用
+function venvCfgMinor(text) {
+  const m = /^version(?:_info)?\s*=\s*(\d+)\.(\d+)/m.exec(String(text || ""));
+  return m ? m[1] + "." + m[2] : null;
+}
 const STEP_ORDER = ["ws", "engine", "pkgs"];
 const FAIL_LOG_KEEP = 20;
 function createEngineSetup(o) {
@@ -224,6 +249,72 @@ function createEngineSetup(o) {
   const pycKey = o.sdkPins + "\n" + o.deps.join("\n");
   const sdkName = o.sdkPins.split(" ")[0].split("==")[0];
   const read = (f) => { try { return fs.readFileSync(f, "utf8"); } catch (_) { return null; } };
+  // 建這個 venv 的 Python 的 major.minor。升 minor 時 site-packages 是舊版的(Windows 會載到 cp312 的 .pyd),記號檔卻說裝好了:對不上就整個重建
+  const pyMark = path.join(venvDir, ".blave-python");
+  const markPy = (v) => { if (v && read(pyMark) !== v) { try { fs.writeFileSync(pyMark, v); } catch (_) { /* 下次再記;沒記號時看 pyvenv.cfg */ } } };
+  /* 版本對不上時把舊 venv 整個搬開(venv.old-<時間>),原地重建。搬是全有或全無:Windows 上有檔被鎖(daemon、對帳器、回合正在用)
+     rename 整個失敗、一個檔都不少;直接 rmSync 會刪到一半,之後每次開 app 都再刪一些對帳器正在用的檔。
+     不在暫存目錄建好再換進來:venv 把自己的絕對路徑寫進 pyvenv.cfg 的 command、bin/ 的 shebang 與 Windows 的 Scripts\*.exe,搬過的 venv 不等於原地建的。
+     o.venvInUse() = 交易主機或回合正在跑:那時連搬都不搬,照用舊的,等下次開 app(交易主機起來之前 main.js 先叫一次)。
+     回 "ok"(版本對或不知道)、"retired"(搬開了,接著當沒有 venv 重建)、"busy"、"locked"(搬不動) */
+  let retiredTo = null;   // 這次啟動搬開的那一份:重建失敗就搬回來(restoreRetired)
+  /* 搬開時落地一個記號(BASE/venv-rebuild.json,在 venv 外面):重建到一半當機、斷電,app 沒機會走 restoreRetired。
+     下次開(開機那一步或 ensure)看到記號而 venv 不完整:半成品刪掉(交易主機不在缺套件的 venv 上起)、接著重建,
+     這輪再失敗就搬回舊的;venv 已完整(記號是建好之後、清記號之前斷的)就只清記號 */
+  const rebuildMark = path.join(o.base, "venv-rebuild.json");
+  const venvComplete = () => fs.existsSync(o.venvPy) && read(sdkMark) === o.sdkPins;
+  function rebuildDone() { retiredTo = null; try { fs.unlinkSync(rebuildMark); } catch (_) { /* 本來就沒有 */ } }
+  function resumeRebuild() {
+    let m = null; try { m = JSON.parse(read(rebuildMark)); } catch (_) { m = null; }
+    if (!m || typeof m.old !== "string" || path.dirname(m.old) !== path.dirname(venvDir) || !/^venv\.old-\d+$/.test(path.basename(m.old))) {
+      if (read(rebuildMark) !== null) rebuildDone();   // 壞掉的記號:不拿它指路
+      return;
+    }
+    if (venvComplete() || !fs.existsSync(m.old)) { rebuildDone(); return; }
+    retiredTo = m.old;
+    try { fs.rmSync(venvDir, { recursive: true, force: true }); } catch (e) { o.log(`[engine] could not clear the half-built venv (${(e && e.code) || e})`); return; }
+    o.log("[engine] a venv rebuild was cut off last time: rebuilding again, the previous venv comes back if it fails");
+  }
+  function retireStale() {
+    if (!retiredTo) resumeRebuild();
+    const want = o.pyVersion ? o.pyVersion() : null;
+    const have = read(pyMark) || venvCfgMinor(read(path.join(venvDir, "pyvenv.cfg")));
+    if (!want || !have || have === want) return "ok";
+    if (o.venvInUse && o.venvInUse()) { o.log(`[engine] venv built by Python ${have}, now ${want}: in use, rebuild on next launch`); return "busy"; }
+    const to = venvDir + ".old-" + now();
+    try { fs.renameSync(venvDir, to); retiredTo = to; } catch (e) { o.log(`[engine] venv built by Python ${have}, now ${want}: could not move it aside (${(e && e.code) || e}), rebuild on next launch`); return "locked"; }
+    try { fs.writeFileSync(rebuildMark, JSON.stringify({ old: to, at: now() })); } catch (_) { /* 沒記號:斷電時退回 newestRetired 那條(只在 venv 不在時) */ }
+    o.log(`[engine] venv built by Python ${have}, now ${want}: moved aside, rebuilding`);
+    return "retired";
+  }
+  /* 搬開之後重建沒成功(離線、磁碟滿、關 app):新的不完整(沒有 python 或 SDK 記號不對)就刪掉半成品、把舊的搬回來,
+     交易主機照舊能起,下次開 app 版本還是對不上、再搬一次重建。跨啟動(上次搬開後就關了)看 venv 的 python 在不在、拿最新的那份 */
+  function newestRetired() {
+    let names = [];
+    try { names = fs.readdirSync(o.base).filter((n) => /^venv\.old-\d+$/.test(n)).sort((a, b) => Number(b.slice(9)) - Number(a.slice(9))); } catch (_) { /* 沒有 */ }
+    return names.length ? path.join(o.base, names[0]) : null;
+  }
+  function restoreRetired() {
+    const from = retiredTo, incomplete = !fs.existsSync(o.venvPy) || read(sdkMark) !== o.sdkPins;
+    if (!from || !incomplete || !fs.existsSync(from)) return false;
+    try {
+      fs.rmSync(venvDir, { recursive: true, force: true });
+      fs.renameSync(from, venvDir);
+      rebuildDone();
+      o.log("[engine] rebuild did not finish: the previous venv is back, rebuild on next launch");
+      return true;
+    } catch (e) { o.log(`[engine] could not put the previous venv back (${(e && e.code) || e})`); return false; }
+  }
+  // 搬開的舊 venv 背景刪;刪到一半(Windows 有檔被鎖)沒關係,現用的 venv 不在裡面,下次再刪
+  function sweepRetired() {
+    let names = [];
+    try { names = fs.readdirSync(o.base).filter((n) => /^venv\.old-\d+$/.test(n)); } catch (_) { return; }
+    for (const n of names) {
+      const p = path.join(o.base, n);
+      if (fs.promises && fs.promises.rm) fs.promises.rm(p, { recursive: true, force: true }).catch(() => { /* 下次再刪 */ });
+      else { try { fs.rmSync(p, { recursive: true, force: true }); } catch (_) { /* 下次再刪 */ } }
+    }
+  }
   let S = { phase: "idle" };
   const emit = () => { try { o.onChange(snapshot()); } catch (e) { o.log("[engine] onChange failed: " + (e && e.message)); } };
   // 使用追蹤(telemetry.js 的 engine_setup / engine_opt_fail;值全是列舉):追蹤壞了不能讓安裝跟著壞
@@ -340,7 +431,7 @@ function createEngineSetup(o) {
     if (my !== gen || pyc || read(pycMark) === pycKey || !fs.existsSync(o.venvPy)) return;
     let c, out = "";
     try {
-      c = spawn(o.basePython(), ["-m", "compileall", "-q", venvDir], { windowsHide: true, env: { ...process.env, ...o.pyEnv, PATH: envPath } });
+      c = spawn(o.basePython(), ["-m", "compileall", "-q", venvDir], { windowsHide: true, env: pyChildEnv(process.env, o.pyEnv, envPath) });
     } catch (e) { o.log("[engine] bytecode compile not started: " + ((e && e.message) || e)); return; }
     pyc = c; pycDone = new Promise((r) => c.once("close", r));
     try { fs.writeFileSync(pycLock, JSON.stringify({ pid: c.pid, at: now() })); } catch (_) { /* 鎖檔寫不了照樣編 */ }
@@ -376,7 +467,7 @@ function createEngineSetup(o) {
       let out = "", err = "", errBuf = "", timedOut = false, idled = false, c;
       if (my !== gen) { reject(Object.assign(new Error("stopped (app closing)"), { stderr: "", aborted: true })); return; }
       try {
-        c = spawn(bin, args, { windowsHide: true, env: { ...process.env, ...o.pyEnv, PATH: envPath, PYTHONUNBUFFERED: "1" } });
+        c = spawn(bin, args, { windowsHide: true, env: pyChildEnv(process.env, o.pyEnv, envPath, { PYTHONUNBUFFERED: "1" }) });
       } catch (e) { reject(Object.assign(new Error(String((e && e.message) || e)), { stderr: "", spawnFail: true })); return; }
       child = c; childDone = new Promise((r) => c.once("close", r));
       // Windows:建 venv 與 pip 降一級優先序,不跟第一次開的畫面、防毒首掃搶 CPU(mac 不變)。pip 走 venv\Scripts\python.exe 那個轉手的 launcher,
@@ -550,14 +641,21 @@ function createEngineSetup(o) {
 
   async function ensure() {
     let pre = true;
-    try { return await ensureRun(() => { pre = false; }); } catch (e) { if (pre) preFail(e); throw e; }
+    try { return await ensureRun(() => { pre = false; }); } catch (e) { restoreRetired(); if (pre) preFail(e); throw e; }
   }
   async function ensureRun(began) {
     const my = gen;
     const envPath = await o.envPath();
     await waitLock();
     const fresh = !fs.existsSync(o.ws);
+    // 舊版本的 venv 這次搬不開(有人在用、被鎖)就照用,記號也不改成新版本:下次還認得出要重建
+    const ret = retireStale();
+    // 上次開 app 搬開了、還沒重建就關了:這次是重建,失敗時搬回的是最新那份
+    if (!retiredTo && !fs.existsSync(venvDir)) retiredTo = newestRetired();
+    const pyWant = (ret === "ok" || ret === "retired") && o.pyVersion ? o.pyVersion() : null;
     const needVenv = !fs.existsSync(o.venvPy);
+    // 舊版本的 venv 搬不開、python 又不見了:原地建會把新版本的直譯器疊在舊版本的 site-packages 上,寧可這輪失敗
+    if (needVenv && (ret === "busy" || ret === "locked")) throw Object.assign(new Error("venv from another Python version is in use; restart Blave"), { kind: "other" });
     const needSdk = read(sdkMark) !== o.sdkPins;
     const groups = depGroups(o.deps, o.optional).map((g) => ({ ...g, mark: markOf(g.id),
       todo: skipped.has(g.id) ? [] : depsTodo(g.pins, read(markOf(g.id)), read(markOf(g.id) + ".part")) }));
@@ -565,6 +663,7 @@ function createEngineSetup(o) {
     if (!fresh && !o.isPackaged) await o.copyOfficial();   // 開發版:每次都重拷,改了 lib/ 或 AGENTS.md 重啟就生效
     if (!fresh && !needVenv && !needSdk && !todo.length) {
       for (const d of ["state", "config"]) fs.mkdirSync(path.join(o.base, d), { recursive: true });
+      markPy(pyWant); rebuildDone(); sweepRetired();
       // 上一輪失敗、這一輪卻沒事可做(上次死在寫最後那個記號檔之前,其實都裝好了):卡不能一直停在失敗
       if (S.phase === "fail") { Object.assign(S, { phase: "done", tEnd: now(), cur: null, err: null }); emit(); }
       compileStart(envPath, my);
@@ -656,6 +755,7 @@ function createEngineSetup(o) {
           }
         }
       });
+      markPy(pyWant); rebuildDone(); sweepRetired();
       Object.assign(S, { phase: "done", tEnd: now(), cur: null });
       emit();
       if (S.kind !== "relink") track("engine_setup", kindTag() + "_done");
@@ -672,7 +772,7 @@ function createEngineSetup(o) {
       throw e;
     }
   }
-  return { ensure, snapshot, abort, busy, compiling };
+  return { ensure, snapshot, abort, busy, compiling, retireStale };
 }
 
-module.exports = { createEngineSetup, waitPidLock, pidAlive, procStartOf, pipLine, pipErrLine, PIP_OPTIONAL, pipCurName, pipWheel, pipError, failKind, netRetryOk, NET_RETRY_MS, pipWhy, venvWhy, engineFailWhy, depsTodo, depGroups, lockKey, PIP_INSTALL, FAIL_LOG_KEEP };
+module.exports = { createEngineSetup, pyChildEnv, basePyMinor, venvCfgMinor, waitPidLock, pidAlive, procStartOf, pipLine, pipErrLine, PIP_OPTIONAL, pipCurName, pipWheel, pipError, failKind, netRetryOk, NET_RETRY_MS, pipWhy, venvWhy, engineFailWhy, depsTodo, depGroups, lockKey, PIP_INSTALL, FAIL_LOG_KEEP };

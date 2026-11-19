@@ -3298,6 +3298,95 @@ def _tw_fut_open_s(t0, t1):
     return total
 
 
+# ── Woke from sleep (desktop 0.1.58, Wei 11-17 甲) ────────────────────────────────────────────────
+# manager/reconciler sets this for WAKE_HOLD_MAX_S after the computer wakes. A funded Type A/C
+# strategy that has not recomputed since the wake has its share held from growing — the same
+# "only shrink" hold as a stale target (_stale_share_targets): entries and adds wait, reduces and
+# closes go. The names are kept apart from the stale ones (anchor `wake`) so the stale release
+# rule never takes them over: they leave when they recompute or when the window ends.
+_wake_hold = None          # {'down_to': epoch, 'until': epoch}
+_wake_hold_logged = set()
+_TW_STOCK_DAILY_FETCHERS = frozenset(("fetch_twstock_price", "fetch_twstock_price_adj",
+                                      "fetch_twstock_price_batch", "fetch_twstock_price_adj_batch"))
+
+
+def set_wake_hold(down_to, until):
+    global _wake_hold
+    _wake_hold = {'down_to': float(down_to), 'until': float(until)}
+    _wake_hold_logged.clear()
+
+
+def clear_wake_hold():
+    global _wake_hold
+    _wake_hold = None
+
+
+def _naive_utc(iso):
+    try:
+        t = datetime.fromisoformat(str(iso))
+    except (TypeError, ValueError):
+        return None
+    return t.astimezone(timezone.utc).replace(tzinfo=None) if t.tzinfo else t
+
+
+def _tw_stock_daily_one(name, cfg):
+    spec = ((cfg or {}).get('asset_specs') or {}).get(name)
+    if isinstance(spec, dict) and spec.get('type') == 'futures_contracts':
+        return False
+    try:
+        from lib.data import _price_fetcher_scan
+        names, _ = _price_fetcher_scan(_strategy_source(name))
+    except Exception:
+        return False
+    return bool(names) and set(names) <= _TW_STOCK_DAILY_FETCHERS
+
+
+def _recomputed_since_one(name, down_to, cfg=None):
+    """runtime/portfolio_reporter._recomputed_since for one strategy (two update channels, so a
+    copy; tests/check_wake_hold.py pins both on one fixture): its last processed bar is at least
+    the bar that had just closed at down_to, or a check after down_to found nothing newer and did
+    not fail. No INTERVAL (Type B) → True: the reconciler does not trade its signal. Any doubt → False."""
+    try:
+        bar = _bar_seconds(name)
+        if not bar:
+            return True
+        td = timedelta(seconds=bar)
+        epoch = datetime(1970, 1, 1)
+        boot = epoch + timedelta(seconds=float(down_to))
+        need = epoch + ((boot - epoch) // td) * td - td
+        if td == timedelta(days=1) and _tw_stock_daily_one(name, cfg if cfg is not None else load_portfolio_config()):
+            while need.weekday() >= 5:
+                need -= td
+        path = f'state/bar_wait/{name}.json'
+        try:
+            st = load_json(path)
+            checked_after = os.path.getmtime(path) > float(down_to)
+        except (OSError, ValueError):
+            st, checked_after = {}, False
+        st = st if isinstance(st, dict) else {}
+        processed = _naive_utc(st.get('last_processed_bar'))
+        if processed is not None and processed >= need:
+            return True
+        seen = _naive_utc(st.get('last_seen_bar'))
+        failed_after = any(isinstance(st.get(k), (int, float)) and st[k] > float(down_to)
+                           for k in ('last_attempt_failed_at', 'wrapper_error_alerted_at'))
+        return bool(checked_after and not failed_after and processed is not None
+                    and seen is not None and seen <= processed)
+    except Exception as e:
+        logging.warning(f"[portfolio] {name}: recompute check failed ({type(e).__name__}: {e}) — held")
+        return False
+
+
+def _wake_held(names, stale, now=None):
+    """The names held because the computer woke and they have not recomputed since."""
+    hold = _wake_hold
+    now = time.time() if now is None else now
+    if not hold or now >= hold['until']:
+        return set()
+    cfg = load_portfolio_config()
+    return {n for n in names if n not in stale and not _recomputed_since_one(n, hold['down_to'], cfg)}
+
+
 def _stale_target_age(name, now=None):
     """Seconds since `name`'s state.json was written when that target is stale, else None. An
     intraday TAIFEX index-futures strategy counts only session time: its target from the night's
@@ -3352,7 +3441,9 @@ def _stale_share_book():
 
 
 def _stale_held_names():
-    return {n for v in _stale_share_book().values() for n in v.get('names') or ()}
+    """Names a stale hold holds; a name only woken-held (the anchor's `wake`) is not one."""
+    return {n for v in _stale_share_book().values() for n in v.get('names') or ()
+            if n not in (v.get('wake') or ())}
 
 
 def _stale_share_save(book):
@@ -3396,6 +3487,7 @@ def _stale_share_targets(target, book, skip_roots=(), stale_keys=None):
         names = sorted(set(row.get('stale_target') or ()))
         if not names or row.get('gated') or row.get('awaiting'):
             continue
+        wake = sorted(set(row.get('wake_hold') or ()) & set(names))
         sym, market = split_key(key)
         if market != 'spot' and txf_root(sym) in skip_roots:
             continue
@@ -3431,10 +3523,11 @@ def _stale_share_targets(target, book, skip_roots=(), stale_keys=None):
             if abs(share - rec['share']) > 1e-9:
                 guard.audit('stale_share_held', symbol=key, strategies=names,
                             wants=round(stale, 4), held=round(share, 4))
-        if rec is None or rec['names'] != names or abs(share - rec['share']) > 1e-9:
+        if (rec is None or rec['names'] != names or abs(share - rec['share']) > 1e-9
+                or sorted(rec.get('wake') or ()) != wake):
             logging.warning(f"[reconcile] {key}: {', '.join(names)} not refreshed — its share held "
                             f"at {share:g} (wants {stale:g}); the others trade")
-            anchors[key] = {'names': names, 'share': share}
+            anchors[key] = dict({'names': names, 'share': share}, **({'wake': wake} if wake else {}))
             changed = True
         signed = others + share
         if native_units(row.get('asset_spec'), row.get('exchange'), actual=book.get(key)):
@@ -3925,10 +4018,24 @@ def aggregate_portfolio():
             age = None
         if age is not None:
             stale[name] = age
+    try:
+        woke = _wake_held({c['strategy'] for row in result.values() for c in row['contributors']}, stale)
+    except Exception as e:  # never a reason to skip this round's exits
+        logging.error(f"[portfolio] wake hold failed ({type(e).__name__}: {e}) — not held")
+        woke = set()
     for key, row in result.items():
         names = sorted(c['strategy'] for c in row['contributors'] if c['strategy'] in stale)
-        if names:
-            row['stale_target'] = names
+        held = sorted(c['strategy'] for c in row['contributors'] if c['strategy'] in woke)
+        if names or held:
+            row['stale_target'] = sorted(set(names) | set(held))
+        if held:
+            row['wake_hold'] = held
+    for name in woke - _wake_hold_logged:
+        _wake_hold_logged.add(name)
+        keys = sorted(k for k, row in result.items() if name in row.get('wake_hold', ()))
+        logging.info(f"[portfolio] {name}: not recomputed since the computer woke — its share of {keys} "
+                     f"only shrinks until it does (at most until the wake window ends)")
+        guard.audit('wake_hold', strategy=name, keys=keys)
     for name in set(stale) - _stale_targets_logged:
         keys = sorted(k for k, row in result.items() if name in row.get('stale_target', ()))
         logging.warning(f"[portfolio] {name}: target not refreshed for {round(stale[name])}s while "
@@ -5040,6 +5147,9 @@ def reconcile(get_positions_fn, place_order_fn, threshold=RECONCILE_THRESHOLD, s
             # such a kill, and the next start's reap_dead_inflight HALTs on it.
             if mark_inflight and not marked:
                 ok = mark_inflight(f"{symbol}#market", "market", sub_diff)
+                if ok is False:
+                    guard.audit('sync_marker_unwritable', symbol=symbol, signed_diff=sub_diff,
+                                intent='entry' if is_entry else 'reduce')
                 if ok is False and is_entry:
                     # no marker = a kill mid-order leaves no trace (reap_dead_inflight): the full
                     # disk that refused it would refuse the park too — no new exposure this round
@@ -5236,6 +5346,12 @@ def reconcile(get_positions_fn, place_order_fn, threshold=RECONCILE_THRESHOLD, s
         _flush_legs()
         if marked and not keep_marker:
             unmark_inflight(f"{symbol}#market")
+        elif marked:
+            try:  # left for the next start's reap: not a leg in flight in this process any more
+                from lib.execute import disown_inflight_marker
+                disown_inflight_marker(f"{symbol}#market")
+            except ImportError:
+                pass
         if logged[0]:
             executed.append(order)
 

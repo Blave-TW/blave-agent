@@ -11,6 +11,7 @@ const os = require("os");
 const fs = require("fs");
 const { createDaemonHost } = require("./daemon.js");
 const wsfile = require("./wsfile");
+const planV3Mod = require("./planv3");   // 改價 v3 付款框:回應白名單(publicPricing 用)與宿主(planV3())
 const { cliAuthHow } = require("./telemetry");
 
 // 打包版的名字 = userData 目錄名(~/Library/Application Support/Blave)與 Keychain 項目名。
@@ -826,6 +827,36 @@ async function planStart(opts) {
     return out;
   } catch (_) { return { error: "SERVER" }; }
 }
+/* 改價 v3 的付款框(planv3.js;畫面 renderer/planv3.js)。開藍新頁沿用策略庫那條 libPayForm / libPayOpen */
+let _planV3 = null;
+function planV3() {
+  if (!_planV3) _planV3 = planV3Mod.createPlanV3({ apiBase: API_BASE, post: (u, b) => postJSON(u, b), getCreds: blaveCreds,
+    payForm: libPayForm, payOpen: libPayOpen, markPath: () => path.join(app.getPath("userData"), "plan-bind.json"), replaceFile: (p, s) => wsfile.replace(p, s),
+    onMoney: () => { lastAcct = null; if (_balance) _balance.reset(); } });
+  return _planV3;
+}
+/* 30 TWD 用完那張卡的〔看我的策略〕(CONTRACT §1):這支策略要不要 Blave 資料,跑 workspace 那份 lib/quality_check.blave_data_need。
+   回 true / false / null(判不出、沒有引擎、逾時);null 一律當要資料。只讀側欄清單上的策略,同一支 strategy.py 沒變就用上一次的答案 */
+const _dataNeed = new Map();
+function strategyDataNeed(name) {
+  if (typeof name !== "string" || !stratNames().includes(name) || !fs.existsSync(VENV_PY)) return Promise.resolve(null);
+  const file = path.join(STRAT_DIR(), name, "strategy.py");
+  let mt = 0; try { mt = fs.statSync(file).mtimeMs; } catch (_) { return Promise.resolve(null); }
+  const hit = _dataNeed.get(name);
+  if (hit && hit.mt === mt) return Promise.resolve(hit.v);
+  const code = "import sys, json\nsys.path.insert(0, sys.argv[1])\nfrom lib.quality_check import blave_data_need\n"
+    + "print(json.dumps(blave_data_need(open(sys.argv[2], encoding='utf-8').read())))";
+  return new Promise((done) => {
+    try {
+      require("child_process").execFile(VENV_PY, ["-I", "-c", code, WS, file], { cwd: WS, timeout: 15000, windowsHide: true, maxBuffer: 4096 }, (err, out) => {
+        let v = null; try { v = err ? null : JSON.parse(String(out).trim()); } catch (_) { v = null; }
+        v = v === true || v === false ? v : null;
+        if (!err) _dataNeed.set(name, { mt, v });
+        done(v);
+      });
+    } catch (_) { done(null); }   // EPERM 是同步 throw(shell/CLAUDE.md)
+  });
+}
 
 /* Blave 資料 key(api-key / secret-key 一組):換 token 時 api 一併發下來,只此一次。
    跟 token 一樣進 Keychain;**登入了、而且帳號含資料**才寫進 workspace 的 `.env`
@@ -1197,7 +1228,11 @@ const VENV_PY = path.join(BASE, "venv", VENV_BIN, WIN ? "python.exe" : "python")
 // Windows 的 python-build-standalone 沒有 bin/:python.exe 就在根目錄(python-x64\python.exe)
 const BUNDLED_PY = WIN ? path.join(process.resourcesPath || "", `python-${process.arch}`, "python.exe")
   : path.join(process.resourcesPath || "", `python-${process.arch}`, "bin", "python3");
-const basePython = () => (app.isPackaged && fs.existsSync(BUNDLED_PY) ? BUNDLED_PY : WIN ? "python" : "python3");
+// 打包版只用隨包那顆:缺檔(防毒隔離、裝一半)就讓建 venv 以 venv_spawn 失敗,不退到 PATH 上的 python(Windows 可能是 Store 別名;
+// 用戶自己那顆被解除安裝,venv 就跟著死)。開發版:tools/fetch-python.sh 抓到 shell/vendor/ 的那顆在就用它,版本才跟打包版一樣,
+// 沒有才退系統的(Homebrew 3.15 事件)。vendor 的目錄名照 electron-builder.config.js:Windows 是 python-win-x64
+const DEV_PY = path.join(__dirname, "vendor", WIN ? `python-win-${process.arch}` : `python-${process.arch}`, ...(WIN ? ["python.exe"] : ["bin", "python3"]));
+const basePython = () => (app.isPackaged ? BUNDLED_PY : fs.existsSync(DEV_PY) ? DEV_PY : WIN ? "python" : "python3");
 // 隨包 pip wheel(tools/fetch-python.sh 的 PIP_WHL,兩邊要一樣):打包版在 resources/pip-wheel/,開發版在 shell/vendor/pip-wheel/(gitignored,沒抓就不升級)。
 // enginesetup 用它離線升級 venv 的 pip,拿到 --resume-retries(斷線從斷點接續)
 const PIP_WHEEL_NAME = "pip-26.2.2-py3-none-any.whl";
@@ -1418,9 +1453,12 @@ const PKG_MB = { core: firstRunMB() - 105, us: 13 };
 const OPTIONAL_DEPS = [{ id: "us", names: ["yfinance", "curl_cffi", "lxml", "peewee", "protobuf", "websockets", "beautifulsoup4", "multitasking", "platformdirs", "pytz"] }];
 let _engineSetup = null;
 function engineSetup() {
-  if (!_engineSetup) _engineSetup = require("./enginesetup").createEngineSetup({
+  const ES = require("./enginesetup");
+  if (!_engineSetup) _engineSetup = ES.createEngineSetup({
     fs, path, spawn: require("child_process").spawn, base: BASE, ws: WS, venvPy: VENV_PY, venvBin: VENV_BIN, win: WIN,
-    basePython, envPath: loginShellPath, pyEnv: { ...PY_ENV, ...(WIN ? WIN_PY_ENV : {}) }, copyOfficial: copyOfficialAsync, isPackaged: app.isPackaged, pipWheel: PIP_WHEEL,
+    basePython, pyVersion: () => ES.basePyMinor(basePython(), WIN, fs.readdirSync),
+    // venv 版本對不上時,交易主機或回合在跑就不搬它(enginesetup.retireStale)
+    venvInUse: () => anyTurn() || !!(_tradeHost && _tradeHost.status().running), envPath: loginShellPath, pyEnv: { ...PY_ENV, ...(WIN ? WIN_PY_ENV : {}) }, copyOfficial: copyOfficialAsync, isPackaged: app.isPackaged, pipWheel: PIP_WHEEL,
     sdkPins: SDK_PINS, deps: WORKSPACE_DEPS, lock: WORKSPACE_LOCK_FOR === require("./enginesetup").lockKey(SDK_PINS, WORKSPACE_DEPS) ? WORKSPACE_LOCK : [], optional: OPTIONAL_DEPS, firstRunMB: firstRunMB(), groupMB: PKG_MB, venvMs: VENV_MS, engineMs: ENGINE_PIP_MS, pkgMs: PKG_PIP_MS, idleMs: PIP_IDLE_MS,
     // 開發版量冷快取用:pip 帶 --isolated 不吃 PIP_CACHE_DIR,改由這個變數給 --cache-dir;打包版不認
     pipCacheDir: !app.isPackaged && path.isAbsolute(process.env.BLAVE_PIP_CACHE_DIR || "") ? process.env.BLAVE_PIP_CACHE_DIR : null,
@@ -2760,7 +2798,9 @@ async function publicPricing() {
     starter_annual: st ? n(st.annual_twd) : null,
     tiers: [...(Array.isArray(b.linux) ? b.linux : []), ...(Array.isArray(b.windows) ? b.windows : [])].filter(Boolean).map((x) => ({ tier: x.tier, label: x.label, vcpu: n(x.vcpu), ram_gb: n(x.ram_gb) })),
     plan: { monthly_billing_active: pl.monthly_billing_active === true, annual_pay_months: n(pl.annual_pay_months),
-      annual_period_days: n(pl.annual_period_days), period_days: n(pl.period_days), grace_days: n(pl.grace_days) } };
+      annual_period_days: n(pl.annual_period_days), period_days: n(pl.period_days), grace_days: n(pl.grace_days),
+      // 改價 v3(契約 §3):沒登入時判新框要不要出、框上的數字;舊 api 沒有 = false / null
+      v3_active: pl.v3_active === true, v3: planV3Mod.publicV3(pl.v3) } };
 }
 // ── 最低版本閘(minversion.js;spec §13 第 4 點)──────────────────
 // 安全事故用:api 說這個版本已停用 → 擋新的下單啟動與 Blave AI,只留更新。失敗方向一律放行(檔頭有完整規則)。
@@ -3443,6 +3483,11 @@ async function unbindAfterClose(id, names, requestId, forget) {
   return r;
 }
 setInterval(() => { if (Object.keys(_forgetWhenGone).length && _tradeHost) forgetWhenGone(_tradeHost.status().report); }, 5000).unref();
+// 測試開關(manager/reconciler.py TEST_HANG_ENV):只有開發版、從啟動這支 app 的環境帶給常駐程式;打包版一律不帶
+function testHangEnv(penv, packaged) {
+  const v = penv.BLAVE_TEST_HANG_BEFORE_SEND;
+  return !packaged && typeof v === "string" && /^(\d+(\.\d+)?|forever|inf)$/i.test(v.trim()) ? { BLAVE_TEST_HANG_BEFORE_SEND: v.trim() } : {};
+}
 function tradeHost() {
   if (!_tradeHost) {
     _tradeHost = createDaemonHost({
@@ -3452,6 +3497,7 @@ function tradeHost() {
         TMPDIR: process.env.TMPDIR || os.tmpdir(), BLAVE_KLINE_SOURCE: "binance",
         BLAVE_AGENT_HOME: BASE, BLAVE_AGENT_STATE: path.join(BASE, "state"),
         ...PY_ENV }),   // 打包版不讓 Python 把 __pycache__ 寫進 .app(簽章後 bundle 一變 codesign --verify 就不過)
+      extraEnv: testHangEnv(process.env, app.isPackaged),
       log: (m) => console.error("[trade]", m),
     });
     // 統一(只有 Windows):daemon 重起後補交帳密——跟著常駐程式走,5 秒一輪(防睡併進 awakeSync)
@@ -3671,8 +3717,9 @@ function ensureEngineShared() {
 }
 /* 開 app 就在背景裝(0.1.12 的 C):不等用戶選好 AI、送出第一句話。裝引擎不需要登入、不需要選定哪一種 AI——
    三種都跑同一個 venv。失敗只留 log:卡上有重試,送第一句話時也會再試一次 */
+// 失敗也試著起交易主機:版本重建沒成功時舊 venv 已搬回來(enginesetup.restoreRetired),對帳器照舊能跑;沒有 venv 就什麼都不做
 function engineKick() {
-  ensureEngineShared().then(() => tradeStartIfReady(), (e) => console.error("[engine] background setup failed: " + ((e && e.message) || e)));
+  ensureEngineShared().then(() => tradeStartIfReady(), (e) => { console.error("[engine] background setup failed: " + ((e && e.message) || e)); tradeStartIfReady(); });
 }
 /* Binance 真錢連接(binance_link.js)。金鑰只從 renderer 的表單經過這裡一次:查過權限 → 用 trusted 的路交給 daemon 寫進 workspace 的 .env。
    這裡不 log 金鑰、不另存;落地的 state 檔只有檢查結果與當時的對外 IP。my_ip 不帶 token:回應與身分無關,帶了失效的 token 反而 401、查不到 IP。舊版 api 沒 token 回 401,照查不到處理。 */
@@ -4336,6 +4383,19 @@ app.whenReady().then(() => {
     tm().track("plan_start_res", { result: r.state ? "ok" : r.error === "NO_CARD" ? "no_card" : r.error === "NO_CREDIT" || r.error === "PLAN_CHARGE_FAILED" ? "no_credit" : r.error === "PLAN_CONFIRM_REQUIRED" ? "confirm" : "error" });
     return r;
   }) : { error: "SERVER" }));
+  // 改價 v3 付款框(planv3.js):動錢的四支與報價、回程都只收自家畫面(handle 守 fromOurPage)
+  handle("plan3-quote", () => planV3().quote(), { status: 0, body: null });
+  handle("plan3-bind-trial", (_e, o) => planV3().bindTrial(o), { status: 0, body: null });
+  handle("plan3-bind-pay", (_e, o) => planV3().bindPay(o), { status: 0, body: null });
+  handle("plan3-addon", (_e, o) => planV3().addon(o), { status: 0, body: null });
+  handle("plan3-agent-start", (_e, o) => planV3().agentStart(o).then((r) => {
+    const c = r.body && r.body.error_code;
+    tm().track("plan_start_res", { result: r.status === 200 ? "ok" : c === "NO_CARD" ? "no_card" : c === "WALLET_SHORT" || c === "PLAN_CHARGE_FAILED" ? "no_credit" : c === "PLAN_CONFIRM_REQUIRED" || c === "SOURCE_CHANGED" ? "confirm" : "error" });
+    return r;
+  }), { status: 0, body: null });
+  handle("plan3-bind-result", () => planV3().bindResult(), { mark: null, res: null });
+  handle("plan3-bind-drop", () => { planV3().dropMark(); return true; }, false);
+  handle("strategy-data-need", (_e, name) => strategyDataNeed(name), null);
   /* 本機交易:狀態是唯讀的檔案內容;指令由 daemon.js 簽章後寫進佇列(secret 不出主行程)。
      daemon 在引擎裝好之後才起(它要 workspace 與 venv),而且**不會自己啟動對帳器**——要用戶按「啟動下單」。 */
   handle("trade-status", () => { const st = tradeHost().status(); if (st.report && typeof st.report === "object") st.report.selfOrdering = stratSelfOrderingAny(); return st; });
@@ -4705,6 +4765,8 @@ app.whenReady().then(() => {
   startStep("app menu", appMenuSync);
   // 要在常駐程式起來之前:它 import 的就是 workspace 裡的 lib。只有拿到單一實例鎖的那一份才做——
   // 第二份 app 在結束前也會走到 whenReady,不能讓它把新 lib 拷進第一份正在下單的 workspace(稽核 S7)
+  // venv 是別的 Python 版本建的:交易主機起來之前搬開(這時沒人在用),交易主機就等重建完才起
+  if (app.hasSingleInstanceLock()) startStep("venv version", () => engineSetup().retireStale());
   if (app.hasSingleInstanceLock()) startStep("workspace sync", syncOfficialOnUpdate);
   startStep("trade host", tradeStartIfReady);   // 引擎早就裝好的人:一開 app 就有狀態可看(對帳器仍要他自己按啟動)
   // 要裝的在背景裝;已經裝好的幾毫秒就結束。第二份 app 不碰 venv。等主視窗載完再起(shell/bootguard.js ②):首次安裝不跟第一格畫面搶
@@ -4811,6 +4873,11 @@ let tmLabels = { running: "Auto trading is running", paperVenue: "Paper trading"
   ev_halt: "Trading was paused automatically", ev_halt_n: "No orders at all — exits and stops won’t run. Open Blave to check.",
   ev_order_error: "Order failed", ev_order_error_n: "The exchange rejected an order. Open Blave to check.",
   ev_execution_interrupted: "Last execution was interrupted", ev_execution_interrupted_n: "A fill may be missing from the ledger. Check positions before restarting.",
+  ev_execution_interrupted_hang: "Trading auto-paused", ev_execution_interrupted_hang_n: "Hung while sending; {keys} may have filled.",
+  ev_reconciler_hang_halted: "Trading auto-paused", ev_reconciler_hang_halted_n: "The order program hung 3 times in an hour. Exits and stops won't run.",
+  ev_machine_woke: "Computer woke; trading resumed", ev_machine_woke_n: "Your computer slept for {d} and placed no orders meanwhile. Trading now follows the latest signals.",
+  ev_machine_woke_held_n: "Your computer slept for {d} and placed no orders meanwhile. Trading now follows the latest signals. New entries and adds wait for strategies to recompute, up to 3 minutes.",
+  dur_min: "{m} min", dur_hour: "{h} h", dur_hour_min: "{h} h {m} min",
   ev_execution_fallback_market: "Switched to a market order", ev_execution_fallback_market_n: "The configured order style could not run; the fill price may differ.",
   ev_execution_stuck: "Execution is stuck", ev_execution_stuck_n: "Later orders for this symbol are waiting on it.",
   ev_machine_restart_stopped: "Machine restarted — trading paused", ev_machine_restart_stopped_n: "No orders are going out — nothing is managing your positions, and exits and stops won't run. Press Start trading to resume.",
@@ -5375,7 +5442,7 @@ function traySync() {
    - 點通知 = 把視窗叫出來;視窗回前景就清紅點。 */
 // machine_restart_stopped 取代 downtime_paused(api 已改;設計定稿:不講時間,講部位沒人管、平倉停損不會執行、按啟動下單)
 const P1_TYPES = ["halt", "order_error", "execution_interrupted", "execution_fallback_market", "execution_stuck", "machine_restart_stopped",
-  "venue_stops_missing", "venue_login_blocked", "order_unconfirmed", "clock_skew_hold", "tw_entry_hold", "tw_clock_unchecked", "data_gap_exposed"];   // 全部十三型(標籤用)
+  "venue_stops_missing", "venue_login_blocked", "order_unconfirmed", "clock_skew_hold", "tw_entry_hold", "tw_clock_unchecked", "data_gap_exposed", "reconciler_hang_halted"];   // 全部十四型(標籤用)
 // order_unconfirmed 與台指期那三種(manager/reconciler KIND_*)跟拒單同一個來源:order_errors[] 帶 kind 的那列,不在 events 裡
 const P1_ERR_KINDS = ["order_unconfirmed", "clock_skew_hold", "tw_entry_hold", "tw_clock_unchecked"];
 // 時鐘量不到那型的情境(列上的 clock,manager/reconciler):內文照它選三句之一(far 才講新倉暫停),同 api _CLOCK_UNCHECKED_EN
@@ -5402,7 +5469,18 @@ const P1_EVENT_TYPES = P1_TYPES.filter((ty) => ty !== "halt" && ty !== "order_er
 const P1_UNREACH_MIN = 150;
 const p1UnreachLong = (ev) => ev.type === "exchange_unreachable" && !!ev.payload && ev.payload.venue === "capital"
   && typeof ev.payload.minutes === "number" && ev.payload.minutes >= P1_UNREACH_MIN;
-const p1Event = (ev) => P1_EVENT_TYPES.indexOf(ev.type) >= 0 || p1UnreachLong(ev);
+// 電腦睡醒(P2):主 session 11-17 依 Wei『只推播＋事件列』定：電腦版推播＝本機系統通知;不亮紅點
+const P2_NOTIFY_TYPES = ["machine_woke"];
+const p1Event = (ev) => P1_EVENT_TYPES.indexOf(ev.type) >= 0 || p1UnreachLong(ev) || P2_NOTIFY_TYPES.indexOf(ev.type) >= 0;
+// 內文的 {keys}(記號名換成標的)與 {d}(睡了多久),同 renderer trHangKeys / trSleepText
+function p1Fill(note, p) {
+  if (typeof note !== "string" || !p) return note;
+  const keys = [];
+  for (const k of String(p.keys || "").split(/,\s*/)) { const x = k.replace(/\(.*$/, "").split("#")[0].replace(/@spot$/, "").trim(); if (x && keys.indexOf(x) < 0) keys.push(x); }
+  const m = typeof p.minutes === "number" && isFinite(p.minutes) && p.minutes >= 0 ? Math.floor(p.minutes) : 0, h = Math.floor(m / 60);
+  const d = String((h ? (m % 60 ? tmLabels.dur_hour_min : tmLabels.dur_hour) : tmLabels.dur_min) || "").replace("{h}", String(h)).replace("{m}", String(h ? m % 60 : m));
+  return note.replace("{keys}", () => keys.join(", ")).replace("{d}", () => d);
+}
 const HALT_AUTO_SOURCES = ["reconciler", "portfolio"];   // 同 api openclaw/agent_events._HALT_AUTO_SOURCES
 const notifiedPath = () => path.join(app.getPath("userData"), "p1-notified.json");
 let p1Marks = undefined, p1Badge = 0; const p1LastShown = {}, p1ErrCool = {}, p1Alive = new Set();   // p1Alive:Notification 沒人持有會被 GC,click 就不觸發
@@ -5517,7 +5595,7 @@ function p1Sync() {
   const show = stt.show.concat(ev.show);
   for (const e of show) {
     if (p1Cooling(p1ErrCool, e.cool, Date.now())) continue;
-    p1Badge++;
+    if (P2_NOTIFY_TYPES.indexOf(e.type) < 0) p1Badge++;
     const throttle = e.type + (e.type === "halt" && e.payload && e.payload.unexplained ? ":unexplained" : "");   // 跟同一刻的自動 HALT 分開算
     if (Date.now() - (p1LastShown[throttle] || 0) < 60000) continue;
     p1LastShown[throttle] = Date.now();
@@ -5530,7 +5608,9 @@ function p1Sync() {
     const capital = (e.type === "venue_login_blocked" && e.payload && e.payload.venue === "capital") || p1UnreachLong(e);
     const mcr = e.type === "manual_close_required" && e.payload ? e.payload.reason : null;
     const clock = e.type === "tw_clock_unchecked" && e.payload ? e.payload.clock : null;   // 只選內文;標題同一個(沒有 ev_tw_clock_unchecked_<clock>)
-    const variant = closeAll ? "_close_all" : stuck ? "_stuck" : capital ? "_capital"
+    const hang = e.type === "execution_interrupted" && e.payload && e.payload.cause === "hang";
+    const held = e.type === "machine_woke" && e.payload && e.payload.held === true;
+    const variant = hang ? "_hang" : held ? "_held" : closeAll ? "_close_all" : stuck ? "_stuck" : capital ? "_capital"
       : mcr === "snapshot_lag" ? "_lag" : mcr === "queued" ? "_queued" : clock ? "_" + clock : "";
     const unexplained = e.type === "halt" && e.payload && e.payload.unexplained === true && !!e.payload.reason;
     const head = (unexplained && tmLabels.ev_halt_unexplained) || tmLabels["ev_" + e.type + variant] || tmLabels["ev_" + e.type];
@@ -5542,14 +5622,14 @@ function p1Sync() {
       : capital && e.payload.reason === "LOCKED" && tmLabels.ev_venue_login_blocked_capital_locked_n ? tmLabels.ev_venue_login_blocked_capital_locked_n
       : mcr === "queued" ? (e.payload.until ? String(tmLabels.ev_manual_close_required_queued_n || "").replace("{at}", p1TwClock(e.payload.until))
         : tmLabels.ev_manual_close_required_queued_soon_n)
-      : tmLabels["ev_" + e.type + variant + "_n"] || tmLabels["ev_" + e.type + "_n"];
+      : p1Fill(tmLabels["ev_" + e.type + variant + "_n"] || tmLabels["ev_" + e.type + "_n"], e.payload);
     const n = new Notification({ title: TT.notifTitle(tmLabels.notifPrefixLocal, title + (sym ? " · " + sym : "")), body: p1WithStrat(e.payload && (Array.isArray(e.payload.strategies) ? e.payload.strategies : typeof e.payload.strategy === "string" ? [e.payload.strategy] : null), note, p1StratLabel) });
     p1Alive.add(n); const drop = () => p1Alive.delete(n);
     n.on("click", () => { drop(); showMain(); }); n.on("close", drop); n.on("failed", drop); notifWatch(n, "p1 " + e.type);
     if (p1Alive.size > 20) p1Alive.delete(p1Alive.values().next().value);
     n.show();
   }
-  if (show.length && app.dock) { if (!BrowserWindow.getFocusedWindow()) app.dock.setBadge(String(p1Badge)); else p1Badge = 0; }
+  if (show.some((e) => P2_NOTIFY_TYPES.indexOf(e.type) < 0) && app.dock) { if (!BrowserWindow.getFocusedWindow()) app.dock.setBadge(String(p1Badge)); else p1Badge = 0; }
 }
 /* Binance 金鑰重查出事(binance_link 兩次確認之後才叫):P1 / P2 都走這條本機通知,跟 p1Sync 同一套呈現。只通知、不自動停單、不移除金鑰。
    {where} 由 renderer 交字時就填好(這裡的事件只會來自這台電腦);{ip} 只會是 binance_link 驗過的 IPv4。 */

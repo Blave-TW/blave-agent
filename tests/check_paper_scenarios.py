@@ -275,6 +275,11 @@ class World:
         rec = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(rec)
         rec._raw_send = self.tg.append
+        # the scenarios read self.tg right after an action: deliver inline here (the queue and its
+        # thread are tests/check_reconciler_tg_async.py's)
+        # (an older reconciler — tests/check_version_matrix's "lib old" cells — has no queue: it sends inline already)
+        if hasattr(rec, "_tg_deliver"):
+            rec.send_telegram = rec._tg_deliver
         self.rec = rec
 
     def restart_process(self):

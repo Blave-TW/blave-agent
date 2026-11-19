@@ -10,7 +10,7 @@
 > not explain.
 
 A **report** is a JSON document this machine writes and the platform renders in the
-web workspace's Reports list (「報告」 in the sidebar): KPI rows, charts, tables and prose, laid out by the web from
+web workspace's Reports list (「報告」 in the sidebar; desktop: Reports in the bottom-left menu, older app versions: the left sidebar): KPI rows, charts, tables and prose, laid out by the web from
 structured data — not a screenshot, not a wall of Telegram text. Use it for anything
 the user will want to read again later: a performance review, a morning briefing on a
 watchlist, an MCPT / research write-up, a post-mortem of a live week.
@@ -140,7 +140,7 @@ write a file, so it must not be a path). It writes the pictures before the JSON,
 
 **The write is the finish line.** Once `write_report` returns the report is
 produced and you are done — tell the user it has been produced and will show up in the
-Reports list (「報告」 in the workspace sidebar) within about two minutes, then move on.
+Reports list (「報告」 in the workspace sidebar; desktop: Reports in the bottom-left menu, older app versions: the left sidebar) within about two minutes, then move on.
 Never say it is already in the list: the upload has not run yet, and the platform can
 still refuse it. **The chat reply is one
 or two sentences: the conclusion and the one thing to watch.** The report is the record; do not

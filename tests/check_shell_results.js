@@ -71,12 +71,12 @@ function box(extra) {
   S.libEnv = () => "local"; S.libEl = (tag, cls, text) => { const e = El(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
   const now = Date.now();
   S.window.blave.reportsList = async () => ({ reports: [{ id: "etf-flow", title: "ETF 資金流週報", type: "research", created_at: 1790000000, mtime: now + 10 }, { id: "old", title: "舊的", type: "morning", created_at: 1780000000, mtime: now - 3600e3 }] });
-  S.$("rpt").hidden = true; S.$("rpn-scrim").hidden = true; S.$("rpt-nav-new").hidden = true;   // 人不在報告區、記號原本收著
+  S.$("rpt").hidden = true; S.$("rpn-scrim").hidden = true; S.RPT.mark = false; S.amFirstPaint = () => {};   // 人不在報告區、記號原本收著(0.1.57 起是旗標,畫在左下第一格)
   S.rptTurnStart({ env: "local" }); S.RPT.turnAt = now;
   vm.runInContext(`this.__p = rptTurnEnd(null)`, S);
   S.__p.then((items) => {
-    ok("① 本機這一輪寫了報告:rptTurnEnd 不叫 rptOpen、交出那一份的結果卡項目(版本鍵 = rptKey)、側欄記號亮(清單沒開著)",
-      opened.length === 0 && items.length === 1 && items[0].kind === "report" && items[0].ref === "etf-flow" && items[0].ver === "etf-flow@" + (now + 10) && S.__els["rpt-nav-new"].hidden === false, JSON.stringify([opened, items]));
+    ok("① 本機這一輪寫了報告:rptTurnEnd 不叫 rptOpen、交出那一份的結果卡項目(版本鍵 = rptKey)、新報告記號亮(清單沒開著)",
+      opened.length === 0 && items.length === 1 && items[0].kind === "report" && items[0].ref === "etf-flow" && items[0].ver === "etf-flow@" + (now + 10) && S.RPT.mark === true, JSON.stringify([opened, items]));
   }).catch((e) => ok("① rptTurnEnd", false, e.stack));
   ok("① reports.js 整支沒有回合結束的自動打開(rptTurnEnd / rptCloudPollTick 都不叫 rptOpen / rptShowRead)",
     !/rptOpen\(|rptShowRead\(/.test(cutFn(rptSrc, "rptTurnEnd")) && !/rptOpen\(|rptShowRead\(/.test(cutFn(rptSrc, "rptCloudPollTick")));

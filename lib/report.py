@@ -743,7 +743,7 @@ def _write(asked, report_id, title, blocks, type, report_type, created_at, meta,
     else:
         print(f"[report] {report_id}.json written. The uploader moves it to reports/sent/, so do not "
               f"read reports/{report_id}.json back; if you need it again, open "
-              f"reports/sent/{report_id}.json. It appears in the workspace Reports list (Reports in the sidebar) shortly. "
+              f"reports/sent/{report_id}.json. It appears in the workspace Reports list (web: the sidebar; desktop: the bottom-left menu, older app versions: the sidebar) shortly. "
               "Nothing to check; reply now.")
     # 報告已經打開(或在清單裡)了:聊天只講結論,不把報告再念一遍(設計稽核 B6;canon Copy › 文案密度)
     print("[report] Chat reply: one or two sentences after the one saying where the report is - ONE conclusion and "

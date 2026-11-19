@@ -184,7 +184,7 @@ ok("④ IPC:綁卡即購買只收自家頁面;記號拿到這支終態才清,並
   ok("⑥ 訪客主鈕字:付費 → 登入並購買;不用資料 → 登入並安裝;要資料或未標 → 登入並使用", P.libSignedOutKey(S({}), true) === "lib.bb.loginBuy" && P.libSignedOutKey(S({ blave_data: "none", price: 0 }), false) === "lib.bb.loginInstall"
     && P.libSignedOutKey(S({ blave_data: null, price: 0 }), false) === "lib.bb.loginUse");
   ok("⑥ 字面:鈕 ≤ 原型(開通 每 30 天 N／開通並購買 N／綁卡並付 N／付 N)、框三行(兩列＋一句)", STR.zh["lib.bb.planB"] === "開通 每 30 天 {p}" && STR.zh["lib.bb.planD"] === "開通並購買 {p}"
-    && STR.zh["lib.bb.planOk"] === "綁卡並付 {p}" && STR.zh["lib.bb.pay"] === "付 {p}" && STR.zh["lib.bb.planTitle"] === "開通 Blave Agent 方案" && STR.zh["lib.bb.planTail"] === "續扣先錢包後卡。可在方案頁取消，不退款。"
+    && STR.zh["lib.bb.planOk"] === "綁卡並付 {p}" && STR.zh["lib.bb.pay"] === "付 {p}" && STR.zh["lib.bb.planTitle"] === "開通 Blave Agent 方案" && STR.zh["lib.bb.planTail"] === "續扣時錢包夠就扣錢包，不夠就整筆刷卡。可在方案頁取消，不退款。"
     && STR.en["lib.bb.ok"] === "Add Card & Buy"
     // 設計稽核 desktop-one-step:扣款中「付款中…」;扣款還在確認「稍後再回來看」(電腦版沒有重新整理);partNoCharge 講清楚沒扣的是策略價;恢復方案用設定頁那顆
     && STR.zh["lib.bb.paying"] === "付款中…" && STR.zh["lib.bb.unsettled"] === "扣款還在確認，不會重複扣。稍後再回來看。" && !/重新整理/.test(STR.zh["lib.bb.unsettled"])

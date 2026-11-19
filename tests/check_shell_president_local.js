@@ -44,7 +44,7 @@ let red = 0; const ok = (n, c, got) => { console.log((c ? "PASS  " : "FAIL  ") +
   ok("2 存:只經 safeStorage", pres.saveCreds({ account: "70000011234", password: "trade-pw-123" }).code === "OK"
     && !fs.readFileSync(path.join(ud, "president.bin"), "utf8").includes("trade-pw-123"));
   ok("2 新帳號從測試環境開始(live=false)", pres._load().live === false);
-  ok("2 畫面拿得到的只有帳號與狀態", JSON.stringify(pres.info()) === JSON.stringify({ saved: true, account: "70000011234", certSaved: false, windows: true, pickedOther: false }));
+  ok("2 畫面拿得到的只有帳號與狀態", JSON.stringify(pres.info()) === JSON.stringify({ saved: true, account: "70000011234", certSaved: false, rebindNeeded: true, windows: true, pickedOther: false }));
   const noSeal = P.createPresident({ userData: path.join(tmp, "ud2"), home, platform: "win32", seal: { available: () => false }, host: () => host, pickFile: async () => null });
   ok("2 加密儲存不能用 → NO_SEAL,不落地", noSeal.saveCreds({ account: "70000011234", password: "x" }).code === "NO_SEAL" && !fs.existsSync(path.join(tmp, "ud2", "president.bin")));
 
@@ -90,7 +90,21 @@ let red = 0; const ok = (n, c, got) => { console.log((c ? "PASS  " : "FAIL  ") +
   ok("4 長步驟 daemon 收走了、回條還沒來 → SENT(畫面看狀態)", (await pres.step("probe")).code === "SENT");
   reply = { ok: true, result: {} };
   await pres.step("probe", { afterUnlock: true });
-  ok("4 我已解鎖 → probe {after_unlock:true}", JSON.stringify(sent[sent.length - 1].args) === JSON.stringify({ op: "probe", after_unlock: true }));
+  { const a = sent[sent.length - 1].args, ex = open(a.expect, SECRET);
+    // runtime 的統一 probe 早就不收 after_unlock(CHANGELOG 1.1.1xx 拿掉);登入步驟改帶 expect:封好的存著那組帳號與交易密碼,daemon 比對自己手上的
+    ok("4 probe 只帶 op 與 expect(不再帶 after_unlock);expect 打開是存著的帳號與交易密碼", JSON.stringify(Object.keys(a).sort()) === JSON.stringify(["expect", "op"])
+      && a.op === "probe" && ex.account === "70000011234" && ex.password === "trade-pw-123", a); }
+  for (const op of ["test_order", "start"]) { await pres.step(op); const a = sent[sent.length - 1].args;
+    ok(`4 ${op} 也帶 expect`, a.op === op && open(a.expect, SECRET).account === "70000011234"); }
+  for (const o of [{ env: "live" }, { url: "test167.pfctrade.com" }]) { await pres.step("host", o); const a = sent[sent.length - 1].args;
+    ok(`4 host ${JSON.stringify(o)} 會在新環境登入一次:也帶 expect,env／url 照帶`, a.op === "host" && (a.env === o.env || a.url === o.url) && open(a.expect, SECRET).account === "70000011234"
+      && JSON.stringify(Object.keys(a).sort()) === JSON.stringify(["expect", "op", Object.keys(o)[0]].sort()), a); }
+  ok("4 host 參數不對 → BAD_ARGS(先驗參數,不封帳密)", (await pres.step("host", {})).code === "BAD_ARGS");
+  await pres.step("stop"); ok("4 stop 不帶 expect", !("expect" in sent[sent.length - 1].args));
+  { const py = fs.readFileSync(path.join(__dirname, "..", "runtime", "president_connect.py"), "utf8"), js = fs.readFileSync(path.join(__dirname, "..", "shell", "president_local.js"), "utf8");
+    const pyOps = (/^_LOGIN_OPS = \(([^)]*)\)/m.exec(py) || [])[1], jsOps = (/^const LOGIN_OPS = \[([^\]]*)\];/m.exec(js) || [])[1];
+    const norm = (x) => String(x || "").match(/"(\w+)"/g).map((q) => q.slice(1, -1)).sort().join();
+    ok("4 主行程 LOGIN_OPS = runtime _LOGIN_OPS(probe、test_order、start、host)", !!pyOps && !!jsOps && norm(pyOps) === norm(jsOps) && norm(jsOps) === "host,probe,start,test_order", { pyOps, jsOps }); }
   ok("4 step 不收 cert / secrets / 亂的名字", (await pres.step("cert")).code === "BAD_ARGS" && (await pres.step("secrets")).code === "BAD_ARGS" && (await pres.step("rm")).code === "BAD_ARGS");
 
   // 5. 補交
@@ -126,11 +140,13 @@ let red = 0; const ok = (n, c, got) => { console.log((c ? "PASS  " : "FAIL  ") +
   // 7. daemon.js
   ok("7 president_local 是主行程限定(renderer 送不出)", D.MAIN_ONLY_COMMANDS.has("president_local") && !D.UI_COMMANDS.has("president_local"));
   const sealed = P.sealFor(SECRET, { a: 1 });
-  ok("7 形狀:cert / secrets 帶密文;probe 只能多 after_unlock:true;其他只有 op", D.argsOk("president_local", { op: "cert", sealed }, true)
-    && D.argsOk("president_local", { op: "probe", after_unlock: true }, true) && D.argsOk("president_local", { op: "start" }, true)
+  // 0.1.57:probe／start 這類會登入的步驟必帶 expect(封好的存檔帳密);統一的 after_unlock 早在 runtime 拿掉,這裡也不再收
+  ok("7 形狀:cert / secrets 帶密文;會登入的步驟帶 expect 密文、不收 after_unlock;其他只有 op", D.argsOk("president_local", { op: "cert", sealed }, true)
+    && D.argsOk("president_local", { op: "probe", expect: sealed }, true) && D.argsOk("president_local", { op: "start", expect: sealed }, true)
+    && !D.argsOk("president_local", { op: "probe", after_unlock: true }, true) && !D.argsOk("president_local", { op: "start" }, true)
     && !D.argsOk("president_local", { op: "cert" }, true) && !D.argsOk("president_local", { op: "cert", sealed: "not base64!" }, true)
-    && !D.argsOk("president_local", { op: "probe", after_unlock: false }, true) && !D.argsOk("president_local", { op: "start", x: 1 }, true)
-    && !D.argsOk("president_local", { op: "rm" }, true));
+    && !D.argsOk("president_local", { op: "probe", after_unlock: false }, true) && !D.argsOk("president_local", { op: "start", expect: sealed, x: 1 }, true)
+    && D.argsOk("president_local", { op: "setup" }, true) && !D.argsOk("president_local", { op: "rm" }, true));
   ok("7 renderer 解得了統一的六行(安全方向)", D.argsOk("credentials_remove", { env: D.PRESIDENT_ENV.map((k) => k.toLowerCase()) }, false));
   { const src = fs.readFileSync(path.join(__dirname, "..", "runtime", "president_connect.py"), "utf8");
     const be = src.slice(src.indexOf("def _bound_env("), src.indexOf("def local_bind_gate("));
@@ -169,16 +185,26 @@ let red = 0; const ok = (n, c, got) => { console.log((c ? "PASS  " : "FAIL  ") +
       && J(P.twHeld(rep({ ok: false, positions: null }), "capital", {})) === J({ lots: 0, known: false })); }
   reply = { ok: false, error: "UNKNOWN_RESULT" };
   await pres.step("host", { url: "test167.pfctrade.com" });
-  ok("8 測試主機:信上的網址原樣交給 daemon(它判是不是那兩台),記住在測試環境", JSON.stringify(sent[sent.length - 1].args) === JSON.stringify({ op: "host", url: "test167.pfctrade.com" }) && pres._load().live === false);
+  ok("8 測試主機:信上的網址原樣交給 daemon(它判是不是那兩台),記住在測試環境", sent[sent.length - 1].args.url === "test167.pfctrade.com" && Object.keys(sent[sent.length - 1].args).sort().join() === "expect,op,url" && pres._load().live === false);
   await pres.step("host", { env: "live" });
-  ok("8 營業員說開好了 = host live,存下正式;之後補交的 bundle 帶 live", JSON.stringify(sent[sent.length - 1].args) === JSON.stringify({ op: "host", env: "live" }) && pres._load().live === true
+  ok("8 營業員說開好了 = host live,存下正式;之後補交的 bundle 帶 live", sent[sent.length - 1].args.env === "live" && Object.keys(sent[sent.length - 1].args).sort().join() === "env,expect,op" && pres._load().live === true
     && open(P.sealFor(SECRET, { live: pres._load().live }), SECRET).live === true);
   reply = { ok: false, error: "ValueError: HOST_NOT_ALLOWED: not a 統一 login host" };
   const before8 = pres._load().live;
   ok("8 不是那兩台 → daemon 的代號,存的環境不動", (await pres.step("host", { url: "evil.example.com" })).code === "HOST_NOT_ALLOWED" && pres._load().live === before8);
   ok("8 host 沒給 env / url → BAD_ARGS(不送)", (await pres.step("host", {})).code === "BAD_ARGS");
-  ok("8 daemon.js:host 只收 env 或一個網址;test_order 只有 op", D.argsOk("president_local", { op: "host", env: "live" }, true) && D.argsOk("president_local", { op: "host", url: "x" }, true)
-    && !D.argsOk("president_local", { op: "host", env: "prod" }, true) && !D.argsOk("president_local", { op: "host", env: "live", url: "x" }, true) && D.argsOk("president_local", { op: "test_order" }, true));
+  { const X = "c2VhbGVk";   // 形狀對的密文(base64)
+    ok("8 daemon.js:host 只收 env 或一個網址,外加 expect;會登入的四步沒有 expect 一律不收;stop／setup 只有 op",
+      D.argsOk("president_local", { op: "host", env: "live", expect: X }, true) && D.argsOk("president_local", { op: "host", url: "x", expect: X }, true)
+      && !D.argsOk("president_local", { op: "host", env: "live" }, true) && !D.argsOk("president_local", { op: "host", env: "prod", expect: X }, true)
+      && !D.argsOk("president_local", { op: "host", env: "live", url: "x", expect: X }, true)
+      && ["probe", "test_order", "start"].every((op) => D.argsOk("president_local", { op, expect: X }, true) && !D.argsOk("president_local", { op }, true)
+        && !D.argsOk("president_local", { op, expect: "not base64!" }, true) && !D.argsOk("president_local", { op, expect: X, after_unlock: true }, true))
+      && D.argsOk("president_local", { op: "stop" }, true) && !D.argsOk("president_local", { op: "stop", expect: X }, true)); }
+    // 主行程真的送出去的形狀過得了 daemon.js 的閘(上一輪假 daemon 沒驗到這層,真 app 會被 BAD_ARGS 擋掉)
+    ok("8 主行程每一個會登入的步驟送出的 args,都過得了 daemon.js argsOk", sent.filter((x) => ["probe", "test_order", "start", "host"].indexOf(x.args.op) >= 0).length >= 6
+      && sent.filter((x) => ["probe", "test_order", "start", "host"].indexOf(x.args.op) >= 0).every((x) => D.argsOk("president_local", x.args, true)),
+      sent.filter((x) => !D.argsOk("president_local", x.args, true)).map((x) => Object.keys(x.args)));
   ok("8 forget:存的帳密刪掉", pres.forget() && !fs.existsSync(path.join(ud, "president.bin")) && pres.info().saved === false);
 
   fs.rmSync(tmp, { recursive: true, force: true });

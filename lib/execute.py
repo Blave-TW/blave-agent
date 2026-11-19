@@ -12,6 +12,10 @@ try:
 except ImportError:  # half-updated workspace (lib/winreplace.py not landed): plain replace
     atomic_replace = os.replace
 try:
+    from lib import winreplace as _winreplace
+except ImportError:  # half-updated workspace: no retry on a marker remove
+    _winreplace = None
+try:
     from lib.winreplace import load_json
 except ImportError:  # half-updated workspace (lib/winreplace.py without load_json): no read retry
     def load_json(path, **open_kw):
@@ -374,6 +378,35 @@ def _marker_path(key):
     return os.path.join(_INFLIGHT_DIR, safe + ".json")
 
 
+# Markers THIS process wrote and still has on disk. A "<symbol>#market" one is a synchronous leg
+# (lib/portfolio.reconcile marks it before the send and removes it after the orders.jsonl write):
+# the desktop exit path waits for those to clear (sync_leg_active) before it leaves.
+_own_markers = set()
+_own_markers_lock = threading.RLock()  # the desktop SIGTERM handler reads it on the main thread
+_stop_requested = threading.Event()
+
+
+def request_stop():
+    """The process is on its way out: no new synchronous leg starts (manager/reconciler.place_order)."""
+    _stop_requested.set()
+
+
+def stopping():
+    return _stop_requested.is_set()
+
+
+def sync_leg_active():
+    with _own_markers_lock:
+        return any(k.endswith("#market") for k in _own_markers)
+
+
+def disown_inflight_marker(key):
+    """A marker left on disk on purpose (an outcome that could not be parked, a remove that kept
+    failing): the next start's reap owns it now, and the exit path must not wait for it."""
+    with _own_markers_lock:
+        _own_markers.discard(str(key))
+
+
 def _write_inflight_marker(key, style, signed_diff):
     try:
         os.makedirs(_INFLIGHT_DIR, exist_ok=True)
@@ -383,6 +416,8 @@ def _write_inflight_marker(key, style, signed_diff):
                        "signed_diff": round(float(signed_diff), 2),
                        "started_ts": datetime.now(timezone.utc).isoformat()}, f)
         atomic_replace(tmp, _marker_path(key))
+        with _own_markers_lock:
+            _own_markers.add(str(key))
         return True
     except OSError as e:
         logging.warning(f"[execute] inflight marker write failed for {key}: {e}")
@@ -390,12 +425,27 @@ def _write_inflight_marker(key, style, signed_diff):
 
 
 def _remove_inflight_marker(key):
-    try:
-        os.remove(_marker_path(key))
-    except FileNotFoundError:
-        pass
-    except OSError as e:
-        logging.warning(f"[execute] inflight marker remove failed for {key}: {e}")
+    """Windows: a reader holding the marker open (Defender, list_inflight in another process)
+    fails the remove for milliseconds — retried with lib/winreplace's delays. One that still
+    cannot be removed stays: the next start's reap HALTs on it, the safe side."""
+    delays = tuple(getattr(_winreplace, "REPLACE_RETRY_DELAYS", ()))
+    for i in range(len(delays) + 1):
+        try:
+            os.remove(_marker_path(key))
+        except FileNotFoundError:
+            pass
+        except PermissionError as e:
+            if i < len(delays):
+                time.sleep(delays[i])
+                continue
+            logging.warning(f"[execute] inflight marker remove failed for {key}: {e}")
+            break
+        except OSError as e:
+            logging.warning(f"[execute] inflight marker remove failed for {key}: {e}")
+            break
+        break
+    with _own_markers_lock:
+        _own_markers.discard(str(key))
 
 
 def list_inflight():
@@ -426,7 +476,7 @@ def _own_only():
     own = getattr(portfolio, "own_positions_only", None)
     return own(cfg) if own else bool(cfg.get("self_ledger"))
 
-def reap_dead_inflight():
+def reap_dead_inflight(cause=None):
     """Reconciler STARTUP ONLY (before any dispatch): every marker on disk at
     this point belongs to a previous process whose threads died with it — the
     execution is definitively dead, and any fills it made after its last log
@@ -438,6 +488,9 @@ def reap_dead_inflight():
     on a book known to be missing fills).
     self_ledger OFF: the next account read self-corrects (old behaviour) —
     just log and clean up.
+
+    cause="hang": the previous process was killed by the runtime's hang watch
+    (manager/reconciler reads its record) — carried on the event so the copy says so.
 
     Returns the number of dead markers found."""
     dead = list_inflight()
@@ -465,7 +518,7 @@ def reap_dead_inflight():
         # (halt 寫成功/寫失敗)是同一件事,事件只發一則。
         try:
             from lib.events import emit
-            emit("execution_interrupted", keys=str(labels)[:200])
+            emit("execution_interrupted", keys=str(labels)[:200], cause=cause)
         except Exception:
             pass
 

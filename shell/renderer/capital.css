@@ -19,7 +19,8 @@
 .cap-do { margin: 0; font-size: 12px; line-height: 1.6; color: var(--ink-2); text-wrap: pretty; }
 .cap-do + .cap-do { margin-top: var(--space-8); }
 .cap-do.is-dim { color: var(--ink-3); }
-.cap-acts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-8) var(--space-16); margin-top: var(--space-12); }
+.cap-acts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-16); margin-top: var(--space-12); }   /* 列距 16:文字鈕熱區 44(下一行),折成兩排時上下不重疊(設計稽核 0157 S4) */
+.cap-acts .btn-quiet::before { inset: auto; left: 50%; top: 50%; width: max(44px, calc(100% + 8px)); height: 44px; transform: translate(-50%, -50%); }   /* 同 .ph-links／.rp-ho-acts */
 .cap-x .plan-err { margin-top: var(--space-8); }
 .cap-lead { margin: var(--space-12) 0 0; font-size: 13px; line-height: 1.6; color: var(--ink-2); }
 .cap-ol { margin: var(--space-12) 0 0; padding-left: 18px; font-size: 12px; line-height: 1.7; color: var(--ink-2); }

@@ -34,7 +34,8 @@ function mgDeclaredParams(method) {
 }
 function mgFitParams(method, cur) {
   const c = cur && typeof cur === "object" ? cur : {}, d = mgDeclaredParams(method), p = {};
-  Object.keys(d).forEach((k) => { p[k] = k in c && typeof c[k] === typeof d[k] && mgParamOk(c[k]) && mgParamInRange(k, c[k]) ? c[k] : null; });
+  // 回看天數沒填過就帶 365(Wei 11-17,= manager.py LOOKBACK);其他參數沒值照舊留空
+  Object.keys(d).forEach((k) => { p[k] = k in c && typeof c[k] === typeof d[k] && mgParamOk(c[k]) && mgParamInRange(k, c[k]) ? c[k] : k === "lookback" ? MG_LOOKBACK_DEFAULT : null; });
   return p;
 }
 // 存檔 {alloc, params: {方法名: {key: 值}}}:每個方法各記各的,換走再換回來還是用戶填的。形狀不對 = null
@@ -442,17 +443,20 @@ const PO = { wired: false };
 
 /* Setup fog(canon › Components › Setup fog):示意底用真元件、固定泛稱資料(不讀用戶的任何東西),模糊後蓋遮罩,上面一張 CTA 卡。
    kind:"pick"(有回測完成的策略、一支都沒選)/"po-new"／"mg-new"(配置／優化:連一支回測完成的都沒有,鈕開新增策略框,策略庫的出口在框裡)/"connect"(自動下單沒連帳戶)/
-   "pos-pick"／"pos-new"／"pos-draft"(自動下單 › 部位還沒選策略／沒有能勾的／勾了還沒存;spec-autotrade-empty §2、§4)。卡上那句的 id 是停用的啟動下單的 aria-describedby */
-function poFog(kind) {
+   "pos-pick"／"pos-new"／"pos-draft"(自動下單 › 部位還沒選策略／沒有能勾的／勾了還沒存;spec-autotrade-empty §2、§4)。卡上那句的 id 是停用的啟動下單的 aria-describedby。
+   "onb-new"(自動下單沒連帳戶、這台電腦清單是空的;spec first-strategy-sidebar §B3):主鈕〔新增策略〕,〔連接帳戶〕退成旁邊的文字連結(保留 #tr-connect)。
+   why = trZCase:pos-new 在 noVenue(有回測完成的策略、這家帳戶都下不了)時句子換成 tr.startOffNoVenueStrat(§B4) */
+function poFog(kind, why) {
   const fog = trEl("div", "fog"), under = trEl("div", "fog-under pf"), pos = kind === "pos-pick" || kind === "pos-new" || kind === "pos-draft";
   under.setAttribute("aria-hidden", "true"); under.inert = true;
   const opt = kind === "mg-new";
   if (opt) fog.classList.add("mg-fog");
-  if (kind === "connect") under.appendChild(poFogOver()); else if (pos) under.appendChild(poFogPos()); else if (opt) under.appendChild(poFogOpt()); else under.appendChild(poFogCfg());
+  if (kind === "connect" || kind === "onb-new") under.appendChild(poFogOver()); else if (pos) under.appendChild(poFogPos()); else if (opt) under.appendChild(poFogOpt()); else under.appendChild(poFogCfg());
   const card = trEl("div", "fog-card");
-  const msg = card.appendChild(trEl("p", "", t(kind === "pick" ? "po.fogPick" : kind === "po-new" ? "po.fogNew" : kind === "mg-new" ? "mg.fogNew" : kind === "pos-pick" ? "tr.fogPosPick" : kind === "pos-new" ? "tr.fogPosNew" : kind === "pos-draft" ? "tr.startOffDraft" : TR.env === "cloud" ? "tr.cloud.fogConnect" : "tr.fogConnect")));
+  const mk = kind === "pick" ? "po.fogPick" : kind === "po-new" ? "po.fogNew" : kind === "mg-new" ? "mg.fogNew" : kind === "pos-pick" ? "tr.fogPosPick" : kind === "pos-new" ? (why === "noVenue" ? "tr.startOffNoVenueStrat" : "tr.fogPosNew") : kind === "pos-draft" ? "tr.startOffDraft" : kind === "onb-new" ? "tr.fogOnbNew" : TR.env === "cloud" ? "tr.cloud.fogConnect" : "tr.fogConnect";
+  const msg = card.appendChild(trEl("p", "", t(mk, typeof trZVars === "function" ? trZVars(mk) : null)));
   if (pos) msg.id = "tr-pos-fog-msg";
-  const b = trEl("button", "btn-fill", t(kind === "pick" || kind === "pos-pick" ? "tr.pick" : kind === "pos-new" || kind === "po-new" || kind === "mg-new" ? "ns.chip" : kind === "pos-draft" ? "po.goAmounts" : "cx.title")); b.type = "button";
+  const b = trEl("button", "btn-fill", t(kind === "pick" || kind === "pos-pick" ? "tr.pick" : kind === "pos-new" || kind === "po-new" || kind === "mg-new" || kind === "onb-new" ? "ns.chip" : kind === "pos-draft" ? "po.goAmounts" : "cx.title")); b.type = "button";
   if (kind === "pick") { b.id = "tr-pick"; b.dataset.fk = "pick"; b.disabled = trPickOff(); b.addEventListener("click", () => psOpen(b)); }
   // 部位霧只在選擇策略框開得了時才出(trZNow 的 wait 含 trPickOff),停用在這裡只是保險,不會有停用而沒有原因的卡
   else if (kind === "pos-pick") { b.id = "tr-pos-pick"; b.dataset.fk = "pos-pick"; b.disabled = trPickOff(); b.addEventListener("click", () => { trackFeature("trade_fog_pick"); trZGo("pick", b); }); }
@@ -460,8 +464,13 @@ function poFog(kind) {
   else if (kind === "po-new") { b.id = "tr-po-new"; b.dataset.fk = "po-new"; b.addEventListener("click", () => { trackFeature("po_fog_new"); trZGo("noStrat", b); }); }
   else if (kind === "mg-new") { b.id = "mg-fog-new"; b.dataset.fk = "mg-fog-new"; b.addEventListener("click", () => { trackFeature("mg_fog_new"); trZGo("noStrat", b); }); }
   else if (kind === "pos-draft") { b.id = "tr-pos-draft"; b.dataset.fk = "pos-draft"; b.addEventListener("click", () => { trackFeature("trade_fog_pick"); trZGo("draft", b); }); }
+  else if (kind === "onb-new") { b.id = "tr-onb-new"; b.dataset.fk = "onb-new"; b.addEventListener("click", () => { trackFeature("trade_onb_new"); trZGo("noStrat", b); }); }
   else { b.id = "tr-connect"; b.addEventListener("click", () => cxModalOpen(b)); }
-  card.appendChild(b);
+  if (kind === "onb-new") {   // 想先連券商的人永遠按得到:同現行那顆實心鈕的動作
+    const acts = trEl("div", "fog-acts"), ln = trEl("button", "fog-ln", t("cx.title")); ln.type = "button"; ln.id = "tr-connect";
+    ln.addEventListener("click", () => { trackFeature("trade_onb_cx"); cxModalOpen(ln); });
+    acts.append(b, ln); card.appendChild(acts);
+  } else card.appendChild(b);
   fog.append(under, card);
   return fog;
 }

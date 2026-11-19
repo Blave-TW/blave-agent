@@ -7,7 +7,8 @@ and a namespace package never re-points once the workspace is inserted later —
 every `from lib.guard import …` after that: ModuleNotFoundError; 啟動下單 /
 halt / resume / close_all all dead, the reconciler never starts).
 
-  1. local_daemon._workspace_first: the workspace goes to sys.path[0]; a `lib`
+  1. local_daemon._workspace_lib: no workspace folder on sys.path at all; `lib`
+     comes only through secret_imports' finder (audit 2026-11-19 M1); a `lib`
      already bound to a namespace package is dropped and `lib.guard` resolves to
      the workspace; a `lib` that already is the workspace's is left alone (no log)
   2. wiring (source): main() calls it right after chdir and before Daemon()
@@ -16,9 +17,9 @@ halt / resume / close_all all dead, the reconciler never starts).
      __init__) AND a sitecustomize that imports `lib` before main() runs (worse
      than pywin32, which only adds the path) → unsigned halt acked ok, state/HALT
      written, signed resume acked ok; the daemon's log says what it re-resolved
-  4. command_listener._downtime_lib(optional=True) on a workspace without
-     lib/downtime.py: None, and the ImportError is logged once (type + message),
-     not swallowed
+  4. command_listener._downtime_lib never imports lib/downtime.py (never shipped:
+     one there was written by the agent, audit 2026-11-19 M-3) — not even when
+     the file exists; optional=True → None, logged once
   5. command_listener._in_workspace drops a namespace `lib` on its own, so
      president_connect._login_stop reads the STOP class instead of None
      (「UNKNOWN」 on the page) when something polluted the name first
@@ -81,7 +82,7 @@ def poison_first():
     return sys.modules["lib"]
 
 
-# ── 1. _workspace_first ───────────────────────────────────────────────────────
+# ── 1. _workspace_lib ─────────────────────────────────────────────────────────
 logs = []
 ld._log = logs.append
 m = poison_first()
@@ -92,18 +93,19 @@ try:
     check(False, "[setup] lib.guard is ModuleNotFoundError while `lib` is the namespace package")
 except ModuleNotFoundError:
     check(True, "[setup] lib.guard is ModuleNotFoundError while `lib` is the namespace package")
-workspace_first = getattr(ld, "_workspace_first", None)
-check(workspace_first is not None, "[1] local_daemon has _workspace_first")
+workspace_first = getattr(ld, "_workspace_lib", None)
+check(workspace_first is not None, "[1] local_daemon has _workspace_lib")
 if workspace_first:
     origin = workspace_first(WS)
-    check(sys.path[0] == WS, "[1] the workspace is sys.path[0] afterwards")
+    check(WS not in sys.path and os.path.join(WS, "lib") not in sys.path,
+          "[1] no workspace folder on sys.path afterwards (lib comes through the finder)")
     check(origin == os.path.join(WS, "lib", "__init__.py"), f"[1] `lib` resolves to the workspace: {origin}")
     check(any("re-resolving" in l for l in logs), f"[1] the drop is logged: {logs}")
     import lib.guard as g  # noqa: E402
     check(os.path.abspath(g.__file__) == os.path.join(WS, "lib", "guard.py"), "[1] lib.guard imports from the workspace")
     logs.clear()
     check(workspace_first(WS) == origin and logs == [], "[1] already the workspace's lib: nothing dropped, nothing logged")
-    check(sys.path.count(WS) == 1, "[1] no duplicate sys.path entry")
+    check(sum(type(f).__name__ == "WorkspaceLibFinder" for f in sys.meta_path) == 1, "[1] one finder, not one per call")
 else:
     drop_lib()
     sys.path.insert(0, WS)
@@ -111,11 +113,11 @@ else:
 # ── 2. wiring ─────────────────────────────────────────────────────────────────
 src = open(os.path.join(RUNTIME, "local_daemon.py"), encoding="utf-8").read()
 main_src = src[src.index("def main("):src.index("if __name__")]
-chdir_at, first_at = main_src.find("os.chdir(ws)"), main_src.find("_workspace_first(ws)")
+chdir_at, first_at = main_src.find("os.chdir(ws)"), main_src.find("_workspace_lib(ws)")
 check(chdir_at >= 0 and 0 < first_at - chdir_at < 80 and first_at < main_src.index("Daemon(ws, secret)"),
-      "[2] main(): _workspace_first(ws) right after os.chdir(ws), before Daemon() imports the listener")
+      "[2] main(): _workspace_lib(ws) right after os.chdir(ws), before Daemon() imports the listener")
 rec_src = src[src.index("def run_reconciler("):src.index("class ReconcilerSupervisor")]
-check("_workspace_first(ws)" in rec_src and "sys.path.insert" not in rec_src,
+check("_workspace_lib(ws)" in rec_src and "sys.path.insert" not in rec_src,
       "[2] run_reconciler goes through the same helper")
 
 # ── 3. a real daemon under a poisoned interpreter ─────────────────────────────
@@ -167,9 +169,8 @@ try:
     check("lib resolved outside the workspace (namespace package) — re-resolving" in daemon_log,
           "[3] the daemon logged the re-resolve (the sitecustomize import was dropped)")
     check("ModuleNotFoundError" not in daemon_log, "[3] no ModuleNotFoundError anywhere in the daemon log")
-    check(daemon_log.count("lib.downtime not importable: ImportError:") == 1
-          and "downtime" in daemon_log and os.path.join(WS, "lib", "__init__.py") in daemon_log,
-          "[3] resume's optional lib.downtime miss is logged once, naming where `lib` resolved")
+    check(daemon_log.count("lib.downtime is not shipped — not imported") == 1,
+          "[3] resume's optional lib.downtime is never imported, logged once (audit 2026-11-19 M-3)")
 finally:
     p.stdin.close()  # parent gone → the daemon leaves on its own; nothing else is signalled
     try:
@@ -179,14 +180,19 @@ finally:
         rc = p.wait(10)
 check(rc == 0, f"[3] daemon left on stdin EOF (rc={rc})")
 
-# ── 4. _downtime_lib logs the ImportError once ───────────────────────────────
+# ── 4. _downtime_lib never imports lib/downtime.py ────────────────────────────
 cl_logs = []
 cl._log = cl_logs.append
 cl._downtime_import_logged = False
+planted = os.path.join(WS, "lib", "downtime.py")
+with open(planted, "w") as f:
+    f.write("open(%r, 'w').close()\n" % (planted + ".ran"))
 check(cl._in_workspace(cl._downtime_lib, True) is None and cl._in_workspace(cl._downtime_lib, True) is None,
-      "[4] optional=True on a workspace without lib/downtime.py → None")
-hits = [l for l in cl_logs if l.startswith("lib.downtime not importable: ImportError:")]
-check(len(hits) == 1 and "downtime" in hits[0], f"[4] logged once, type + message: {cl_logs}")
+      "[4] optional=True → None, even with a lib/downtime.py on disk")
+check(not os.path.exists(planted + ".ran") and "lib.downtime" not in sys.modules, "[4] the planted lib/downtime.py never ran")
+os.remove(planted)
+hits = [l for l in cl_logs if l == "lib.downtime is not shipped — not imported"]
+check(len(hits) == 1, f"[4] logged once: {cl_logs}")
 try:
     cl._in_workspace(cl._downtime_lib)
     check(False, "[4] optional=False still raises RuntimeError")
@@ -195,6 +201,7 @@ except RuntimeError as e:
 
 # ── 5. _in_workspace heals a namespace `lib`; _login_stop reads the STOP class ──
 cl_logs.clear()
+sys.meta_path[:] = [f for f in sys.meta_path if type(f).__name__ != "WorkspaceLibFinder"]  # a process without the finder
 m = poison_first()
 check(getattr(m, "__file__", None) is None, "[5] setup: `lib` is the namespace package again, workspace off sys.path")
 with open(os.path.join(WS, "state", "president_login_stop.json"), "w") as f:

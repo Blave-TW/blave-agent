@@ -32,10 +32,10 @@ check("dev", false, undefined);
 
 /* 路徑常數依平台(假造 process.platform;沒有 Windows 機器):venv 的 python 在 Windows 是 venv\Scripts\python.exe、
    隨包 Python 是 python-x64\python.exe(python-build-standalone 的 Windows 版沒有 bin/);darwin 一字不變。 */
-function consts(platform, arch, resourcesPath) {
-  const app = { isPackaged: true }, os = { homedir: () => (platform === "win32" ? "C:\\Users\\u" : "/Users/u") };
+function consts(platform, arch, resourcesPath, packaged = true, exists = () => true, __dirname = "/src/shell") {
+  const app = { isPackaged: packaged }, os = { homedir: () => (platform === "win32" ? "C:\\Users\\u" : "/Users/u") };
   const path = require("path")[platform === "win32" ? "win32" : "posix"];
-  const process = { platform, arch, resourcesPath, env: {} }, fs = { existsSync: () => true };
+  const process = { platform, arch, resourcesPath, env: {} }, fs = { existsSync: exists };
   eval(cut("const BASE = ", "// 打包版的 runtime/ 與隨包 Python 都在 .app 裡"));
   return { BASE, WS, VENV_BIN, VENV_PY, BUNDLED_PY, base: basePython() };
 }
@@ -47,6 +47,13 @@ function consts(platform, arch, resourcesPath) {
   const d = consts("darwin", "arm64", "/Applications/Blave.app/Contents/Resources");
   t("darwin: VENV_PY = venv/bin/python、BUNDLED_PY = python-arm64/bin/python3(不變)", d.VENV_BIN === "bin" && d.VENV_PY === "/Users/u/Blave/venv/bin/python" && d.BUNDLED_PY === "/Applications/Blave.app/Contents/Resources/python-arm64/bin/python3");
   t("darwin: 隨包 Python 照 process.arch 挑(x64 → python-x64)", consts("darwin", "x64", "/R").BUNDLED_PY === "/R/python-x64/bin/python3");
+  // 建 venv 的 Python(稽核 desktop-python-isolation S2／N4,0.1.57):打包版缺檔不退系統 python;開發版 shell/vendor 那顆在就用它
+  t("打包版隨包 Python 不見:照樣回隨包路徑(建 venv 以 venv_spawn 失敗),不退到 PATH 上的 python / python3",
+    consts("win32", "x64", "C:\\R", true, () => false).base === "C:\\R\\python-x64\\python.exe" && consts("darwin", "arm64", "/R", true, () => false).base === "/R/python-arm64/bin/python3");
+  t("開發版:shell/vendor/python-<arch> 在就用它(Windows 是 python-win-x64);不在才退系統的",
+    consts("darwin", "arm64", "/R", false, (f) => f === "/src/shell/vendor/python-arm64/bin/python3").base === "/src/shell/vendor/python-arm64/bin/python3"
+    && consts("win32", "x64", "C:\\R", false, (f) => f === "C:\\src\\vendor\\python-win-x64\\python.exe", "C:\\src").base === "C:\\src\\vendor\\python-win-x64\\python.exe"
+    && consts("darwin", "arm64", "/R", false, () => false).base === "python3" && consts("win32", "x64", "C:\\R", false, () => false, "C:\\src").base === "python");
   // 0.1.12 起 venv 與 pip 在 shell/enginesetup.js(spawn 逐行讀進度);main.js 傳 BASE / VENV_BIN / WIN 進去
   const eng = fs.readFileSync(path.join(SHELL, "enginesetup.js"), "utf8");
   t("venv 建立與 pip 都走 spawn 陣列,沒有 /bin/sh -c 字串", /await run\(my, o\.basePython\(\), \["-m", "venv", venvDir\], envPath, o\.venvMs\)/.test(eng) && /const venvDir = path\.join\(o\.base, "venv"\);/.test(eng) && !/shell: true/.test(eng) && !/"\/bin\/sh"/.test(src + eng));

@@ -55,20 +55,34 @@ that logs out, and the entry point ends with os._exit.
 Run: python lib/sinopac_worker.py          (daemon)
      python lib/sinopac_worker.py --once   (one login + read → state/sinopac_probe.json)
 """
+import os
+import sys
+
+# Before any other import, in the process itself (not when a test imports this file): the workspace folders come
+# off sys.path and only lib/ is reachable from the workspace, through lib/secret_imports.py (audit 2026-11-19 M1).
+# os is loaded at interpreter startup and runpy is imported only once the workspace is off sys.path.
+# Same block in lib/president_worker.py, lib/capital_worker.py, lib/sinopac_worker.py, manager/reconciler.py,
+# manager/flatten.py.
+if __name__ == "__main__" and not __package__:
+    _WS = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+    _OWN = {os.path.normcase(os.path.realpath(d)) for d in (_WS, os.path.join(_WS, "lib"), os.path.join(_WS, "manager"))}
+    sys.path[:] = [p for p in sys.path if os.path.normcase(os.path.realpath(p or os.curdir)) not in _OWN]
+    import runpy
+    _imports = runpy.run_path(os.path.join(_WS, "lib", "secret_imports.py"))
+    _imports["install"](_WS, _imports["SCRIPT_SIBLINGS"])
+
 import contextlib
 import hashlib
 import json
-import os
 import re
 import signal
 import socket
-import sys
 import threading
 import time
 
 WORKSPACE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if WORKSPACE not in sys.path:
-    sys.path.insert(0, WORKSPACE)  # run as a script: lib/ is sys.path[0]
+if not any(type(f).__name__ == "WorkspaceLibFinder" for f in sys.meta_path) and WORKSPACE not in sys.path:  # imported by a test; a run has the finder
+    sys.path.append(WORKSPACE)
 
 from lib import events, guard, president_contracts as contracts, sinopac_vault, tw_clock, venue_traits  # noqa: E402
 from lib.winreplace import atomic_replace, load_json, read_retry  # noqa: E402

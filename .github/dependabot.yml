@@ -1,0 +1,28 @@
+# Dependabot version updates — opens scheduled PRs to bump dependencies.
+# NOTE: this file only drives *version* update PRs. The immediate,
+# event-driven security ALERTS (and auto security-fix PRs) must be turned
+# on per-repo (or org-wide) in GitHub → Settings → Code security:
+# enable "Dependabot alerts" + "Dependabot security updates".
+version: 2
+updates:
+  # shell/requirements.txt + constraints.txt mirror the pins in shell/main.js; a bump PR stays red
+  # (tests/check_shell_engine_setup.js) until main.js and the lock (tools/lock-deps.js) follow.
+  - package-ecosystem: "pip"
+    directory: "/shell"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    ignore:
+      # 49.x+ ships no macOS x86_64 wheel; Intel Macs would fall back to a Rust source build.
+      - dependency-name: "cryptography"
+        versions: [">=49"]
+  - package-ecosystem: "npm"
+    directory: "/shell"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10

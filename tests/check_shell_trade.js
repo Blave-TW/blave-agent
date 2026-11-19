@@ -1084,6 +1084,12 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
           && trHaltReasonText(er({}, { reason: "credentials rejected" }), null) === "tr.haltReasonAll"
           && trHaltReasonText(er({ config: { amounts: {} } }), null) !== "tr.haltEmptyRead"
           && trHaltReasonText(er({ reconciler: { stopped: { reason: "machine_restart" } } }), null) === "tr.cloud.restartStopped"); }
+      { // 0.1.58 一小時內第 3 次卡住(source hang_watch):專屬句;沒有金額(Z)時不叫人按啟動下單,退回 Z 句;主機重開照舊
+        const hg = (o) => mmR({ halt: { halted: true, at: 1, source: "hang_watch", reason: "reconciler hung 3 times within 1h — paused; press 啟動下單 to resume" }, ...o });
+        ok("0.1.58 hang_watch 暫停:原因句 tr.haltHangWatch;沒有金額(Z)、主機重開不講這句",
+          trHaltReasonText(hg({}), null) === "tr.haltHangWatch"
+          && trHaltReasonText(hg({ config: { amounts: {} } }), null) !== "tr.haltHangWatch"
+          && trHaltReasonText(hg({ reconciler: { stopped: { reason: "machine_restart" } } }), null) === "tr.cloud.restartStopped"); }
       ok("對不上的清單畫在狀態句下面(#tr-mm,停暫停才出、過場中不出),欄位:標的／換之前／Bitget 現在,沒有那一腿寫「沒有倉位」",
         /trPaintMismatch\(state === "halted" && !TR\.pending \? trHaltMismatch\(hr\) : null\);/.test(src)
         && /\[\[t\("tr\.mm\.colSym"\), ""\], \[t\("tr\.mm\.colBefore"\), "n"\], \[t\("tr\.mm\.colNow"\), "n"\]\]/.test(fn2("trPaintMismatch"))
@@ -1229,6 +1235,25 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     ok("S4 machine_restart_stop_failed 事件:同網頁那一列(可能沒停住;先暫停、再更新)", J(trEventText("machine_restart_stop_failed", {}).slice(0, 2)) === J(["tr.ov.evRestartStopFailed", "tr.ov.evRestartStopFailedNote"]));
     ok("machine_restart_stopped 事件:標題已暫停、說明講平倉停損也不會執行", J(trEventText("machine_restart_stopped", {}).slice(0, 2)) === J(["tr.ov.evRestartStopped", "tr.ov.evRestartStoppedNote"]));
     ok("desktop_action 不畫", trEventText("desktop_action", { action: "update" }) === null);
+    // 0.1.58 下單程式卡住自救、睡醒(copy-0158 §1–§3)
+    ok("0.1.58 卡住已重啟 P2、反覆卡住已暫停 P1(什麼單都不送)、睡醒 P2",
+      J(trEventText("reconciler_hang_restarted", {}).slice(0, 3)) === J(["tr.ov.evHangRestarted", null, 2])
+      && J(trEventText("reconciler_hang_halted", {}).slice(0, 3)) === J(["tr.ov.evHangHalted", "tr.ov.evRestartStoppedNote", 1])
+      && trEventText("machine_woke", { minutes: 45 })[2] === 2);
+    ok("0.1.58 execution_interrupted 帶 cause hang:送單時卡住的標題、結果不明那句帶標的;沒帶 cause 照舊",
+      J(trEventText("execution_interrupted", { keys: "BTCUSDT#market(market), ETHUSDT@spot#market(market)", cause: "hang" }).slice(0, 2))
+        === J(["tr.ov.evExecHang", 'tr.ov.evHaltUnconfirmedNote{"sym":"BTCUSDT, ETHUSDT"}'])
+      && J(trEventText("execution_interrupted", { keys: "", cause: "hang" }).slice(0, 2)) === J(["tr.ov.evExecHang", "tr.ov.evHaltUnconfirmedNoteNosym"])
+      && J(trEventText("execution_interrupted", { keys: "BTCUSDT(twap)" }).slice(0, 2)) === J(["tr.ov.evExecInterrupted", "tr.ov.evExecInterruptedNote"]));
+    ok("0.1.58 睡醒的附註:未滿 1 小時寫分鐘、整點不寫分、held 加等策略那半句",
+      trEventText("machine_woke", { minutes: 45 })[1] === 'tr.ov.evWokeNote{"d":"tr.ov.durMin{\\"m\\":45}"}'
+      && trEventText("machine_woke", { minutes: 120, held: true })[1] === 'tr.ov.evWokeNoteHeld{"d":"tr.ov.durHour{\\"h\\":2}"}'
+      && trEventText("machine_woke", { minutes: 125 })[1] === 'tr.ov.evWokeNote{"d":"tr.ov.durHourMin{\\"h\\":2,\\"m\\":5}"}');
+    ok("0.1.58 hang_watch 的暫停(P3):事件列寫自動暫停、附註反覆卡住,不寫成用戶按的;暫停原因句照 source 選字",
+      /head = t\(lv === 1 \|\| d\.source === "hang_watch" \? "tr\.ov\.evHaltAuto"/.test(src)
+      && /note = d\.source === "hang_watch" \? t\("tr\.ov\.evHaltHangNote"\)/.test(src)
+      && /if \(halt\.source === "hang_watch"\) body\.append\(" ", trEl\("span", "dim", "— " \+ t\("tr\.ov\.evHaltHangNote"\)\)\);/.test(src)
+      && /if \(H && rk !== "machine" && !z && r\.halt && r\.halt\.source === "hang_watch"\) return t\("tr\.haltHangWatch"\);/.test(src));
     ok("strategy_failed:error 含 DataAccessError(含模組前綴)→ 沒有資料權限那句;其他錯誤、沒有 error、非字串 → 原句",
       trEventText("strategy_failed", { error: "Traceback ...\nlib.data.DataAccessError: Blave data is not reachable" })[1] === "tr.ov.evStrategyFailedNoData"
       && trEventText("strategy_failed", { error: "fetch_data() raised while checking freshness: x\nDataAccessError: y" })[1] === "tr.ov.evStrategyFailedNoData"
@@ -1360,7 +1385,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     const head = fnS("trPaintHead");
     ok("A′ / B / B0 與帳戶對不上的原因行升正文墨色,用原因句本身定位(前面有「串接失敗 · 」也照升)", /const inkReason = state === "halted" && \(trRestartKind\(hr\) \|\| \(trHaltStopsAll\(hr\.halt\) && !\(trHaltFreeze\(hr\) && trHaltByUser\(hr\.halt\)\)\) \|\| trAcctAsk\(hr\) \|\| trHaltUnexplained\(hr\.halt\)\.length\) \? trHaltReasonText\(hr, TR\.acctDone\) : state === "noaccount" && trNoAccountStopped\(hr\) \? t\("tr\.cloud\.restartNoAccountZ"\) : "";/.test(head)
       && /const inkAt = inkReason \? full\.indexOf\(inkReason\) : -1;/.test(head) && !/full === text && !trFailedIds/.test(head.slice(head.indexOf("const inkReason"))));
-    ok("A′ 事件列:halt 列與 UI 補的 HALT 列都依 source 取重開那句說明", /note = trHaltUnconfirmedSym\(d\) != null \? trHaltUnconfirmedNote\(d\) : trHaltStopsAll\(d\) \|\| trHaltFreeze\(r\) \? t\("tr\.ov\.evRestartStoppedNote"\) : closes \? null : t\("tr\.ov\.evHaltNote"\);/.test(src)
+    ok("A′ 事件列:halt 列與 UI 補的 HALT 列都依 source 取重開那句說明", /note = d\.source === "hang_watch" \? t\("tr\.ov\.evHaltHangNote"\) : trHaltUnconfirmedSym\(d\) != null \? trHaltUnconfirmedNote\(d\) : trHaltStopsAll\(d\) \|\| trHaltFreeze\(r\) \? t\("tr\.ov\.evRestartStoppedNote"\) : closes \? null : t\("tr\.ov\.evHaltNote"\);/.test(src)
       && /trHaltStopsAll\(halt\) \? t\("tr\.ov\.evRestartStoppedNote"\) : t\("tr\.ov\.evHaltNote"\)/.test(src)); }
   { // audit 2-1(B0):沒有交易所 + 重開停止
     const B0 = (o) => ({ alive: true, report: { venues: {}, halt: {}, reconciler: { alive: false, stopped: { reason: "machine_restart", at: 1, ...o } } } });
@@ -2678,6 +2703,17 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       // 主機重開後停住也算暫停(同網頁):雲端的 ui 流裡那一筆、或這台電腦的機器事件(r.events,ts 是 ISO 字串)在前 → 「已恢復下單」
       const paintEv = (ui, events) => { ctx.TR = { st: { report: { events } }, list: [], ov: { days: 7, ui, uiErr: false } }; return flat(vm.runInContext("TR = this.TR; trOvEvents(TR.st.report)", ctx)).filter((x) => x.className === "ev-row").map((x) => x.textContent); };
       const iso = (sec) => new Date(sec * 1000).toISOString();
+      { // 設計稽核 0157 S2:hang_watch 的暫停(P3)跟「下單程式反覆卡住」(P1)±2 分鐘內是同一件事,只留 P1;拿不到 P1、或超過 2 分鐘照列
+        const hh = (rows) => rows.filter((x) => /tr\.ov\.evHaltAuto/.test(x) && /tr\.ov\.evHaltHangNote/.test(x)).length;
+        const p1 = { ts: d0 - 100, type: "reconciler_hang_halted", data: {} }, hw = (dt) => ({ ts: d0 - 100 + dt, type: "halt", data: { source: "hang_watch" } });
+        // P1 是重生後的對帳器啟動完才發:暫停在 P1 前 2 分鐘內到前 15 分鐘(P1 晚到)都算同一件;P1 早於暫停超過 2 分鐘、或晚超過 15 分鐘就不是
+        const both = paintEv([p1, hw(1)], []), late = paintEv([p1, hw(-600)], []), far = paintEv([p1, hw(130)], []), tooLate = paintEv([p1, hw(-901)], []), alone = paintEv([hw(1)], []);
+        ctx.TR = { st: { report: { halt: { halted: true, source: "hang_watch", at: iso(d0 - 99) }, events: [{ ts: iso(d0 - 100), type: "reconciler_hang_halted", payload: {} }] } }, list: [], ov: { days: 7, ui: [], uiErr: false } };
+        const local = flat(vm.runInContext("TR = this.TR; trOvEvents(TR.st.report)", ctx)).filter((x) => x.className === "ev-row").map((x) => x.textContent);
+        ctx.TR = { st: { report: { halt: { halted: true, source: "hang_watch", at: iso(d0 - 99) }, events: [] } }, list: [], ov: { days: 7, ui: [], uiErr: false } };
+        const localAlone = flat(vm.runInContext("TR = this.TR; trOvEvents(TR.st.report)", ctx)).filter((x) => x.className === "ev-row").map((x) => x.textContent);
+        ok("設計稽核 0157 S2:雲端事件流與這台電腦現況的 hang_watch 暫停,reconciler_hang_halted 在前 2 分鐘到後 15 分鐘內就不列;超出、或拿不到 P1 照列",
+          hh(both) === 0 && hh(late) === 0 && hh(far) === 1 && hh(tooLate) === 1 && hh(alone) === 1 && hh(local) === 0 && hh(localAlone) === 1 && both.some((x) => /tr\.ov\.evHangHalted/.test(x)), J({ both, late, far, tooLate, alone, local, localAlone })); }
       { // 0.1.46:兩支策略各一列「K 棒沒到位」以前字一模一樣;雲端用 api 的 strategy_label,這台電腦的事件查清單
         const rowsOf = (ui, events, list) => { ctx.TR = { st: { report: { events } }, list, ov: { days: 7, ui, uiErr: false } }; return flat(vm.runInContext("TR = this.TR; trOvEvents(TR.st.report)", ctx)).filter((x) => x.className === "ev-row").map((x) => x.textContent); };
         const cloud = rowsOf([{ ts: d0 - 60, type: "bar_stale", data: { strategy: "a_1m", minutes: 7 }, strategy_label: "台指期籌碼" },

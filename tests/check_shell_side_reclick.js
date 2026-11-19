@@ -1,7 +1,7 @@
 // 側欄已選中的那一項再點一次(Wei 09-28):沒被瀏覽器展開層蓋著 → 收掉那一頁回預設畫面(這台電腦 welcome / 雲端自動下單頁);
 // 蓋著 → 只收展開層、露出那一頁;框開著 / 組字中(envCanSwitch 為假)什麼都不動。
 //   ① trade.js sideReclick 本體照上面三條走
-//   ② 五個入口(自動下單、策略庫、報告、這台電腦的策略列、雲端策略列)的 click handler 從原文切出來跑:沒選中 → 照舊開;選中 → 經 sideReclick
+//   ② 四個側欄入口(自動下單、策略庫、這台電腦的策略列、雲端策略列)與左下選單「報告」(0.1.57,rptMenuGo)的 click handler 從原文切出來跑:沒選中 → 照舊開;選中 → 經 sideReclick
 // 跑法:node tests/check_shell_side_reclick.js(不開 Electron)
 const fs = require("fs"), path = require("path"), vm = require("vm");
 const R = path.join(__dirname, "..", "shell", "renderer");
@@ -38,11 +38,6 @@ const entry = (src, anchor, env) => {
   return log.join();
 };
 {
-  const env = (open) => (log) => ({ rptBag: () => ({ open }), rptOpen: () => log.push("open"), rptLeave: (e) => log.push("leave:" + e) });
-  ok("② 報告:沒開 → rptOpen;開著 → sideReclick(rptLeave)(舊的 if (!open) 擋掉那一下,展開層蓋著時沒反應)",
-    entry(rptSrc, 'g("rpt-nav")', env(false)) === "open" && entry(rptSrc, 'g("rpt-nav")', env(true)) === "reclick,leave:undefined", [entry(rptSrc, 'g("rpt-nav")', env(false)), entry(rptSrc, 'g("rpt-nav")', env(true))]);
-}
-{
   const env = (open) => (log) => ({ libBag: () => ({ open }), libOpen: () => log.push("open"), libLeave: (e) => log.push("leave:" + e) });
   ok("② 策略庫:沒開 → libOpen;開著 → sideReclick(libLeave)",
     entry(libSrc, 'g("lib-nav")', env(false)) === "open" && entry(libSrc, 'g("lib-nav")', env(true)) === "reclick,leave:undefined", [entry(libSrc, 'g("lib-nav")', env(false)), entry(libSrc, 'g("lib-nav")', env(true))]);
@@ -67,5 +62,41 @@ const entry = (src, anchor, env) => {
     r.join("|") === "select:a,focus:a|reclick,select:null,focus:a|reclick,select:null|reclick,select:null", r);
 }
 
-if (red) { console.log(`\n${red} FAIL`); process.exit(1); }
-console.log("\nALL PASS");
+// 報告的入口 0.1.57 搬進左下選單(spec first-strategy-sidebar §A2):reports.js rptMenuGo 先判擋不擋、再判開沒開,命中就停
+const menuGo = async (o) => {
+  const log = [], bag = { open: !!o.open, reading: o.reading || null };
+  const ctx = { log, envGated: () => o.gate || null, hoPendingId: () => o.pid || null, envSwitchGuarded: (e) => { log.push("switch:" + e); return o.canSwitch !== false; },
+    rptBag: () => bag, rptOpen: async () => { log.push("open"); return o.opened !== false; }, rptLeave: (e) => log.push("leave:" + e), rptBack: () => log.push("back"),
+    sideReclick: (leave, back) => { log.push("reclick"); if (back) back(); else leave(); }, trackFeature: (n) => log.push("tm:" + n) };
+  await vm.runInNewContext("(async () => { async " + cutFn(rptSrc, "rptMenuGo") + "\n await rptMenuGo(); })()", ctx);
+  return log.join();
+};
+const MENU_CASES = [
+  ["「準備好了」那一態:什麼都不做、不切視角", { gate: "ready", pid: "s1", open: true }, ""],
+  // 稽核 release-0157 M1:主機還沒好(沒主機／啟動中／沒登入)時 hoAsk 已經記下等著送的那支,切視角會清掉它
+  ["其餘擋著、有一支等著送上雲端:什麼都不做、不切視角(pending 留著)", { gate: "gate", pid: "s1", open: true }, ""],
+  ["其餘擋著、切得過去:切回這台電腦再開,雲端那袋標成開著也一樣先切", { gate: "gate", open: true }, "switch:local,open,tm:side_menu_rpt"],
+  ["其餘擋著、切不了(框開著／組字中):什麼都不變、不開、不記", { gate: "gate", canSwitch: false }, "switch:local"],
+  ["沒擋、報告頁沒開:rptOpen,真的開了才記 side_menu_rpt", { open: false }, "open,tm:side_menu_rpt"],
+  ["沒擋、rptOpen 途中被切走(回 false):不記", { open: false, opened: false }, "open"],
+  ["沒擋、閱讀層:先回清單", { open: true, reading: "r1" }, "reclick,back"],
+  ["沒擋、清單:再按回首頁(rptLeave),不記", { open: true }, "reclick,leave:undefined"],
+];
+(async () => {
+  for (const [name, o, want] of MENU_CASES) { const got = await menuGo(o); ok("② 選單「報告」:" + name, got === want, got); }
+  ok("② 選單「報告」的 gate 跟 envPaint 同一支 envGated(trade.js),「準備好了」分得出來", /const gk = envGated\(\), ready = gk === "ready", gate = !!gk;/.test(cutFn(trSrc, "envPaint"))
+    && /if \(kind === "running" && typeof hoPendingId === "function" && hoPendingId\(\)\) return "ready";/.test(cutFn(trSrc, "envGated")) && /return kind !== "running" && kind !== "stopped" \? "gate" : null;/.test(cutFn(trSrc, "envGated")));
+  const eg = (cur, kind, pid) => vm.runInNewContext(cutFn(trSrc, "envGated") + "\nenvGated();", { ENV: { cur }, TR_BAGS: { cloud: { st: {} } }, envCloudKind: () => kind, hoPendingId: () => pid });
+  const r = [eg("local", "none", null), eg("cloud", "running", "s1"), eg("cloud", "running", null), eg("cloud", "stopped", null), eg("cloud", "none", null), eg("cloud", "loading", "s1")];
+  ok("② envGated:這台電腦 null;雲端 running 有等著送的 ready;running／stopped null;其餘 gate", r.join() === ",ready,,,gate,gate", r);
+  // M1:啟動中＋等著送的那支(envGated 回 gate,不是 ready)→ rptMenuGo 不走 envSwitch,HO.pending 留著。用真的 envSwitchGuarded／envSwitch 開頭那幾行
+  { const HO = { pending: { id: "s1" } }, log = [];
+    const ctx = { log, HO, ENV: { cur: "cloud" }, TR_BAGS: { cloud: { st: {} } }, envCloudKind: () => "loading", hoPendingId: () => (HO.pending ? HO.pending.id : null),
+      envSwitchGuarded: (e) => { log.push("switch:" + e); HO.pending = null; return true; }, rptBag: () => ({ open: false }), rptOpen: async () => { log.push("open"); return true; },
+      rptLeave: () => {}, rptBack: () => {}, sideReclick: () => {}, trackFeature: (n) => log.push("tm:" + n) };
+    await vm.runInNewContext("(async () => { " + cutFn(trSrc, "envGated") + "\n async " + cutFn(rptSrc, "rptMenuGo") + "\n await rptMenuGo(); })()", ctx);
+    ok("② M1 雲端啟動中、有一支等著送上雲端:按選單「報告」不切視角、不開、不記,HO.pending 還在", log.length === 0 && !!HO.pending && HO.pending.id === "s1", [log, HO.pending]);
+    ok("② M1 rptMenuGo 先判 hoPendingId 再 envSwitchGuarded", /if \(gate && typeof hoPendingId === "function" && hoPendingId\(\)\) return;\n\s*if \(gate\) \{ if \(!envSwitchGuarded\("local"\)\) return; \}/.test(cutFn(rptSrc, "rptMenuGo"))); }
+  if (red) { console.log(`\n${red} FAIL`); process.exit(1); }
+  console.log("\nALL PASS");
+})();

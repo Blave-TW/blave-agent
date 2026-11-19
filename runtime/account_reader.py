@@ -27,6 +27,7 @@ import sys
 import time
 
 import atomic_file
+import secret_imports
 import venue_traits  # same runtime dir
 
 WORKSPACE = os.environ.get("BLAVE_AGENT_WORKSPACE", "/opt/blave-agent/workspace")
@@ -428,8 +429,7 @@ def _kick_portfolio_reporter():
 
 def main():
     os.chdir(WORKSPACE)  # account modules resolve paths relative to the workspace
-    if WORKSPACE not in sys.path:
-        sys.path.insert(0, WORKSPACE)
+    secret_imports.install(WORKSPACE)  # lib only from <ws>/lib, no workspace folder on sys.path (audit 2026-11-19 M1)
     env = _read_env(os.path.join(WORKSPACE, ".env"))
     _ENV_VALUES.extend(sorted((v for v in env.values() if v), key=len, reverse=True))
     venues = _venues(env)

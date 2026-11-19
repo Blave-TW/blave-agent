@@ -126,7 +126,8 @@ const COPY = {
   "tr.startOffZeroAmt": ["策略金額都是 0。", "Every strategy amount is 0."],
   "tr.startOffNoVenueStrat": ["還沒有{venue}能下的策略。", "No strategies {venue} can trade yet."],
   "tr.fogPosPick": ["選好策略，就能啟動下單。", "Pick strategies to start trading."],
-  "tr.fogPosNew": ["請 agent 做一支策略，回測完成就能下單。", "Ask the agent for a strategy. Once it’s backtested, it can trade."],
+  "tr.fogPosNew": ["有回測完成的策略才能下單。", "Trading needs a backtested strategy."],
+  "tr.fogOnbNew": ["有策略才能自動下單。", "Auto trading needs a strategy first."],
   "po.goAmounts": ["設定金額", "Set Amounts"],
   "tr.startOffDraft": ["勾好的策略還沒儲存。", "Picked strategies aren’t saved yet."],
   "tr.runningZDraft": ["下單程式在跑 · 勾好的策略還沒儲存", "Order program running · picked strategies aren’t saved yet"],
@@ -173,8 +174,9 @@ ok("新增的句子不提哪個市場不能自動下單(Wei 10-16 更正:不擋�
 // 部位霧:卡上一句一顆鈕,示意底是部位的四欄表(寫死、不上紅綠)
 { const El = class { constructor(tag, cls, text) { this.tag = tag; this.className = cls || ""; this.textContent = text || ""; this.kids = []; this.dataset = {}; this.on = {}; this.id = ""; }
     setAttribute() {} appendChild(c) { this.kids.push(c); return c; } append(...c) { this.kids.push(...c); } addEventListener(e, f) { this.on[e] = f; } };
-  const fx = { go: [], ns: [], tm: [] }, flat = (n, out = []) => { if (n && typeof n === "object") { out.push(n); (n.kids || []).forEach((k) => flat(k, out)); } return out; };
-  const fctx = vm.createContext({ TR: { env: "local" }, t: (k, v) => (v ? k + "|" + J(v) : k), trEl: (tag, cls, text) => new El(tag, cls, text), trPickOff: () => false, psOpen: () => {}, cxModalOpen: () => {},
+  const fx = { go: [], ns: [], tm: [], cx: [] }, flat = (n, out = []) => { if (n && typeof n === "object") { out.push(n); (n.kids || []).forEach((k) => flat(k, out)); } return out; };
+  const fctx = vm.createContext({ TR: { env: "local" }, t: (k, v) => (v ? k + "|" + J(v) : k), trEl: (tag, cls, text) => new El(tag, cls, text), trPickOff: () => false, psOpen: () => {}, cxModalOpen: (b) => fx.cx.push(b.id),
+    trZVars: (k) => (k === "tr.startOffNoVenueStrat" ? { venue: "V" } : null),
     trZGo: (k, b) => fx.go.push([k, b.id]), trackFeature: (n) => fx.tm.push(n), nsOpen: (b) => fx.ns.push(b.id), poFogCfg: () => new El("div", "cfg-under"), poFogOver: () => new El("div", "over-under"),
     document: { createElement: (tag) => new El(tag), createDocumentFragment: () => new El("#frag") },
     trSec: (...c) => { const e = new El("div", "pf-sec"); e.kids.push(...c); return e; }, trHead: (cols) => { const e = new El("thead"); cols.forEach((c) => e.kids.push(new El("th", c[1], c[0]))); return e; } });
@@ -183,7 +185,7 @@ ok("新增的句子不提哪個市場不能自動下單(Wei 10-16 更正:不擋�
   const pk = card("pos-pick"), nw = card("pos-new"), dr = card("pos-draft"); pk.btn.on.click(); nw.btn.on.click(); dr.btn.on.click();
   ok("部位霧 Z-pick:卡「選好策略，就能啟動下單。」(id tr-pos-fog-msg)＋實心〔選擇策略〕#tr-pos-pick,按下走 trZGo(pick)", pk.msg.textContent === "tr.fogPosPick" && pk.msg.id === "tr-pos-fog-msg"
     && pk.btn.textContent === "tr.pick" && pk.btn.className === "btn-fill" && pk.btn.id === "tr-pos-pick" && J(fx.go[0]) === J(["pick", "tr-pos-pick"]), J([pk.msg, fx.go]));
-  ok("部位霧 Z-new:卡「請 agent 做一支策略，回測完成就能下單。」＋實心〔新增策略〕#tr-pos-new,按下開新增策略框", nw.msg.textContent === "tr.fogPosNew" && nw.msg.id === "tr-pos-fog-msg"
+  ok("部位霧 Z-new:卡「有回測完成的策略才能下單。」＋實心〔新增策略〕#tr-pos-new,按下開新增策略框", nw.msg.textContent === "tr.fogPosNew" && nw.msg.id === "tr-pos-fog-msg"
     && nw.btn.textContent === "ns.chip" && nw.btn.className === "btn-fill" && nw.btn.id === "tr-pos-new" && J(fx.go[1]) === J(["noStrat", "tr-pos-new"]));
   ok("部位霧 Z-draft:卡「勾好的策略還沒儲存。」(id tr-pos-fog-msg)＋實心〔設定金額〕#tr-pos-draft,按下走 trZGo(draft);示意底同部位那張", dr.msg.textContent === "tr.startOffDraft" && dr.msg.id === "tr-pos-fog-msg"
     && dr.btn.textContent === "po.goAmounts" && dr.btn.className === "btn-fill" && dr.btn.id === "tr-pos-draft" && J(fx.go[2]) === J(["draft", "tr-pos-draft"]) && J(flat(dr.under).map((n) => n.tag)) === J(flat(pk.under).map((n) => n.tag)), J([dr.msg, fx.go]));
@@ -197,7 +199,21 @@ ok("新增的句子不提哪個市場不能自動下單(Wei 10-16 更正:不擋�
     && J(trs.map((r) => r.kids[0].textContent)) === J(["BTCUSDT", "ETHUSDT", "SOLUSDT"]) && all.some((n) => n.textContent === "13,000")
     && !all.some((n) => /\b(buy|sell)\b/.test(n.className)) && pk.under.inert === true && !/trReport|TR\.st/.test(cutF(psrc, "poFogPos")), J(ths));
   const old = card("pick"), conn = card("connect");
-  ok("配置頁的霧與沒綁交易所的霧不受影響(id tr-pick／tr-connect,卡上那句沒有 id)", old.btn.id === "tr-pick" && old.msg.textContent === "po.fogPick" && !old.msg.id && conn.btn.id === "tr-connect" && !conn.msg.id); }
+  ok("配置頁的霧與沒綁交易所的霧不受影響(id tr-pick／tr-connect,卡上那句沒有 id)", old.btn.id === "tr-pick" && old.msg.textContent === "po.fogPick" && !old.msg.id && conn.btn.id === "tr-connect" && !conn.msg.id);
+  // 0.1.57 部位卡分兩句(spec first-strategy-sidebar §B4):noStrat 照短句、noVenue 換成「還沒有{venue}能下的策略。」,id 不變(停用啟動鈕的 aria-describedby)
+  const nv = vm.runInContext(`poFog("pos-new", "noVenue")`, fctx), ns0 = vm.runInContext(`poFog("pos-new", "noStrat")`, fctx);
+  ok("部位霧:noVenue 的句子是 tr.startOffNoVenueStrat 帶 venue、noStrat 是 tr.fogPosNew;兩種都是 #tr-pos-fog-msg 與〔新增策略〕", nv.kids[1].kids[0].textContent === "tr.startOffNoVenueStrat|" + J({ venue: "V" })
+    && nv.kids[1].kids[0].id === "tr-pos-fog-msg" && nv.kids[1].kids[1].id === "tr-pos-new" && ns0.kids[1].kids[0].textContent === "tr.fogPosNew", J([nv.kids[1].kids[0].textContent, ns0.kids[1].kids[0].textContent]));
+  // 0.1.57 自動下單沒連帳戶、清單空(§B3):一句、實心〔新增策略〕、旁邊文字連結「連接帳戶」(保留 #tr-connect);示意底照舊用總覽
+  fx.go.length = 0; fx.tm.length = 0; fx.cx.length = 0;
+  const ob = vm.runInContext(`poFog("onb-new")`, fctx), om = ob.kids[1].kids[0], acts = ob.kids[1].kids[1], ob1 = acts.kids && acts.kids[0], ln = acts.kids && acts.kids[1];
+  ob1.on.click(); ln.on.click();
+  ok("清單空的卡:句子 tr.fogOnbNew、〔新增策略〕#tr-onb-new 實心走 trZGo(noStrat)、文字連結 #tr-connect(.fog-ln,cx.title)開連接框;埋點 trade_onb_new／trade_onb_cx;示意底同 connect",
+    om.textContent === "tr.fogOnbNew" && !om.id && acts.className === "fog-acts" && ob1.id === "tr-onb-new" && ob1.className === "btn-fill" && ob1.textContent === "ns.chip"
+    && ln.id === "tr-connect" && ln.className === "fog-ln" && ln.textContent === "cx.title" && ln.type === "button" && J(fx.go) === J([["noStrat", "tr-onb-new"]]) && J(fx.cx) === J(["tr-connect"])
+    && J(fx.tm) === J(["trade_onb_new", "trade_onb_cx"]) && ob.kids[0].kids[0].className === "over-under", J([om.textContent, fx]));
+  const cn2 = card("connect");
+  ok("connect 那張照舊:實心〔連接帳戶〕#tr-connect、沒有文字連結", cn2.btn.id === "tr-connect" && cn2.btn.className === "btn-fill" && cn2.f.kids[1].kids.length === 2); }
 
 // 接線
 const head = cutF(src, "trPaintHead"), pos = cutF(src, "trPaintPos"), over = cutF(src, "trPaintOver"), go = cutF(src, "trZGo"), now = cutF(src, "trZNow");
@@ -209,7 +225,7 @@ ok("Z-draft 的輸入:三個呼叫點(頁首／部位 trZNow、在跑那句 trRu
   /const zc = trZCase\(trReport\(\), trZRows\(r\), trZDraft\(\)\);/.test(now) && /const zc = trZCase\(r, trZRows\(r\), trZDraft\(\)\);/.test(cutF(src, "trRunZText"))
   && (src.match(/trZCase\(/g) || []).length === 4 && /const base = trBase\(\); return !!base && trPickDirty\(TR\.picked, base, trPickKeep\(TR\.env, TR\.picked, base, trListNames\(\)\)\);/.test(cutF(src, "trZDraft")));
 ok("候選清單跟選擇策略框同一套鎖(能不能下台股、統一／群益只下台指期、舊 lib 的投資組合、台幣標的下不了加密所)", /trPickRows\(TR\.list, \[\], \(r \|\| \{\}\)\.can_trade_portfolio === true, trVenueId\(\) === PAPER && !trPaperTwOk\(\), trTwBroker\(trVenueId\(\)\), \{\}, trTwdVenueLock\(\), trTwStockSelf\(\)\)/.test(cutF(src, "trZRows")));
-ok("部位:有霧就上霧(pick → pos-pick,draft → pos-draft,其餘 → pos-new),重畫簽章帶霧的種類;Z-amt 照畫表", /if \(fog\) box\.appendChild\(poFog\(fog === "pick" \? "pos-pick" : fog === "draft" \? "pos-draft" : "pos-new"\)\);\n\s*else box\.appendChild\(poSigTable/.test(pos) && /!!TR\.zBridge, fog, TR_TWN\.v\];/.test(pos));
+ok("部位:有霧就上霧(pick → pos-pick,draft → pos-draft,其餘 → pos-new 並帶 trZCase 給句子分流),重畫簽章帶霧的種類;Z-amt 照畫表", /if \(fog\) box\.appendChild\(poFog\(fog === "pick" \? "pos-pick" : fog === "draft" \? "pos-draft" : "pos-new", fog\)\);\n\s*else box\.appendChild\(poSigTable/.test(pos) && /!!TR\.zBridge, fog, TR_TWN\.v\];/.test(pos));
 ok("切分頁時頁首跟著重畫(部位上霧時導引鈕收、狀態行空)", /trPaintHead\(\);[^\n]*\n\s*trPaintTab\(\);\n\}/.test(cutF(src, "trSetTab")));
 ok("頁首鈕行為:選擇策略 = 到配置頁開框(opener 是配置頁 #tr-pick,確定後焦點到第一個金額格);設定金額 = 到配置頁、焦點第一個金額格;新增策略 = nsOpen",
   /if \(kind === "noStrat" \|\| kind === "noVenue"\) \{ if \(typeof nsOpen === "function"\) nsOpen\(from\); return; \}/.test(go) && /await poOpen\("cfg"\);/.test(go)

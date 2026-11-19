@@ -88,7 +88,7 @@ function wdNote(k, v, into) {
   // 方案制(planMo):試用結束自動開始扣方案費,帶天數那句講「免費試用」不講「送」(同 app.js pv.h.offer.m);切換前照舊
   const mo = planMo();
   if (k === "out") into.appendChild(link(t(v.t ? (mo ? "wd.note.out.m" : "wd.note.out") : "wd.note.outNoNum", v), true));
-  else if (k === "none" && mo) into.appendChild(link(t(v.t ? "wd.note.trial" : "wd.note.noneNoNum", v), false, () => bindGo("bind_welcome")));
+  else if (k === "none" && mo) { const b = link(t(v.t ? "wd.note.trial" : "wd.note.noneNoNum", v), false, () => bindGo("bind_welcome")); if (typeof p3Live === "function" && p3Live()) b.className = "btn-fill"; into.appendChild(b); }   // 改價 v3:#2 主鈕實心(開 Agent 方案框)
   else if (k === "none") into.appendChild(link(t(v.t ? "wd.note.none" : "wd.note.noneNoNum", v)));
   else if (k === "billed") into.append(t(v.r ? "wd.note.billed" : "wd.note.billedNoNum", v));
   else if (k === "noplan") into.appendChild(link(t("wd.note.noplan")));

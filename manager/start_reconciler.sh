@@ -9,6 +9,8 @@
 # A resident process is never part of an agent turn: drop the turn's variables a tmux / nohup start from
 # inside a turn would hand it, or lib/guard would hold the turn order lock for its whole life (and refuse
 # its own orders while another turn holds it).
+# The test hang switch (manager/reconciler.py TEST_HANG_ENV) never comes from inside a turn.
+if [ -n "${BLAVE_TURN_INTERRUPT_FILE}${BLAVE_TURN_PID}" ]; then unset BLAVE_TEST_HANG_BEFORE_SEND; fi
 unset BLAVE_TURN_INTERRUPT_FILE BLAVE_TURN_PID
 WORKSPACE="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$WORKSPACE"
@@ -41,6 +43,21 @@ print(tpl.format(code=arg) if arg else tpl)
 EOF
 }
 
+# The runtime's hang watch (runtime/hang_watch.py) killed it and wrote this record first: the
+# next reconciler sends the one notice for that, so no "System restarted" on top. A record older
+# than 15 minutes (= manager/reconciler HANG_RECORD_FRESH_S) is a failed respawn's: alert as usual.
+hang_kill_recent() {
+    python3 - <<'EOF'
+import json, sys, time
+try:
+    with open('state/execution/hang_kill.json') as f:
+        at = json.load(f).get('at')
+except Exception:
+    sys.exit(1)
+sys.exit(0 if isinstance(at, (int, float)) and 0 <= time.time() - at <= 900 else 1)
+EOF
+}
+
 notify "$(get_msg watchdog_started '✅ Auto-trading started')"
 
 while true; do
@@ -54,6 +71,10 @@ while true; do
     fi
     MSG="$(get_msg watchdog_restart '⚠️ System restarted (code {code}), resuming in 10s' "$EXIT_CODE")"
     echo "$MSG"
-    notify "$MSG"
+    if hang_kill_recent; then
+        echo "killed by the hang watch — the next reconciler sends the notice"
+    else
+        notify "$MSG"
+    fi
     sleep 10
 done

@@ -5762,7 +5762,7 @@ msgid "lib.bb.planRenew"
 msgstr "{d} 起每 30 天續扣"
 
 msgid "lib.bb.planTail"
-msgstr "續扣先錢包後卡。可在方案頁取消，不退款。"
+msgstr "續扣時錢包夠就扣錢包，不夠就整筆刷卡。可在方案頁取消，不退款。"
 
 msgid "lib.bb.planOk"
 msgstr "綁卡並付 {p}"
@@ -6044,6 +6044,16 @@ msgstr "研究"
 # 側欄「報告」入口的記號(等待期間人在別的視圖,報告好了不拉回、只標記)
 msgid "rpt.newMark"
 msgstr "有新報告"
+
+# 左下第一格的選單(app.js amPaint):說明文件那一項;第一格的名稱沒登入是 am.menu、已登入是 am.acct
+msgid "am.docs"
+msgstr "說明文件"
+
+msgid "am.menu"
+msgstr "選單"
+
+msgid "am.acct"
+msgstr "帳號"
 
 # 新增報告 modal(§1.5;字逐字抄 web 的 workspace_rp_*,拿掉排程與「更多 › 報告」的地點詞)
 msgid "rpt.new.title"
@@ -6452,11 +6462,30 @@ msgstr "將送出到對話的訊息"
 msgid "ns.previewEmpty"
 msgstr "—"
 
-msgid "ns.libHint"
-msgstr "不知道從哪開始？"
-
 msgid "ns.libLink"
 msgstr "看策略庫的現成策略"
+
+# 新增策略框的範例列(newstrategy.js NS_EX):三組名稱與邏輯四個市場共用,標的與週期在 NS_EX_SYM;字同 rpt.new.examples
+msgid "ns.ex"
+msgstr "範例："
+
+msgid "ns.ex.1.name"
+msgstr "均線黃金交叉"
+
+msgid "ns.ex.1.logic"
+msgstr "短均線上穿長均線做多，下穿平倉。"
+
+msgid "ns.ex.2.name"
+msgstr "RSI 布林反轉"
+
+msgid "ns.ex.2.logic"
+msgstr "RSI 超賣且觸及布林下軌時做多，回到中軌平倉。"
+
+msgid "ns.ex.3.name"
+msgstr "突破前高"
+
+msgid "ns.ex.3.logic"
+msgstr "收盤突破 20 日高點做多，跌破 10 日低點平倉。"
 
 msgid "ns.submit"
 msgstr "送出到對話"
@@ -8623,7 +8652,7 @@ msgid "pv.d.noTrial.m"
 msgstr "這個帳號沒有首次綁卡的試用。Blave 資料要開通 Blave Agent 方案（每 {pd} 天 {p} TWD 起）。"
 
 msgid "pv.d.trial.m"
-msgstr "到 {d}為止資料免費。試用結束扣第一期 {p} TWD，之後每 {pd} 天自動續扣。先從錢包扣，不夠一期就刷卡。"
+msgstr "到 {d}為止資料免費。試用結束扣第一期 {p} TWD，之後每 {pd} 天自動續扣。錢包夠就扣錢包，不夠就整筆刷卡。"
 
 msgid "pv.d.noPrice.m"
 msgstr "AI 照用你現在的設定。試用結束自動扣第一期方案費，試用期間取消就不扣。"
@@ -8640,7 +8669,7 @@ msgid "pv.f.out.m"
 msgstr "試用結束後自動開始計費，每 {pd} 天 {p} TWD。"
 
 msgid "pv.f.offer.m"
-msgstr "綁卡時收 {v} TWD 驗證金，全額進你的餘額，並開啟自動儲值。試用 {t} 天，到期自動扣第一期（每 {pd} 天 {p} TWD）：先扣錢包，不夠再刷這張卡。試用期間取消就不扣。"
+msgstr "綁卡時收 {v} TWD 驗證金，全額進你的餘額，並開啟自動儲值。試用 {t} 天，到期自動扣第一期（每 {pd} 天 {p} TWD）。錢包夠就扣錢包，不夠就整筆刷這張卡。試用期間取消就不扣。"
 
 msgid "pv.e.sub.m"
 msgstr "試用結束自動扣第一期，每 {pd} 天 {p} TWD。試用期間取消就不扣。"
@@ -8667,7 +8696,7 @@ msgid "pv.d.plan.m"
 msgstr "Blave 資料要開通 Blave Agent 方案（每 {pd} 天 {p} TWD 起）。沒有的話，電腦版只用公開資料。"
 
 msgid "pv.f.plan.m"
-msgstr "開通當下付第一期：先從錢包扣，不夠再刷綁定的卡。"
+msgstr "開通當下付第一期。錢包夠就扣錢包，不夠就整筆刷卡。"
 
 msgid "pv.apiPlan"
 msgstr "API 方案"
@@ -8721,10 +8750,10 @@ msgid "cf.m.body1"
 msgstr "方案（Linux Starter）含 Blave 資料，電腦版馬上就能用。不會開雲端主機，之後到網站開一台 Linux Starter 不另收費。"
 
 msgid "cf.m.body2"
-msgstr "第一期現在付：先從錢包扣，不夠再刷綁定的卡。"
+msgstr "第一期現在付。錢包夠就扣錢包，不夠就整筆刷卡。"
 
 msgid "cf.m.body2Trial"
-msgstr "{d}前不收費。之後照你選的週期付第一期：先從錢包扣，不夠再刷卡。在那之前到網站取消就不會扣。"
+msgstr "{d}前不收費。之後照你選的週期付第一期。錢包夠就扣錢包，不夠就整筆刷卡。在那之前到網站取消就不會扣。"
 
 msgid "cf.m.body3"
 msgstr "每期自動續約。扣款失敗時 Blave 資料暫停、每天重試，{g} 天沒付款方案就結束。取消後用到這一期結束，不退款。"
@@ -8882,7 +8911,7 @@ msgstr "開通方案"
 msgid "cf.m.title"
 msgstr "開通 Blave Agent 方案？"
 msgid "pv.d.trial.mNoNum"
-msgstr "到 {d}為止資料免費。試用結束扣第一期 {p} TWD，之後每期自動續扣。先從錢包扣，不夠一期就刷卡。"
+msgstr "到 {d}為止資料免費。試用結束扣第一期 {p} TWD，之後每期自動續扣。錢包夠就扣錢包，不夠就整筆刷卡。"
 
 msgid "pv.h.plan.m"
 msgstr "Blave 資料，開通方案就能用"
@@ -9464,7 +9493,11 @@ msgid "tr.fogPosPick"
 msgstr "選好策略，就能啟動下單。"
 
 msgid "tr.fogPosNew"
-msgstr "請 agent 做一支策略，回測完成就能下單。"
+msgstr "有回測完成的策略才能下單。"
+
+# 自動下單沒連帳戶、這台電腦清單是空的那張霧卡(portfolio.js poFog("onb-new"))
+msgid "tr.fogOnbNew"
+msgstr "有策略才能自動下單。"
 
 msgid "po.goAmounts"
 msgstr "設定金額"
@@ -10542,6 +10575,52 @@ msgstr "{sym} 有一筆單結果不明、可能已成交，什麼單都不送。
 msgid "tr.ov.evHaltUnconfirmedNoteNosym"
 msgstr "有一筆單結果不明、可能已成交，什麼單都不送。不要手動補單，告訴 agent 成交多少再按「啟動下單」。"
 
+# 0.1.58 下單程式卡住自救、睡醒(copy-0158)
+msgid "tr.ov.evExecHang"
+msgstr "送單時卡住，已暫停"
+
+msgid "tr.ov.evHangRestarted"
+msgstr "下單程式卡住，已自動重啟"
+
+msgid "tr.ov.evHangHalted"
+msgstr "下單程式反覆卡住，已暫停"
+
+msgid "tr.ov.evHaltHangNote"
+msgstr "下單程式反覆卡住"
+
+msgid "tr.haltHangWatch"
+msgstr "下單程式一小時內卡住三次。平倉與停損也不執行，按「啟動下單」再試。"
+
+msgid "tr.ov.evWoke"
+msgstr "電腦睡醒，恢復下單"
+
+msgid "tr.ov.evWokeNote"
+msgstr "睡了 {d}"
+
+msgid "tr.ov.evWokeNoteHeld"
+msgstr "睡了 {d}，新倉與加碼最多等 3 分鐘"
+
+msgid "tr.ov.durMin"
+msgstr "{m} 分鐘"
+
+msgid "tr.ov.durHour"
+msgstr "{h} 小時"
+
+msgid "tr.ov.durHourMin"
+msgstr "{h} 小時 {m} 分"
+
+msgid "tm.evExecHangNote"
+msgstr "送單時卡住，{keys} 可能已成交。"
+
+msgid "tm.evHangHaltedNote"
+msgstr "下單程式一小時內卡住三次，平倉與停損都不執行。"
+
+msgid "tm.evWokeNote"
+msgstr "電腦睡了 {d}，這段期間沒有下單。現在照最新訊號下單。"
+
+msgid "tm.evWokeNoteHeld"
+msgstr "電腦睡了 {d}，這段期間沒有下單。現在照最新訊號下單。新倉與加碼等策略重算完再送，最多 3 分鐘。"
+
 msgid "tm.evHaltUnconfirmedNote"
 msgstr "有一筆單結果不明、可能已成交，什麼單都不送。不要手動補單，告訴 agent 成交多少再按「啟動下單」。"
 
@@ -10944,10 +11023,10 @@ msgstr "幫我做台指期 {code} {tf} 的策略回測，用{per}，策略是：
 
 # 電腦版 UI 修正 0.1.44(spec desktop-ui-fixes-2026-11-02)
 msgid "po.fogNew"
-msgstr "請 agent 做一支策略，回測完成就能設金額。"
+msgstr "有回測完成的策略才能設金額。"
 
 msgid "mg.fogNew"
-msgstr "請 agent 做幾支策略，回測完成就能優化。"
+msgstr "有回測完成的策略才能優化。"
 
 msgid "lib.gate.naShort"
 msgstr "不適用"
@@ -11335,3 +11414,432 @@ msgstr "不送"
 # 這一塊的說明行
 msgid "err.priv.note"
 msgstr "錯誤訊息要你按送出才送。每筆帶錯誤類型、位置、版本、安裝識別碼，登入時另帶帳號。都留 90 天。"
+
+# 0.1.57 改價 v3 付款框與額度提示(renderer/planv3.js;mockup conversion-journey-2026-11-16)
+msgid "p3.a.title"
+msgstr "Blave Agent 方案"
+
+msgid "p3.a.unit"
+msgstr "TWD／{d} 天"
+
+msgid "p3.a.unitNoNum"
+msgstr "TWD"
+
+msgid "p3.tick.data"
+msgstr "電腦版的 Blave 資料"
+
+msgid "p3.tick.ai"
+msgstr "AI 額度"
+
+msgid "p3.tick.aiPeriod"
+msgstr "每期 {n} TWD"
+
+msgid "p3.tick.aiTrial"
+msgstr "試用期 {q} TWD，之後每期 {n} TWD"
+
+msgid "p3.tick.pro"
+msgstr "資料工作室 Pro"
+
+
+
+
+
+
+
+msgid "p3.topup"
+msgstr "AI 超額時自動儲值。"
+
+msgid "p3.topupTip"
+msgstr "錢包低於 {lo} TWD 時，刷這張卡補 {a} TWD。"
+
+
+
+
+
+
+
+
+msgid "p3.a.out"
+msgstr "新帳號可免費試用 {t} 天。"
+
+msgid "p3.a.okTrial"
+msgstr "綁卡試用 {t} 天"
+
+msgid "p3.a.okTrialNoNum"
+msgstr "綁卡試用"
+
+msgid "p3.a.okBindPay"
+msgstr "綁卡並付 {p} TWD"
+
+msgid "p3.a.okPay"
+msgstr "付 {p} TWD"
+
+msgid "p3.a.walletPay"
+msgstr "用錢包付 {p} TWD"
+
+msgid "p3.crypto"
+msgstr "用加密貨幣轉帳"
+
+msgid "p3.pro.dup"
+msgstr "Pro 訂閱仍會扣款，方案已含 Pro。"
+
+msgid "p3.pro.paid"
+msgstr "Pro 已付到 {at}，不退款。"
+
+msgid "p3.pro.web"
+msgstr "到網站取消 Pro"
+
+msgid "p3.pro.ios"
+msgstr "到 App Store 取消"
+
+msgid "p3.pro.android"
+msgstr "到 Google Play 取消"
+
+msgid "p3.repriced"
+msgstr "價格剛更新，再確認一次。"
+
+msgid "p3.resourced"
+msgstr "扣款方式剛變了，再確認一次。"
+
+msgid "p3.paying"
+msgstr "付款中…"
+
+msgid "p3.h.title"
+msgstr "開雲端主機"
+
+msgid "p3.h.spec"
+msgstr "主機規格"
+
+msgid "p3.h.os"
+msgstr "系統"
+
+msgid "p3.h.size"
+msgstr "規格"
+
+msgid "p3.h.starter"
+msgstr "基本"
+
+msgid "p3.h.premium"
+msgstr "進階"
+
+msgid "p3.h.max"
+msgstr "最高"
+
+msgid "p3.h.winTip"
+msgstr "只有接群益才需要"
+
+msgid "p3.h.winNote"
+msgstr "Windows 只有接群益才需要。"
+
+msgid "p3.h.specV"
+msgstr "{c} vCPU · {r} GB"
+
+msgid "p3.tier.linux_starter"
+msgstr "Linux 基本"
+
+msgid "p3.tier.linux_premium"
+msgstr "Linux 進階"
+
+msgid "p3.tier.linux_max"
+msgstr "Linux 最高"
+
+msgid "p3.tier.windows_starter"
+msgstr "Windows 基本"
+
+msgid "p3.tier.windows_premium"
+msgstr "Windows 進階"
+
+msgid "p3.tier.windows_max"
+msgstr "Windows 最高"
+
+msgid "p3.tier.agent"
+msgstr "Blave Agent 方案"
+
+msgid "p3.s.agent"
+msgstr "Blave Agent 方案"
+
+msgid "p3.s.host"
+msgstr "{tier}主機"
+
+msgid "p3.s.hostPlan"
+msgstr "{tier}主機與方案"
+
+msgid "p3.s.hostLeft"
+msgstr "{tier}主機，這期剩 {n} 天"
+
+msgid "p3.s.diff"
+msgstr "{tier} 與 {paid} 的差額，這期剩 {n} 天"
+
+msgid "p3.s.paidAlready"
+msgstr "{tier}主機，這期已付過"
+
+msgid "p3.s.tot"
+msgstr "{p} TWD"
+
+msgid "p3.src.wallet"
+msgstr "今天從錢包扣"
+
+msgid "p3.src.card"
+msgstr "今天刷卡號末四碼 {l}"
+
+msgid "p3.src.cardAny"
+msgstr "今天刷綁定的卡"
+
+msgid "p3.src.none"
+msgstr "今天付"
+
+msgid "p3.src.free"
+msgstr "今天不收費"
+
+
+
+
+msgid "p3.h.next"
+msgstr "{at} 起每 {d} 天 {p} TWD。"
+
+msgid "p3.h.nextY"
+msgstr "{at} 起每年 {p} TWD。"
+
+msgid "p3.h.trialEnd"
+msgstr "試用就此結束，今天開始第一期。"
+
+msgid "p3.h.cap"
+msgstr "今天開過 {n} 次了，明天 00:00 後再開。"
+
+msgid "p3.h.capNoNum"
+msgstr "今天的開機次數到上限了，明天 00:00 後再開。"
+
+msgid "p3.h.okPay"
+msgstr "付 {p} TWD，開主機"
+
+msgid "p3.h.okDiff"
+msgstr "補 {p} TWD，開主機"
+
+msgid "p3.h.okFree"
+msgstr "開主機"
+
+msgid "p3.h.okBind"
+msgstr "綁卡並付 {p} TWD"
+
+
+msgid "p3.unl"
+msgstr "這期付過 {tier}主機，還沒開機。"
+
+msgid "p3.w.wait"
+msgstr "付款頁開在瀏覽器裡，付完回到這裡。"
+
+msgid "p3.w.reopen"
+msgstr "重新打開付款頁"
+
+msgid "p3.w.drop"
+msgstr "不付了"
+
+msgid "p3.w.failTrial"
+msgstr "綁卡沒有完成，沒有扣款。"
+
+msgid "p3.w.failPay"
+msgstr "付款沒有完成，沒有扣款。"
+
+msgid "p3.w.retry"
+msgstr "再試一次"
+
+msgid "p3.w.okPlan"
+msgstr "Blave Agent 方案開通了。"
+
+msgid "p3.w.wallet"
+msgstr "已刷 {p} TWD，方案沒開成，錢存進錢包。"
+
+msgid "p3.w.refund"
+msgstr "我們會聯絡你退款。"
+
+msgid "p3.w.unsettled"
+msgstr "付款結果還在確認，先別重付。"
+
+msgid "p3.err.quote"
+msgstr "現在讀不到價格，稍後再試。"
+
+msgid "p3.err.charge"
+msgstr "扣款沒有成功，沒有開通。"
+
+msgid "p3.err.busy"
+msgstr "上一筆扣款還在處理，稍後再看。"
+
+msgid "p3.err.net"
+msgstr "沒收到結果，先別重按，稍後到帳號與方案確認。"
+
+msgid "p3.err.server"
+msgstr "沒有成功，稍後再試。"
+
+msgid "p3.err.capDown"
+msgstr "現在無法開機，沒有扣款，稍後再試。"
+
+msgid "p3.err.paidNoServer"
+msgstr "已扣 {p} TWD，主機沒開成，這期重開不另收費。"
+
+msgid "p3.err.hasServer"
+msgstr "已經有一台雲端主機了。"
+
+msgid "p3.err.active"
+msgstr "方案已經開通了。"
+
+msgid "p3.err.walletShort"
+msgstr "錢包不夠付這一筆。"
+
+msgid "p3.c.paperH"
+msgstr "策略接模擬交易，不用 AI"
+
+msgid "p3.c.recent"
+msgstr "最近一支：{name}"
+
+msgid "p3.c.see"
+msgstr "看我的策略"
+
+msgid "p3.c.trialH"
+msgstr "{q} TWD AI 額度，加上 Blave 資料"
+
+msgid "p3.c.trialHNoNum"
+msgstr "AI 額度，加上 Blave 資料"
+
+msgid "p3.c.planH"
+msgstr "每期 {n} TWD AI 額度，加上 Blave 資料"
+
+msgid "p3.c.planHNoNum"
+msgstr "每期 AI 額度，加上 Blave 資料"
+
+msgid "p3.c.plan"
+msgstr "開通方案"
+
+msgid "p3.c.running"
+msgstr "策略照常在跑。"
+
+msgid "p3.low"
+msgstr "AI 額度剩不到 {n} TWD。"
+
+msgid "p3.low.then"
+msgstr "用完從錢包扣，低於 {lo} TWD 自動儲值 {a} TWD。"
+
+msgid "p3.low.thenNoCard"
+msgstr "用完從錢包扣。"
+
+msgid "p3.up"
+msgstr "AI 額度用完了，這一輪改從錢包扣。"
+
+msgid "p3.up.next"
+msgstr "{at} 再給 {n} TWD。"
+
+msgid "p3.topped"
+msgstr "已自動儲值 {a} TWD（卡號末四碼 {l}）。"
+
+msgid "p3.toppedNoCard"
+msgstr "已自動儲值 {a} TWD。"
+
+msgid "p3.set.ai"
+msgstr "AI 額度"
+
+msgid "p3.set.aiV"
+msgstr "{n} TWD ／ {g}"
+
+msgid "p3.set.over"
+msgstr "本期已超額 {o} TWD，從錢包扣。"
+
+msgid "p3.f.trial"
+msgstr "試用期間到網站取消就不扣。開雲端主機會結束試用，當天付第一期。"
+
+msgid "p3.d.planOn"
+msgstr "方案含 Blave 資料，電腦版就能用。要全天候自動執行，再加購雲端主機。"
+
+msgid "p3.pro.dupAfter"
+msgstr "Pro 訂閱仍會扣款。"
+
+msgid "p3.s.hostYear"
+msgstr "{tier}主機，付到年底（剩 {n} 天）"
+
+msgid "p3.lowReset"
+msgstr "AI 額度剩不到 {n} TWD，{at} 重置。"
+
+msgid "p3.w.reopenOk"
+msgstr "開新付款頁，{p} TWD"
+
+msgid "p3.w.reopenOkNoNum"
+msgstr "開新付款頁"
+
+msgid "p3.a.free"
+msgstr "這一期不收費。"
+
+msgid "p3.srcS.card"
+msgstr "今天刷卡號末四碼 {l}。"
+
+msgid "p3.srcS.cardAny"
+msgstr "今天刷綁定的卡。"
+
+msgid "p3.srcS.wallet"
+msgstr "今天從錢包扣。"
+
+msgid "p3.srcS.free"
+msgstr "今天不收費。"
+
+msgid "p3.srcS.none"
+msgstr "今天付。"
+
+msgid "p3.h.nextNoNum"
+msgstr "{at} 起每期 {p} TWD。"
+
+msgid "p3.s.hostRest"
+msgstr "{tier}主機，這期剩下的天數"
+
+msgid "p3.s.diffRest"
+msgstr "{tier} 與 {paid} 的差額，這期剩下的天數"
+
+msgid "p3.s.trialIncl"
+msgstr "{tier}主機，試用內含"
+
+msgid "p3.w.openNote"
+msgstr "上一筆付款頁還開著，仍能付款。開新頁的話，兩頁都付，多的那筆存入錢包。"
+
+msgid "pv.d.included.v3"
+msgstr "策略要全天候自動執行，才需要雲端主機。"
+
+msgid "pv.f.offer.v3"
+msgstr "綁卡時收 {v} TWD 驗證金，存進錢包。試用 {t} 天，到期扣第一期 {p} TWD，之後每 {pd} 天續扣。試用期間取消就不扣。"
+
+msgid "pv.f.offer.v3NoNum"
+msgstr "綁卡時收 {v} TWD 驗證金，存進錢包。試用 {t} 天，到期扣第一期 {p} TWD，之後按期續扣。試用期間取消就不扣。"
+
+msgid "p3.a.trialUnit"
+msgstr "天免費試用"
+
+msgid "p3.a.trialSub"
+msgstr "{at} 起每 {d} 天 {p} TWD，之前取消不扣。"
+
+msgid "p3.a.verifyLine"
+msgstr "今天刷 {v} TWD 驗證，存進錢包。"
+
+msgid "p3.a.renewShort"
+msgstr "自動續扣，可隨時取消，不退款。"
+
+msgid "p3.a.todayCard"
+msgstr "今天刷末四碼 {l}。"
+
+msgid "p3.a.todayWallet"
+msgstr "今天從錢包扣。"
+
+msgid "p3.a.todayCardAny"
+msgstr "今天刷綁定的卡。"
+
+msgid "p3.w.walletNoNum"
+msgstr "刷了錢，方案沒開成，錢存進錢包。"
+
+msgid "pv.f.noTrial.v3"
+msgstr "綁卡就付第一期 {p} TWD，之後每 {pd} 天續扣。"
+
+msgid "pv.f.noTrial.v3NoNum"
+msgstr "綁卡就付第一期 {p} TWD，之後按期續扣。"
+
+msgid "priv.c.feat.10"
+msgstr "開方案或主機的框時，記從哪開、選了哪一階與結果類別"
+
+msgid "p3.f.trialConvert"
+msgstr "開雲端主機會結束試用，今天付第一期：{tier}合計 {p} TWD。"
+
+msgid "p3.f.trialConvertNoNum"
+msgstr "開雲端主機會結束試用，當天付第一期。"

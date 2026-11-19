@@ -862,8 +862,6 @@ function syncLangControls() {
     b.setAttribute("aria-checked", on ? "true" : "false"); b.tabIndex = on ? 0 : -1;
   });
 }
-$("ws-conn").addEventListener("click", setOpen);
-$("rail-set").addEventListener("click", setOpen);
 $("set-close").addEventListener("click", setClose);
 $("set-scrim").addEventListener("mousedown", (e) => { if (e.target === $("set-scrim")) setClose(); });
 $("set-cats").addEventListener("click", (e) => {
@@ -882,7 +880,7 @@ var UP = null;   // var:applyStatic 可能在這一行之前就被叫到(let 的
    開關的真值在主行程(telemetry.js 的狀態檔);這裡每次打開這一類就重讀,切換後以主行程回的為準。 */
 let PRIV = null;   // null = 還沒讀到(開關先鎖著,免得先畫成開、再跳成關)
 // 會收:組 → 組內幾句(0.1.39 設計稽核 §C)。key = priv.c.<組>.h 與 priv.c.<組>.<n>;組數與句數改了,tests/check_shell_settings.js 逐字對
-const PRIV_COLLECT = [["step", 4], ["strat", 5], ["feat", 9], ["stuck", 9], ["auth", 5], ["meta", 5], ["acct", 2]].map(([g, n]) => ["priv.c." + g + ".h", Array.from({ length: n }, (_, i) => "priv.c." + g + "." + (i + 1))]);
+const PRIV_COLLECT = [["step", 4], ["strat", 5], ["feat", 10], ["stuck", 9], ["auth", 5], ["meta", 5], ["acct", 2]].map(([g, n]) => ["priv.c." + g + ".h", Array.from({ length: n }, (_, i) => "priv.c." + g + "." + (i + 1))]);
 /* 功能被使用(canon .claude/docs/product-telemetry.md):只交一個白名單裡的名字給主行程,不帶內容、不計次(api 每安裝每 name 每日一列)。
    送出點放在「功能被使用」那一層(分頁切換、主要動作的 handler),不放 render;名字的字面在 tests/check_shell_telemetry.js 對兩端白名單掃 */
 function trackFeature(name) { try { window.blave.trackFeature(name); } catch (_) { } }   // 追蹤永遠不擋功能
@@ -3229,7 +3227,7 @@ function confirmBox({ title, lines, ok, onOk, opener, alt, mark, markKind, extra
   if (alt && alt.disabled && alt.why) $("del-alt").setAttribute("aria-describedby", alt.why); else $("del-alt").removeAttribute("aria-describedby");
   $("del-modal").classList.toggle("has-alt", !!alt);
   $("del-modal").classList.toggle("has-choices", !!choices);
-  delCtx = { custom: true, stay, onOk: choices ? (pre ? pre.onOk : null) : onOk, onAlt: alt && alt.onOk, altStay: !!(alt && alt.stay), onLink: link && link.onClick, opener, onCancel };
+  delCtx = { custom: true, stay, onOk: choices ? (pre ? pre.onOk : null) : onOk, onAlt: alt && alt.onOk, altStay: !!(alt && alt.stay), onLink: link && link.onClick, linkStay: !!(link && link.stay), opener, onCancel };
   $("view-ws").inert = true; $("set-scrim").inert = true; $("lai-scrim").inert = true;   // 疊在「用你自己的 AI」上面時(回合中按〔使用〕):底下那層也鎖
   // single:只有一顆鈕(「知道了」那種:沒有要取消的事)。焦點給它;Esc / 框外 / ✕ 照舊關
   $("del-cancel").hidden = !!single;
@@ -3270,7 +3268,8 @@ $("del-alt").addEventListener("click", () => {
   if (delCtx && delCtx.altStay) { if (go) go(); return; }
   if (delCtx) delCtx.acted = true; delClose(false); if (go) go();
 });
-$("del-link").addEventListener("click", () => { const go = delCtx && delCtx.onLink; delClose(false); if (go) go(); });
+// link.stay:按了不關框(改價 v3 方案框框腳的〔用錢包付〕要留在框裡鎖住扣款,同 alt.stay)
+$("del-link").addEventListener("click", () => { const go = delCtx && delCtx.onLink; if (delCtx && delCtx.linkStay) { if (go) go(); return; } delClose(false); if (go) go(); });
 $("del-ok").addEventListener("click", async () => {
   if (delCtx && delCtx.custom) { const go = delCtx.onOk; if (!go) return; if (delCtx.stay) { go(); return; } delCtx.acted = true; delClose(false); go(); return; }   // 沒選選項(choices):鈕本來就停用,這裡再守一次
   const m = delCtx && delCtx.m; if (!m) return;
@@ -3345,6 +3344,11 @@ function scrollChat(force) {
   if (tabBg()) return;   // 背景分頁的事件:捲動容器是眼前那條的
   if (chatStick) { const box = $("chat-scroll"); box.scrollTop = box.scrollHeight; chatTop = box.scrollTop; }
 }
+// 內容晚長高(結果卡的圖載完)、欄被壓矮(建議托盤長出來)都沒有 scroll 事件:黏著就補捲到底。停在 scrollTop 0 時
+// Chromium 的 scroll anchoring 不作用,不補就整段結論留在畫面外(0.1.57 驗收 S2)。往上捲著的 chatStick 是 false,不拉。
+// 每個分頁的 .chat-thread 由 chattabs.js 建好時掛上
+const chatRO = typeof ResizeObserver === "function" ? new ResizeObserver(() => scrollChat()) : null;
+if (chatRO) chatRO.observe($("chat-scroll"));
 
 /* ── agent 回覆的顯示 ─────────────────────────────────
    原文留在 el._raw(串流是一段一段接上來的),畫面由 paintAi 重畫。做兩件事:
@@ -4445,7 +4449,7 @@ function faultCard() {
       el.classList.toggle("is-calm", !!s.calm);
       // 只有鈕、沒有句子(資料卡的試用態:agent 那一輪已經講了拿不到什麼):不放記號,讀屏念鈕字
       el.classList.toggle("act-only", !s.text);
-      el.classList.toggle("two-quiet", !!(s.second && s.second.quiet && s.third));   // 同一列兩顆文字鈕:拉開一階,兩條底線才不會黏成一條
+      el.classList.toggle("two-quiet", !!(s.second && s.second.quiet && (s.third || s.quiet)));   // 同一列兩顆文字鈕:拉開一階,兩條底線才不會黏成一條
       text.textContent = s.text || ""; text.hidden = !s.text;
       if (changed && !SYS_QUIET) srSay(s.text || [s.label, s.second && s.second.label].filter(Boolean).join(LANG === "zh" ? "，" : ", "));
       b1.hidden = !s.label;                     // 沒有鈕的狀態(例如「可以開始了。」)
@@ -4564,6 +4568,7 @@ async function balLoad() {
   try { r = await window.blave.balance(); } catch (_) { r = null; }
   if (!hasToken || seq !== balSeq) return;   // 在途時登出了,或後面又讀了一次:這一筆不算
   balLast = r ? balNum(r.balance) : null;
+  if (typeof p3BalSet === "function") p3BalSet(r);
   if (typeof mpBillPaint === "function" && $("mp-bill")) mpBillPaint();
   if (!$("set-scrim").hidden && !$("set-plan").hidden) planPaint();
 }
@@ -4584,11 +4589,12 @@ function planWebGo() { window.blave.openExternal(planPayUrl()); }
 // 方案制要雲端主機:電腦版只開方案,主機到網站開(Wei:方案 = 權限,不一定要主機)
 // 開通頁的「其他方案與月價」:外開定價頁;from=desktop 給定價頁事件分來源
 function cloudPricingGo() { trackFeature("cloud_pricing"); window.blave.openExternal("https://blave.org/landing/" + LANG + "/pricing?from=desktop"); }
-function cloudWebGo() { trackFeature("cloud_open_web"); window.blave.openExternal("https://blave.org/agent/" + LANG + "?from=desktop"); }
+function cloudWebGo() { trackFeature("cloud_open_web"); if (typeof p3Live === "function" && p3Live()) { p3OpenAddon(null, undefined, undefined, "cloud"); return; } window.blave.openExternal("https://blave.org/agent/" + LANG + "?from=desktop"); }
 function apiPlanGo() { trackFeature("api_plan_open"); window.blave.openExternal(apiPlanUrl()); }
 /* 預檢卡 / 402 卡以外的綁卡／儲值入口:按下先記哪個入口(feature_used bind_*／topup_*,canon product-telemetry),再外開。
    直接叫 window.blave.trackFeature:tests/check_shell_telemetry.js 掃送出點只認字面名字,這裡的變數不算送出點,呼叫端那個字面才算 */
-function bindGo(name) { try { window.blave.trackFeature(name); } catch (_) { } window.blave.openExternal(acctUrl()); }
+// 改價 v3:綁卡入口改開電腦版自己的付款框(renderer/planv3.js p3Route;儲值 topup_* 照舊外開)
+function bindGo(name) { try { window.blave.trackFeature(name); } catch (_) { } if (typeof p3Route === "function" && p3Route(name)) return; window.blave.openExternal(acctUrl()); }
 /* 資料狀態(同 main.js dataAccessOf):"included" 含在裡面、"billed" / "none" 切換前(按小時)付得起 / 付不出、
    "plan_required" 方案制沒有含資料的方案、"payment_failed" 方案扣款失敗;null = 舊 api 沒有 data_access(或值認不得)→
    照舊只看布林 data_included。included 與 billed 都算拿得到資料(billed 在 api 切換前還會出現,不能把那段時間的人當沒資料) */
@@ -4614,7 +4620,11 @@ const pvK = (k) => (planMo() ? k + ".m" : !acct || typeof acct.data_access === "
 /* 綁卡那一格的扣款句:設定 › 方案頁與雲端開通頁共用,方案制／切換前／舊 api 的選字只有 pvK 這一處。
    數字拿不到就不出(t 會把空值接成「扣第一期  TWD」) */
 function pvCardFoot(pv, v) {
+  // v3:沒試用資格的人按〔綁卡〕走綁卡並付第一期(bind_pay),要講的是那一筆錢(讀報價;讀不到不寫),不是舊的「最少儲值」(稽核 B2)
+  if (pv === "noTrial" && (typeof p3Live === "function" && p3Live())) return v.p ? t(v.pd ? "pv.f.noTrial.v3" : "pv.f.noTrial.v3NoNum", v) : "";
   if (pv === "noTrial") return v.b ? t("pv.f.noTrial", v) : "";
+  // v3:驗證金、試用天數、到期扣的第一期 888 都讀報價;價讀不到整句不出(不退回舊價)
+  if (typeof p3Live === "function" && p3Live()) return v.vf && v.t && v.p ? t(v.pd ? "pv.f.offer.v3" : "pv.f.offer.v3NoNum", { ...v, v: v.vf }) : "";
   const k = pvK("pv.f.offer");
   return v.v && v.t && (k === "pv.f.offer" || pvPriced(k, v)) ? t(k, v) : "";
 }
@@ -4622,6 +4632,8 @@ function pvCardFoot(pv, v) {
    下一期金額 v.x(已排月↔年、內部帳號都算進去),沒有就退 Starter 月價 v.p;到期不會扣、或扣不到的人不講扣款 */
 function planTrialLine(v) {
   if (!v.d) return "";
+  // v3 代試用:旁邊那顆〔開雲端主機〕會結束試用、當天付第一期(trial_convert),不能講「到期才扣」(驗收 S1)
+  if (typeof p3TrialV3 === "function" && p3TrialV3()) return p3TrialConvertLine();
   if (!planMo()) return t("plan.trialFree", v);
   const pl = (acct && acct.plan) || {}, off = planTrialCx(v) || pl.no_auto_payment || pl.next_charge_source === "free" || pl.next_charge_source === "none", amt = v.x || v.p;
   return !off && amt ? t("env.open.trial", { p: amt }) : "";
@@ -4678,11 +4690,13 @@ function acctPaint() {
   if (acctCard && cur === "blave") {
     const free = !s.can_run && acctCardKind("pre", s) === "pre_free"; acctCard._free = free;
     if (s.can_run) acctCard.set(sysLz(() => ({ calm: true, text: t("acct.ready") })));
+    else if (free && typeof p3Live === "function" && p3Live()) p3FreeCardPaint(acctCard, "pre", s);   // 改價 v3:C 版下一步卡
     else acctCard.set(sysLz(() => ({ calm: true, text: free ? acctBuiltText(RP.list.length) + acctFreeUpText("pre") : t(s.reason === "NO_CREDIT" ? "acct.noCredit" : "acct.noCard"), sub: acctSub(s), ...acctAction(s, "pre"), second: free ? laiSecond(acctCard) : null, third: acctCrypto(s) })));
   }
   if (cur === "blave") creditCards.forEach((card) => {
     const free = !s.can_run && acctCardKind("turn", s) === "turn_free"; card._free = free;
     if (s.can_run) card.set(sysLz(() => (resendState(card, () => t("acct.creditIn")))));
+    else if (free && typeof p3Live === "function" && p3Live()) p3FreeCardPaint(card, "turn", s);
     else if (s.reason === "NO_CARD") card.set(sysLz(() => ({ text: free ? acctFreeUpText("turn") : t("fault.needCard"), sub: acctSub(s), ...acctAction(s, "turn"), second: free ? laiSecond(card) : resendSecond(), third: acctCrypto(s) })));
     else card.set(sysLz(() => ({ text: t("fault.noCredit"), ...acctAction(s, "turn"), second: resendSecond() })));
     if (!s.can_run) acctShown(card, "turn", s);
@@ -4692,6 +4706,7 @@ function acctPaint() {
   if (typeof wdPaint === "function") wdPaint();             // 歡迎頁的資料清單:對比版 / 單一清單跟著 data_access 換(renderer/welcome.js)
   if (typeof mpBillPaint === "function" && $("mp-bill")) mpBillPaint();
   planWatch(s);
+  if (typeof p3AcctSync === "function") p3AcctSync(s);
   // 能跑了就不必再盯:清掉名單,視窗回前景不再打 account_status(它跟 LLM 共用每分鐘 30 次的桶,
   // 長任務跑到 25+ 次時多幾次預檢會把一筆 LLM 擠成 429——稽核抓的)
   if (s.can_run) creditCards.length = 0;
@@ -4875,7 +4890,7 @@ function dataGateAction(where, o) {
   if (planState() === "starting" || !acct || hasData(acct)) return null;
   const da = dataAccessOf(acct);
   if (da === "plan_required" && acctOffer(acct)) return { kind: "plan", label: v.t ? t("lib.gate.trial", v) : t("plan.addCard"), on: () => bindGo(ev ? "bind_event" : "bind_data") };
-  if (da === "plan_required") return { kind: "plan", label: t("data.seePlan"), on: () => { trackFeature(ev ? "plan_event" : "plan_data"); planOpen(); } };
+  if (da === "plan_required") return { kind: "plan", label: t("data.seePlan"), on: () => { trackFeature(ev ? "plan_event" : "plan_data"); if (typeof p3Live === "function" && p3Live()) p3OpenAgent(null, null, "data"); else planOpen(); } };
   if (da === "payment_failed") return { kind: "plan", label: t("plan.repay"), on: () => planRepay() };
   if (da === "none" && acct.reason === "NO_CARD") return { kind: "plan", label: t("acct.addCard"), on: () => bindGo(ev ? "bind_event" : "bind_data") };
   if (da === "none") return { kind: "plan", label: t("fault.noCreditBtn"), on: () => bindGo(ev ? "topup_event" : "topup_data") };
@@ -4896,7 +4911,7 @@ function dataCardState() {
      缺資料不是錯誤,記號灰。主鈕直接開綁卡頁,收費講在那一頁(spec paywall-redesign-2026-10-21 §2.2) */
   if (da === "plan_required" && acctOffer(acct)) {
     return { calm: true, text: "", ...gateBtn(g), shown: "trial",
-      second: { label: t("data.seePlan"), quiet: true, on: () => { trackFeature("plan_data"); planOpen(); } } };
+      second: { label: t("data.seePlan"), quiet: true, on: () => { trackFeature("plan_data"); if (typeof p3Live === "function" && p3Live()) p3OpenAgent(null, null, "data"); else planOpen(); } } };
   }
   // 方案制沒有含資料的方案:只給 Blave Agent 方案的出口(〔API 方案〕拿掉,spec login-upgrade-buttons-0150 §1.4)
   if (da === "plan_required") return { text: t("data.noPlan"), ...gateBtn(g), shown: "no_trial" };
@@ -4923,6 +4938,7 @@ async function dataTurnEnd() {
     else if (hasToken && (turnDataCode || turnCards.includes("data-access"))) await authSync();
   }
   maybeDataCard();
+  if (typeof p3TurnEnd === "function") p3TurnEnd();   // 改價 v3:額度快用完、改從錢包扣、已自動儲值
 }
 /* 那張卡的字跟著最新的帳號狀態走,拿到資料之後也不放手:餘額又用完了要換回儲值那一句,不能停在「餘額夠了」。
    按了〔再送一次〕才放手(那之後的事由下一輪自己講)。同一句不重設(role 會重唸)。
@@ -4998,18 +5014,22 @@ function planVars() {
   /* 開通價:電腦版的 /plan/start 固定開 Linux Starter,所以方案制讀 Starter 的價(data_paths、公開價目),不讀 plan.monthly
      (那是「目前階」的月費,主機刪了而方案是 Premium 的人會印錯);切換前照舊 plan.monthly 為先 */
   const mo = planMo();
-  const pr = raw(mo ? dp.cloud_plan_monthly_from || (pub && pub.starter_monthly) || s.starter_monthly : pl.monthly || s.starter_monthly || (pub && pub.starter_monthly));
-  const yr = raw(dp.cloud_plan_annual_from || (pub && pub.starter_annual));
+  /* 改價 v3:登入者的價格一律讀 /plan/quote(p3Prices;沒有才退 public_tiers.plan.v3,都沒有就不寫價)。
+     public_tiers 不分人、試辦期間照舊回舊價;data_paths／starter_monthly／plan.monthly 為了舊外殼維持 Linux 基本合計 1,440(契約 4.2),都不能拿來講 888 */
+  const v3 = typeof p3Live === "function" && p3Live() ? p3Prices(typeof P3 !== "undefined" ? P3.q : null, pub && pub.plan ? pub.plan.v3 : null) : null;
+  const pr = v3 ? v3.monthly : raw(mo ? dp.cloud_plan_monthly_from || (pub && pub.starter_monthly) || s.starter_monthly : pl.monthly || s.starter_monthly || (pub && pub.starter_monthly));
+  const yr = v3 ? v3.annual : raw(dp.cloud_plan_annual_from || (pub && pub.starter_annual));
   // 運行列講的是下一期:已排月↔年切換時標籤跟著 next_cycle,金額是 next_charge_twd;內部帳號(free)不講金額
   const cy = ["monthly", "annual"].includes(pl.next_cycle || pl.cycle) ? pl.next_cycle || pl.cycle : "";   // 帳號已有的週期(試用中選過的);沒有就空
   const cyc = cy === "annual" ? "annual" : "monthly";
-  const x = pl.next_charge_source === "free" ? "" : num(pl.next_charge_twd) || num(cyc === "annual" ? pl.annual : pl.monthly);
+  // v3:下一期只認伺服器照 next_tier 算好的 next_charge_twd(plan.monthly／annual 是方案列舊階的價);讀不到不寫(下一期可能含主機,不能退回 888;稽核 B7)
+  const x = pl.next_charge_source === "free" ? "" : v3 ? num(pl.next_charge_twd) : num(pl.next_charge_twd) || num(cyc === "annual" ? pl.annual : pl.monthly);
   return { p: num(pr), h: num(pl.hourly || (pub && pub.starter_hourly)), m: num(pl.stop_below),
     a: num(s.auto_topup_min || tr.auto_topup_min), b: num(s.bind_min_topup || s.min_topup),
     v: num(s.verify_amount || tr.verify_amount), t: s.trial_days || tr.days || "", q: num(s.trial_ai_credit || tr.ai_credit),
     top: num(s.auto_topup_amount || tr.auto_topup_amount), r: num(s.data_hourly),
     d: left > 0 ? planDate(pl.trial_free_until) : "", n: left > 0 ? left : 0,
-    pr, yr, y: num(yr), k: num(s.annual_pay_months || pp.annual_pay_months), yd: num(pp.annual_period_days), pd: num(pp.period_days), g: num(s.grace_days || pp.grace_days),
+    pr, yr, y: num(yr), vf: v3 ? num(v3.verify) || num(s.verify_amount) : "", k: num(s.annual_pay_months || pp.annual_pay_months), yd: num(pp.annual_period_days), pd: num(pp.period_days), g: num(s.grace_days || pp.grace_days),
     c: t(cyc === "annual" ? "plan.cyc.annual" : "plan.cyc.monthly"), x, cy,
     u: pl.paid_until ? planDate(pl.paid_until) : "", gu: pl.grace_until ? planDate(pl.grace_until) : "",
     tier: planTierLabel(),
@@ -5022,7 +5042,8 @@ function planSpec(own) {
   return x && x.vcpu && x.ram_gb ? { label: x.label, vcpu: x.vcpu, ram: x.ram_gb } : null;
 }
 // 啟動鈕按不按得下去:方案制只要有月價(時價是 null);切換前照舊要月價與時價都有(確認框兩個都講)
-const planPriceOk = (v) => (planMo() ? !!v.pr : !!(v.p && v.h));
+// v3 的開通鈕開付款框、價在框裡讀報價,不必等這一格有數字
+const planPriceOk = (v) => ((typeof p3Live === "function" && p3Live()) || (planMo() ? !!v.pr : !!(v.p && v.h)));
 // 方案扣款失敗中(api plan.failing)。停機不一定是沒付款:用戶也能在網頁自己停機,那時不能講「未付款」、不給付款鈕
 const planFailing = () => !!(acct && acct.plan && acct.plan.failing === true);
 // 方案列的到期日還沒過(paid_until 在未來):期內刪機、到期停機都看它
@@ -5077,6 +5098,33 @@ function planView() {
   if (da === "none") return "none";
   return da === "included" ? "included" : "plan";                 // plan = 舊 api(沒有 data_access)且不含資料
 }
+/* 帳號與方案那一格的狀態列 [點的樣式, 字](設計師 v3 的狀態表);設定 › 帳號與方案的標頭與左下選單「帳號與方案」的列尾共用(spec first-strategy-sidebar §A4)。
+   沒有狀態列的那幾格(out、revoked、unknown、offer、noTrial)回 null */
+function planStateOf(view, v) {
+  v = v || planVars();
+  const tOn = planTrialOn(v), tCx = planTrialCx(v);
+  if (view === "trial") return ["on", t(acct && acct.trial_cancel_at_end === true ? "pv.st.trialCancelled" : "pv.st.trial", v)];
+  if (view === "plan") return ["", t(planMo() ? "pv.st.noPlan" : "pv.st.none")];
+  if (view === "included" || view === "billed") return ["on", t("pv.st.ok")];
+  if (view === "none") return ["bad", t("pv.st.noData")];
+  if (view === "payFail") return ["bad", t("pv.st.payFail")];
+  if (view === "planOn") return ["on", t("pv.st.planOn")];
+  if (view === "starting") return ["busy", t("pv.st.starting")];
+  if (view === "running") return ["on", tCx ? t("pv.st.trialCancelled", v) : tOn ? t("plan.st.runningTrial", v) : t("plan.st.running")];
+  if (view === "stopped") {
+    const k = planStopKind();
+    return ["bad", k === "fail" ? t("plan.st.stoppedPlan") : k === "ended" ? t("plan.st.ended") : k === "self" ? (tOn && !tCx ? t("plan.st.stoppedTrial", v) : t("side.stopped"))
+      : v.m ? t("plan.st.stopped", v) : t("plan.st.stoppedNoAmt")];
+  }
+  return null;
+}
+// 選單列尾只要方案那一段;主機狀態在設定 › 帳號與方案看(en「Trial · 3 days left · machine running」在 76px 欄會截掉天數,設計稽核 0157 S3)
+function planStateText() {
+  if (!sideBooted) return "";
+  const view = planView(), v = planVars();
+  if (view === "running") return planTrialCx(v) ? t("pv.st.trialCancelled", v) : planTrialOn(v) ? t("pv.st.trial", v) : t("pv.st.planOn");
+  const s = planStateOf(view, v); return s ? s[1] : "";
+}
 let planLoginBusy = false, planLastView = null;
 let planLoginOut = false;   // 這次 planLogin 是從設定外面開始的(planSignIn 沒帶 inSettings):關設定不取消它
 function planPaint() {
@@ -5107,7 +5155,8 @@ function planPaint() {
       row.append(el("span", "l", t("plan.bal")), val); id.append(row);
     }
     // 餘額列正下方:自動儲值短句(錢包的事,餘額列是它最近的家;account_status 沒有自動儲值開關旗標,金額有就出)。沒卡的人不出:沒有卡可刷,綁卡那格的底列會講
-    if (hasToken && v.a && v.top && !acctNoCard(acct)) id.append(el("p", "plan-fine", t("plan.topupShort", { a: v.a, b: v.top })));
+    // 改價 v3:本期 AI 額度、超額與「AI 超額時自動儲值」那句(不再講怎麼關,Wei 11-17)
+    if (!(typeof p3PlanRows === "function" && p3PlanRows(id)) && hasToken && v.a && v.top && !acctNoCard(acct)) id.append(el("p", "plan-fine", t("plan.topupShort", { a: v.a, b: v.top })));
     sc.append(id); }
   const ext = (u) => () => window.blave.openExternal(u);
   const slow = view === "starting" && planSince && Date.now() - planSince > PLAN_SLOW_MS;
@@ -5120,7 +5169,7 @@ function planPaint() {
   /* 方案制的未登入／綁卡那格(設計師 D 版):標題只講試用,說明句換成三條(資料、雲端主機、AI 額度;額度拿不到那條不出),
      「AI 照用你的」那個保證搬到未登入的鈕左小字(pv.w.out.cli)。切換前照舊:標題「送 {t} 天資料」+ 說明句 + 按小時那句 */
   const offerH = mo ? (v.t ? "pv.h.offer.m" : "pv.h.offerNoNum.m") : hasNum ? "pv.h.offer" : "pv.h.offerNoNum";
-  const offerList = () => [t("pv.offer.li.data"), t("pv.offer.li.server")].concat(v.q ? [t("pv.offer.li.ai", v)] : []);
+  const offerList = () => [t("pv.offer.li.data")].concat((typeof p3Live === "function" && p3Live()) ? [] : [t("pv.offer.li.server")]).concat(v.q ? [t("pv.offer.li.ai", v)] : []);
   const tOn = planTrialOn(v), tCx = planTrialCx(v), pl = (acct && acct.plan) || {};
   // 試用結束扣的是下一期的金額與週期(next_cycle / next_charge_twd):試用中改成年繳的人不能印 Starter 月價＋每 30 天
   const tv = { ...v, p: v.x || v.p, pd: (pl.next_cycle || pl.cycle) === "annual" ? v.yd : v.pd };
@@ -5138,53 +5187,58 @@ function planPaint() {
     // 登入已失效(token 被撤／過期):不是網路問題,也不是「已登入」——同一句 + 登入鈕
     // 帳號列已經寫「登入已失效」:卡片標題只講要做什麼、不再加說明句(設計最終稽核:同一畫面別講三次)
     revoked:  { h: "pv.h.revoked", lead: "", acts: [planLoginBusy ? btn("btn-out", t("oauth.cancel"), planLogin) : btn("btn-fill", t("fault.authBtn"), planLogin)] },
-    offer:    { h: offerH, lead: mo ? "" : offerLead(), list: mo ? offerList() : null, rule: pvCardFoot("offer", v), acts: [btn("btn-fill", t("plan.addCard"), () => bindGo("bind_set"))] },
-    noTrial:  { h: pvK("pv.h.billed") === "pv.h.billed" ? "pv.h.billed" : "pv.h.plan", lead: !mo || pvPriced("pv.d.noTrial.m", v) ? t(pvK("pv.d.noTrial"), v) : "", rule: pvCardFoot("noTrial", v), wait: t(pvK("pv.w.noTrial")), acts: [btn("btn-fill", t("plan.addCard"), () => bindGo("bind_set"))] },
+    offer:    { h: offerH, lead: mo ? "" : offerLead(), list: mo ? offerList() : null, rule: pvCardFoot("offer", v),
+                acts: [btn("btn-fill", typeof p3Live === "function" && p3Live() ? (v.t ? p3T("p3.a.okTrial", { t: v.t }) : t("p3.a.okTrialNoNum")) : t("plan.addCard"), () => bindGo("bind_set"))] },
+    noTrial:  { h: pvK("pv.h.billed") === "pv.h.billed" ? "pv.h.billed" : "pv.h.plan", lead: !mo || pvPriced("pv.d.noTrial.m", v) ? t(pvK("pv.d.noTrial"), v) : "", rule: pvCardFoot("noTrial", v), wait: (typeof p3Live === "function" && p3Live()) ? "" : t(pvK("pv.w.noTrial")), acts: [btn("btn-fill", t("plan.addCard"), () => bindGo("bind_set"))] },
     /* 試用中:取消／恢復試用在網站用量頁(電腦版沒有寫入端點,外開)。已取消(api trial_cancel_at_end):狀態講哪天結束;
        方案制講到期不收第一期,切換前講到期不轉成方案、之後照目前的計費——兩種時期各自是真話 */
-    trial:    trialCx ? { st: ["on", t("pv.st.trialCancelled", v)], h: "pv.h.ready", lead: trialLead(), rule: t(mo ? "pv.f.trialCancelled.m" : "pv.f.trialCancelled", v),
-                          acts: [btn("btn-quiet", t("plan.trialResume"), () => { trackFeature("trial_resume_web"); window.blave.openExternal(planPayUrl()); }), mo ? btn("btn-out", t("plan.cloudWeb"), cloudWebGo) : btn("btn-out", t("plan.start"), planAsk, !planPriceOk(v))] }
-                      : { st: ["on", t("pv.st.trial", v)], h: "pv.h.ready", lead: trialLead(), rule: t(mo ? "pv.f.trial.m" : "pv.f.trial", v),
-                          acts: [btn("btn-quiet", t("plan.trialCancel"), () => { trackFeature("trial_cancel_web"); window.blave.openExternal(planPayUrl()); }), mo ? btn("btn-out", t("plan.cloudWeb"), cloudWebGo) : btn("btn-out", t("plan.start"), planAsk, !planPriceOk(v))] },
+    trial:    trialCx ? { h: "pv.h.ready", lead: trialLead(), rule: t(mo ? "pv.f.trialCancelled.m" : "pv.f.trialCancelled", v),
+                          acts: [btn("btn-quiet", t("plan.trialResume"), () => { trackFeature("trial_resume_web"); window.blave.openExternal(planPayUrl()); }), mo ? btn("btn-out", t((typeof p3Live === "function" && p3Live()) ? "p3.h.title" : "plan.cloudWeb"), cloudWebGo) : btn("btn-out", t("plan.start"), planAsk, !planPriceOk(v))] }
+                      : { h: "pv.h.ready", lead: trialLead(), rule: t((typeof p3TrialV3 === "function" && p3TrialV3()) ? "p3.f.trial" : mo ? "pv.f.trial.m" : "pv.f.trial", v),
+                          acts: [btn("btn-quiet", t("plan.trialCancel"), () => { trackFeature("trial_cancel_web"); window.blave.openExternal(planPayUrl()); }), mo ? btn("btn-out", t((typeof p3Live === "function" && p3Live()) ? "p3.h.title" : "plan.cloudWeb"), cloudWebGo) : btn("btn-out", t("plan.start"), planAsk, !planPriceOk(v))] },
     // 只開方案不進「啟動中」那格(planBusyPlan):在途時主鈕停用、字換進行式,連點不會再開一次確認框
-    plan:     mo ? { st: ["", t("pv.st.noPlan")], h: "pv.h.plan.m", lead: pvPriced("pv.d.plan.m", v) ? t("pv.d.plan.m", v) : "", rule: t("pv.f.plan.m", v),
+    plan:     mo ? { h: "pv.h.plan.m", lead: pvPriced("pv.d.plan.m", v) ? t("pv.d.plan.m", v) : "", rule: t("pv.f.plan.m", v),
                      acts: [btn("btn-quiet", t("pv.apiPlan"), apiPlanGo), btn("btn-fill", t(planBusy ? "plan.startingM" : "plan.startM"), planAsk, !planPriceOk(v) || planBusy)] }
-                 : { st: ["", t("pv.st.none")], h: "pv.h.plan", lead: t("pv.d.plan", v), rule: t("pv.f.plan", v), acts: [btn("btn-fill", t("plan.start"), planAsk, !planPriceOk(v))] },
+                 : { h: "pv.h.plan", lead: t("pv.d.plan", v), rule: t("pv.f.plan", v), acts: [btn("btn-fill", t("plan.start"), planAsk, !planPriceOk(v))] },
     // 方案制的 included 是 API 方案或 legacy 機器戶:資料已含,要雲端主機到網站開
-    included: mo ? { st: ["on", t("pv.st.ok")], h: "pv.h.ready", lead: t("pv.d.included.m"), acts: [btn("btn-out", t("plan.cloudWeb"), cloudWebGo)] }
-                 : { st: ["on", t("pv.st.ok")], h: "pv.h.ready", lead: t("pv.d.included", v), rule: t("pv.f.plan", v), acts: [btn("btn-out", t("plan.start"), planAsk, !planPriceOk(v))] },
+    // v3(設計 v3-included-state-2026-11-19):資料已含的人只剩「要不要全天候跑」這個決定;有試用資格多一顆安靜的〔綁卡試用 14 天〕開 Agent 方案框
+    included: mo && (typeof p3Live === "function" && p3Live()) ? { h: "pv.h.ready", lead: t("pv.d.included.v3"),
+                     acts: [acctOffer(acct) ? btn("btn-quiet", acct.trial_days ? p3T("p3.a.okTrial", { t: acct.trial_days }) : t("p3.a.okTrialNoNum"), () => bindGo("bind_set")) : null, btn("btn-out", t("p3.h.title"), cloudWebGo)].filter(Boolean) }
+            : mo ? { h: "pv.h.ready", lead: t("pv.d.included.m"), acts: [btn("btn-out", t("plan.cloudWeb"), cloudWebGo)] }
+                 : { h: "pv.h.ready", lead: t("pv.d.included", v), rule: t("pv.f.plan", v), acts: [btn("btn-out", t("plan.start"), planAsk, !planPriceOk(v))] },
     // 切換前:沒有主機、按有用到的整點小時付資料:資料的事講在前面,主機退到「要全天候自動執行才需要」(spec-data-without-machine-flow §4 / §5)
-    billed:   { st: ["on", t("pv.st.ok")], h: "pv.h.billed", lead: v.r ? t("pv.d.billed", v) : t("pv.d.billedNoNum"), rule: v.h ? t("pv.f.billed", v) : "",
+    billed:   { h: "pv.h.billed", lead: v.r ? t("pv.d.billed", v) : t("pv.d.billedNoNum"), rule: v.h ? t("pv.f.billed", v) : "",
                 acts: [btn("btn-quiet", t("pv.usage"), ext(usageUrl())), btn("btn-out", t("plan.start"), planAsk, !planPriceOk(v))] },
     // 切換前付不出這一小時:唯一的主鈕是儲值;主機降成安靜文字鈕——這一刻推銷一台更貴的東西是錯的
-    none:     { st: ["bad", t("pv.st.noData")], h: "pv.h.none", lead: v.r ? t("pv.d.none", v) : t("pv.d.noneNoNum"),
+    none:     { h: "pv.h.none", lead: v.r ? t("pv.d.none", v) : t("pv.d.noneNoNum"),
                 acts: [btn("btn-quiet", t("plan.start"), planAsk, !planPriceOk(v)), btn("btn-fill", t("fault.noCreditBtn"), () => bindGo("topup_set"))] },
     // 方案扣款失敗、名下沒有主機(例如主機刪了、方案還在):出口是網站方案頁重新付款
-    payFail:  { st: ["bad", t("pv.st.payFail")], h: "pv.h.payFail", lead: t("pv.d.payFail"), acts: [btn("btn-fill", t("plan.repay"), planRepay)] },
+    payFail:  { h: "pv.h.payFail", lead: t("pv.d.payFail"), acts: [btn("btn-fill", t("plan.repay"), planRepay)] },
     // 方案有效、沒有雲端主機:資料已含(電腦版也能用);雲端主機到網站開(電腦版只開方案,不建主機)
-    planOn:   { st: ["on", t("pv.st.planOn")], h: "pv.h.ready", lead: t("pv.d.planOn", { tier: planTierLabel(), u: v.u }),
+    planOn:   { h: "pv.h.ready", lead: (typeof p3Live === "function" && p3Live()) ? t("p3.d.planOn") : t("pv.d.planOn", { tier: planTierLabel(), u: v.u }),
                 // 這一格是電腦版唯一看得到方案狀態的地方:底列講下次扣款(或已取消／扣款失敗;名下沒主機,講資料停不講刪機),取消與換卡在〔前往網頁管理〕;沒有非做不可的事,兩顆都不實心
-                rule: mo ? planRunRule(v, true) : "", acts: [btn("btn-quiet", t("plan.manageStopped"), () => { trackFeature("plan_manage_web"); window.blave.openExternal(planPayUrl()); }), btn("btn-out", t("plan.cloudWeb"), cloudWebGo)] },
+                rule: mo ? planRunRule(v, true) : "", acts: [btn("btn-quiet", t("plan.manageStopped"), () => { trackFeature("plan_manage_web"); window.blave.openExternal(planPayUrl()); }), btn("btn-out", t((typeof p3Live === "function" && p3Live()) ? "p3.h.title" : "plan.cloudWeb"), cloudWebGo)] },
     // 啟動中通常一分鐘內就變 running:試用的揭露只加那一行,鈕等進了 running 才有
-    starting: { st: ["busy", t("pv.st.starting")], h: "pv.h.starting", lead: t("pv.d.starting"), rule: tOn ? planRunRule(v) : "",
-                acts: [slow ? btn("btn-out", t("plan.recheck"), () => { planSince = Date.now(); acctCheck(); planPaint(); }) : btn("btn-fill", t("plan.starting"), null, true)] },
-    running:  { st: ["on", tCx ? t("pv.st.trialCancelled", v) : tOn ? t("plan.st.runningTrial", v) : t("plan.st.running")], h: "pv.h.running", lead: "", rule: mo ? planRunRule(v) : t("pv.f.running", v),
+    starting: { h: "pv.h.starting", lead: t("pv.d.starting"), rule: tOn ? planRunRule(v) : "",
+                acts: [view === "starting" && !slow ? btn("btn-fill", t("plan.starting"), null, true) : btn("btn-out", t("plan.recheck"), () => { planSince = Date.now(); acctCheck(); planPaint(); })] },   // 字跟著主機真的在啟動中(狀態列那格搬到 planStateOf)
+    running:  { h: "pv.h.running", lead: "", rule: mo ? planRunRule(v) : t("pv.f.running", v),
                 acts: [mo ? (tOn && trialBtn()) || btn("btn-quiet", t("plan.manageStopped"), ext(planPayUrl())) : btn("btn-quiet", t("plan.manage"), ext(planWebUrl())), btn("btn-out", t("plan.switchCloud"), planToCloud)] },
-    stopped:  planStopKind() === "fail" ? { st: ["bad", t("plan.st.stoppedPlan")], h: "pv.h.stopped.m", lead: v.gu ? t("pv.d.stopped.m", v) : t("pv.d.stopped.mNoNum"),
+    stopped:  planStopKind() === "fail" ? { h: "pv.h.stopped.m", lead: v.gu ? t("pv.d.stopped.m", v) : t("pv.d.stopped.mNoNum"),
                      acts: [btn("btn-quiet", t("plan.manageStopped"), ext(planPayUrl())), btn("btn-fill", t("plan.repay"), planRepay)] }
                  // 取消後到期被停:不會續約,寬限期滿刪機——講結束與刪機日,出口是網站恢復(api resume 會當場付一期)
-                 : planStopKind() === "ended" ? { st: ["bad", t("plan.st.ended")], h: "pv.h.ended", lead: v.gu ? t("pv.d.ended", v) : t("pv.d.endedNoNum"),
+                 : planStopKind() === "ended" ? { h: "pv.h.ended", lead: v.gu ? t("pv.d.ended", v) : t("pv.d.endedNoNum"),
                      acts: [btn("btn-fill", t("plan.resumeWeb"), planWebGo)] }
                  // 試用中自己停機:「這一期已付、到期照常續約」對一毛都沒付的人是錯話,換成試用版的標題與說明;鈕上方那行照 planRunRule
-                 : planStopKind() === "self" ? (tOn ? { st: ["bad", tCx ? t("side.stopped") : t("plan.st.stoppedTrial", v)], h: "pv.h.stopped.mOkTrial", lead: t("pv.d.stopped.mOkTrial"), rule: planRunRule(v),
+                 : planStopKind() === "self" ? (tOn ? { h: "pv.h.stopped.mOkTrial", lead: t("pv.d.stopped.mOkTrial"), rule: planRunRule(v),
                                                         acts: [trialBtn(), btn("btn-out", t("plan.manageStopped"), ext(planPayUrl()))].filter(Boolean) }
-                                                    : { st: ["bad", t("side.stopped")], h: "pv.h.stopped.mOk", lead: t("pv.d.stopped.mOk"), acts: [btn("btn-out", t("plan.manageStopped"), ext(planPayUrl()))] })
-                 : { st: ["bad", v.m ? t("plan.st.stopped", v) : t("plan.st.stoppedNoAmt")], h: "pv.h.stopped", lead: t("pv.d.stopped", v),
+                                                    : { h: "pv.h.stopped.mOk", lead: t("pv.d.stopped.mOk"), acts: [btn("btn-out", t("plan.manageStopped"), ext(planPayUrl()))] })
+                 : { h: "pv.h.stopped", lead: t("pv.d.stopped", v),
                      acts: [btn("btn-quiet", t("plan.manageStopped"), ext(planWebUrl())), btn("btn-fill", t("plan.addCredit"), () => bindGo("topup_set"))] },
   }[view];
 
   if (view !== planLastView) { if (planLastView && !$("set-plan").hidden) srSay(t(V.h, v)); planLastView = view; }
-  if (V.st) { const stEl = el("span", "plan-st " + V.st[0]); stEl.append(el("span", "dot"), el("span", null, V.st[1])); sc.append(stEl); }
+  const S = planStateOf(view, v);
+  if (S) { const stEl = el("span", "plan-st " + S[0]); stEl.append(el("span", "dot"), el("span", null, S[1])); sc.append(stEl); }
   sc.append(el("h6", null, t(V.h, v)));   // modal 內的標題用 h6(canon Type › 標題用法):跟框標題同級、不超過它
   if (V.lead) sc.append(el("p", "plan-lead", V.lead));
   if (V.list) { const ul = el("ul", "plan-list"); V.list.forEach((x) => ul.append(el("li", null, x))); sc.append(ul); }
@@ -5281,6 +5335,7 @@ function planRunRule(v, noServer) {
    方案制:兩個週期是框裡的單選(月繳／年繳;年價 api 沒給就只有月繳、不出單選),按下送的金額 = 框上印的那個整數,
    api 拿它比現價;對不上回 409,planGo 用 api 回的現價再開一次這個框(repriced),不自動重送。 */
 function planAsk(e, repriced) {
+  if (typeof p3Live === "function" && p3Live()) { p3OpenAgent(e && e.currentTarget, null, "set"); return; }   // 改價 v3:開 888 階走付款框(/plan/start 帶 plan_tier)
   // 開框那顆鈕的 data-k 記在函式上(測試只切這支函式跑):409 重開時格子已重畫過,找同一顆當 opener,關框焦點才回得去
   if (e && e.currentTarget && e.currentTarget.dataset && e.currentTarget.dataset.k) planAsk.k = e.currentTarget.dataset.k;
   const opener = (e && e.currentTarget) || (repriced && planAsk.k ? $("set-plan").querySelector('button[data-k="' + planAsk.k + '"]') : null);
@@ -5409,9 +5464,7 @@ function sideCvPaint() {
     // 曝光只算真的排出來的(工作頁看得到、側欄沒收合;同 upd_pill_shown 看 offsetParent)。還沒排出來時由 promptslot.js 的 ResizeObserver 在它有寬時再叫一次
     if (document.visibilityState === "visible" && cv.offsetParent !== null && SIDE_CV_DAY[kind] !== day) { SIDE_CV_DAY[kind] = day; trackFeature(SIDE_CV_FEATURE[kind]); }
   } else { cv.textContent = ""; cv.dataset.kind = ""; cv.title = ""; cv.removeAttribute("aria-label"); }
-  $("ws-conn").title = t("ws.settings");
-  $("ws-conn").setAttribute("aria-label", text ? t("ws.settings") + ", " + text : t("ws.settings"));
-  $("rail-set").title = t("ws.settings"); $("rail-set").setAttribute("aria-label", t("ws.settings"));
+  AM.note = text; amFirstPaint();
   if (typeof slotPaint === "function") slotPaint();   // 這一格變寬變窄、登入狀態變了:手機圖示放不放得下、該不該出要重算
 }
 async function sideCvClick() {
@@ -5425,11 +5478,125 @@ async function sideCvClick() {
     if (planLoginBusy || oauthPending || $("side-cv").dataset.kind !== "login") return;   // 別處的登入在等、或這一格已經換掉
     trackFeature("login_side"); planSignIn();
   } else if (k === "trial") { sideCvGone = true; bindGo("bind_side"); }
-  else if (k === "plan") { trackFeature("plan_side"); planOpen(); }
+  else if (k === "plan") { trackFeature("plan_side"); if (typeof p3Live === "function" && p3Live()) p3OpenAgent($("side-cv"), null, "side"); else planOpen(); }
   else if (k === "stopped") { trackFeature("stopped_side"); planOpen(); }
 }
 $("side-cv").addEventListener("click", sideCvClick);
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") sideCvPaint(); });   // 看不到時畫出的不算曝光:回來補記
+
+/* ── 左下第一格與它的選單(spec first-strategy-sidebar §A3–A6)──────────────
+   第一格:沒登入(或登入失效、還沒讀到 token)是齒輪,已登入是帳號鈕(email 第一個字,讀不到 email 畫 user 圖示);按下去開選單。
+   列裡那顆(#ws-conn)與細軌那顆(#rail-set)同一套,選單開在看得到的那顆後面(DOM 緊接第一格,Tab 順序＝畫面順序)。
+   新報告的點:旗標在 reports.js(RPT.mark),選單關著畫在第一格、開著畫在「報告」那一列,同時只在一個地方 */
+const AM = { note: "", gear: null, dotDay: "" };
+const AM_USER = ["M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2", "M12 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"];   // lucide user
+function amSignedIn() { if (!sideBooted || !hasToken) return false; const v = planView(); return v !== "out" && v !== "revoked"; }
+function amAnchor() { return document.documentElement.classList.contains("ws-sc") ? $("rail-set") : $("ws-conn"); }
+function amIsOpen() { return !$("side-menu").hidden; }
+function amMark() { return typeof RPT !== "undefined" && !!RPT.mark; }
+function docsHomeUrl() { return "https://blave.org/docs/" + LANG + "?from=desktop"; }   // web 的文件首頁是 /docs/<lang>(沒有結尾斜線);docsUrl("") 會多一個斜線
+// 第一格的長相與名稱(aria-label＝title)。zh 用全形逗號接「有新報告」與灰字;細軌看不到灰字,不接
+function amFirstPaint() {
+  const inn = amSignedIn(), email = inn && acct && typeof acct.email === "string" ? acct.email.trim() : "";
+  const ch = email ? Array.from(email)[0].toUpperCase() : "", sep = LANG === "zh" ? "，" : ", ";
+  const dot = amMark() && !amIsOpen(), base = t(inn ? "am.acct" : "am.menu") + (amMark() ? sep + t("rpt.newMark") : "");
+  [["ws-conn", AM.note], ["rail-set", ""]].forEach(([id, note]) => {
+    const b = $(id); if (!b) return;
+    const name = note ? base + sep + note : base;
+    b.title = name; b.setAttribute("aria-label", name);
+    if (!AM.gear) AM.gear = b.querySelector("svg.ic").cloneNode(true);
+    const key = (inn ? "a:" + ch : "g") + (dot ? ":d" : "");
+    if (b.dataset.am === key) return;
+    b.dataset.am = key; b.classList.toggle("av", inn);
+    let face;
+    if (!inn) face = AM.gear.cloneNode(true);
+    else if (ch) { face = document.createElement("span"); face.textContent = ch; }
+    else { const NS = "http://www.w3.org/2000/svg"; face = document.createElementNS(NS, "svg"); face.setAttribute("class", "ic"); face.setAttribute("viewBox", "0 0 24 24"); face.setAttribute("aria-hidden", "true");
+      AM_USER.forEach((d) => { const p = document.createElementNS(NS, "path"); p.setAttribute("d", d); face.appendChild(p); }); }
+    b.replaceChildren(face);
+    if (dot) { const d = document.createElement("span"); d.className = "am-dot"; d.setAttribute("aria-hidden", "true"); b.appendChild(d); }
+  });
+  // 點真的被看見才算(視窗看得到、那顆排得出來);每天一次,同 SIDE_CV_DAY
+  const day = new Date().toDateString();
+  if (dot && document.visibilityState === "visible" && amAnchor().offsetParent !== null && AM.dotDay !== day) { AM.dotDay = day; trackFeature("rpt_dot_shown"); }
+}
+// 選單內容:每次打開重畫(登入狀態、方案字、報告頁開著沒、新報告的點)。字一律 textContent
+function amPaint() {
+  const m = $("side-menu"), inn = amSignedIn(), sep = LANG === "zh" ? "，" : ", ";
+  const mk = (tag, cls, txt) => { const n = document.createElement(tag); if (cls) n.className = cls; if (txt != null) n.textContent = txt; return n; };
+  const item = (key, on, tail) => {
+    const b = mk("button", "am-i"); b.type = "button"; b.setAttribute("role", "menuitem"); b.tabIndex = -1;
+    b.append(mk("span", "l", t(key))); if (tail) b.append(tail);
+    b.addEventListener("click", () => { amClose(true); on(); });
+    return b;
+  };
+  const gap = () => { const g = mk("div", "am-gap"); g.setAttribute("aria-hidden", "true"); return g; };
+  const kids = [];
+  if (inn && acct && typeof acct.email === "string" && acct.email.trim()) { const w = mk("p", "am-who", acct.email.trim()); w.title = acct.email.trim(); kids.push(w); }
+  let dot = null;
+  if (amMark()) { dot = mk("span", "nav-new"); dot.setAttribute("aria-hidden", "true"); }
+  const rpt = item("rpt.nav", () => rptMenuGo(), dot);
+  if (dot) rpt.setAttribute("aria-label", t("rpt.nav") + sep + t("rpt.newMark"));
+  if (typeof rptBag === "function" && rptBag().open && !$("rpt").hidden) rpt.setAttribute("aria-current", "page");
+  kids.push(rpt, gap(), item("ws.settings", () => { trackFeature("side_menu_set"); setOpen(); }));
+  if (inn) {
+    const st = planStateText(); let v = null;
+    if (st) { v = mk("span", "v", st); v.title = st; }
+    kids.push(item("set.cat.plan", () => { trackFeature("side_menu_plan"); planOpen(); }, v),
+      item("pv.usage", () => { trackFeature("side_menu_usage"); window.blave.openExternal(usageUrl()); }, libExtIcon()));
+  }
+  kids.push(item("am.docs", () => { trackFeature("side_menu_docs"); window.blave.openExternal(docsHomeUrl()); }, libExtIcon()));
+  // 登入在等(oauthPending／planLoginBusy)時 acctOutAsk 會直接 return:那時不出「登出」與它上面的空白
+  if (inn && !oauthPending && !planLoginBusy) kids.push(gap(), item("acct.out", () => { trackFeature("side_menu_out"); acctOutAsk(amAnchor()); }));
+  m.replaceChildren(...kids);
+}
+function amOpen() {
+  if (amIsOpen()) return;
+  if (typeof slotPopClose === "function") slotPopClose(false);   // 兩個浮層不同時在
+  const a = amAnchor(), m = $("side-menu");
+  if (m.previousElementSibling !== a) a.after(m);   // 細軌收合時列整塊 display: none,選單要跟著看得到的那顆
+  amPaint();
+  m.hidden = false;
+  // 側欄 overflow:hidden、最窄 180 比選單窄:fixed 才不被裁;左緣對齊第一格、往上開、間距 8,右邊放不下夾回視窗(離邊最少 8)
+  const r = a.getBoundingClientRect();
+  m.style.left = Math.max(8, Math.min(r.left, window.innerWidth - m.offsetWidth - 8)) + "px";
+  m.style.bottom = window.innerHeight - r.top + 8 + "px";
+  a.setAttribute("aria-expanded", "true");
+  amFirstPaint();   // 點從第一格搬到「報告」那一列
+  trackFeature("side_menu_open");
+  const f = m.querySelector(".am-i"); if (f) f.focus();
+}
+function amClose(refocus) {
+  const m = $("side-menu"); if (!m || m.hidden) return;
+  m.hidden = true;
+  ["ws-conn", "rail-set"].forEach((id) => $(id).setAttribute("aria-expanded", "false"));
+  amFirstPaint();
+  if (refocus) amAnchor().focus();
+}
+["ws-conn", "rail-set"].forEach((id) => {
+  $(id).addEventListener("click", () => (amIsOpen() ? amClose(true) : amOpen()));
+  $(id).addEventListener("keydown", (e) => { if (e.key === "ArrowUp" && !amIsOpen()) { e.preventDefault(); amOpen(); } });
+});
+$("side-menu").addEventListener("keydown", (e) => {
+  const items = [...$("side-menu").querySelectorAll(".am-i")], i = items.indexOf(document.activeElement);
+  if (e.key === "Tab") { amClose(false); return; }   // 收起、照原順序往下走(不攔預設)
+  const n = e.key === "ArrowDown" ? (i + 1) % items.length : e.key === "ArrowUp" ? (i - 1 + items.length) % items.length : e.key === "Home" ? 0 : e.key === "End" ? items.length - 1 : -1;
+  if (n < 0 || !items.length) return;
+  e.preventDefault(); items[n].focus();
+});
+// Esc 在 capture 階段攔下:不然同一下會再觸發 escTop 關掉別的東西(同 promptslot.js)
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && amIsOpen() && !e.isComposing) { e.stopPropagation(); e.preventDefault(); amClose(true); } }, true);
+document.addEventListener("pointerdown", (e) => { if (amIsOpen() && !$("side-menu").contains(e.target) && !e.target.closest("#ws-conn, #rail-set")) amClose(false); }, true);
+window.addEventListener("blur", () => amClose(false));
+window.addEventListener("resize", () => amClose(false));
+// 任何 scrim 打開、#view-ws 變 inert 或藏起來(離開工作頁)、切視角(<html data-env>)、側欄收合或展開(<html> 的 ws-sc,錨點在兩顆之間換):一律收
+if (typeof MutationObserver === "function") {
+  const html = document.documentElement, at = () => html.classList.contains("ws-sc") + "|" + html.dataset.env;
+  let last = at();
+  new MutationObserver(() => amClose(false)).observe($("view-ws"), { attributes: true, attributeFilter: ["inert", "hidden"] });
+  document.querySelectorAll(".scrim").forEach((sc) => new MutationObserver(() => { if (!sc.hidden) amClose(false); }).observe(sc, { attributes: true, attributeFilter: ["hidden"] }));
+  new MutationObserver(() => { const now = at(); if (now !== last) { last = now; amClose(false); } }).observe(html, { attributes: true, attributeFilter: ["class", "data-env"] });
+}
 
 /* 進工作頁(或切到 Blave)時的預檢:只有查到「不能跑」才放卡 */
 async function acctPrecheck() {

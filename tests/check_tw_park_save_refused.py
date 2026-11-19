@@ -344,6 +344,23 @@ def child(venue, sid, tmp, phase="1"):
         out["unsaved_after_save"] = unsaved()
         out["on_disk"] = sorted(json.load(open(path))) if os.path.exists(path) else None
         out["sees_other_process_row"] = other_process_writes()
+    elif sid == "nd_recover":
+        # 0.1.57: the same as recover, but the reads that follow are 統一's 查無資料 (an empty list the worker
+        # flags positions_no_data). The claim matches nothing then (it would read the parked entry as unfilled),
+        # yet its round save still runs: the row held in memory reaches the park file all the same.
+        w.signal(1)
+        w.fill, w.report = 0, 0
+        refuse["on"] = True
+        log.append(round_())
+        w.report = None
+        out["unsaved_after_send"] = unsaved()
+        refuse["on"] = False
+        w.nodata = True
+        rounds(2)
+        out["unsaved_after_save"] = unsaved()
+        out["on_disk"] = sorted(json.load(open(path))) if os.path.exists(path) else None
+        out["cleared"] = [json.loads(x).get("event") for x in open("state/audit.jsonl")
+                          if '"unfilled_order_cleared"' in x] if os.path.exists("state/audit.jsonl") else []
     elif sid == "refused":
         w.signal(1)
         w.fill, w.report = 0, 0
@@ -717,6 +734,11 @@ def verdict(sid, r):
         return ok, (f"{why}, held in the process after the send={held}, in memory after the save went through="
                     f"{out['unsaved_after_save']}, on disk={out['on_disk']}, another process's row read="
                     f"{out['sees_other_process_row']}")
+    if sid == "nd_recover":
+        ok = (sent == [2] and held and out["unsaved_after_save"] == {} and out["on_disk"] == [key]
+              and not out["cleared"])
+        return ok, (f"{why}, held in the process after the send={held}, in memory after two 查無資料 rounds="
+                    f"{out['unsaved_after_save']}, on disk={out['on_disk']}, cleared as unfilled={len(out['cleared'])}")
     if sid == "refused":
         restart_rows = [e for e in out["errors"] if "重新開啟" in str(e.get("error"))]
         again = out["again"]
@@ -891,7 +913,7 @@ SIDE = "side_"
 SCENARIOS = ("sent", "partial", "recover", "refused", "reduce", "halted", "unreadable", "merge",
              "unreadable_entry", "side_restart", "side_queued", "side_reduce", "side_recover", "side_corrupt",
              "side_tomb", "side_p1", "side_p4", "side_stale", "side_claim", "side_layers")
-ONLY = {"president": ("side_n2", "n2_mem"), "capital": ("side_flatten",)}
+ONLY = {"president": ("side_n2", "n2_mem", "nd_recover"), "capital": ("side_flatten",)}
 
 
 def main():

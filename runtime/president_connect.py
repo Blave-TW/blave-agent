@@ -495,6 +495,19 @@ def _python():
     return py
 
 
+def _pip(py, spec, timeout):
+    """pip install that ignores the user's Python and pip setup: a PYTHONHOME / PYTHONPATH from a
+    GIS or old installer makes the interpreter load another Python's modules, and PIP_* or pip.ini
+    swaps the index (a different index is different code). capital_local's comtypes install is the
+    same rule."""
+    env = {k: v for k, v in os.environ.items() if not k.upper().startswith(("PYTHON", "PIP_"))}
+    # the app's own two come back (shell/enginesetup.pyChildEnv does the same): UTF-8 stdio on Windows, and
+    # the packaged build keeps __pycache__ out of the signed bundle
+    env.update({k: os.environ[k] for k in ("PYTHONUTF8", "PYTHONPYCACHEPREFIX") if k in os.environ})
+    return cc._run_quiet([py, "-m", "pip", "install", "--isolated", "--quiet", "--disable-pip-version-check", spec],
+                         timeout, "pip", env=env)
+
+
 def run_setup(push=None):
     _update("setup", status="running", error=None)
     if push:
@@ -502,7 +515,7 @@ def run_setup(push=None):
     failed = []
     try:
         py = _python()
-        r = cc._run_quiet([py, "-m", "pip", "install", "--quiet", UNITRADE_PIN], SETUP_TIMEOUT_S, "pip")
+        r = _pip(py, UNITRADE_PIN, SETUP_TIMEOUT_S)
         if r.returncode != 0 or cc._run_quiet([py, "-c", "import unitrade.unitrade"], 120,
                                               "import").returncode != 0:
             failed.append("unitrade")
@@ -512,8 +525,7 @@ def run_setup(push=None):
         import cryptography  # noqa: F401
     except ImportError:
         try:
-            ok = cc._run_quiet([sys.executable, "-m", "pip", "install", "--quiet", "cryptography"],
-                               600, "pip").returncode == 0
+            ok = _pip(sys.executable, "cryptography", 600).returncode == 0
         except RuntimeError:
             ok = False
         if not ok:
@@ -1434,6 +1446,27 @@ def _local_start(push):
         raise
 
 
+# the steps that make this daemon log in to 統一 with the credentials it holds: host switches the
+# environment and then probes there (_local_host → run_probe). Not cert (it stops the worker, no login),
+# not secrets (its worker restart runs on the pair just handed over), not setup / stop.
+_LOGIN_OPS = ("probe", "test_order", "start", "host")
+
+
+def _held_matches(blob):
+    """The app seals the account and trading password it last saved; a login step runs only when this
+    daemon holds the same pair. The app cannot know that by itself: a certificate step it saw as SENT
+    may still fail here (the old account stays), and a changed trading password whose rebind failed
+    leaves the old one — a login with either costs one of 統一's three tries on the wrong pair."""
+    s = _LOCAL["secrets"]
+    if s is None:
+        _refuse("NO_SECRETS", "the app has not handed over the 統一 credentials")
+    want = _bundle(open_sealed(blob))
+    same = (hmac.compare_digest(want["account"].encode(), s["account"].encode())
+            and hmac.compare_digest(want["password"].encode(), s["password"].encode()))
+    if not same:
+        _refuse("SECRETS_STALE", "this computer still holds other 統一 credentials — choose the certificate again")
+
+
 def _local_jobs(op, args):
     if op == "setup":
         return lambda push: run_setup(push)
@@ -1475,11 +1508,11 @@ def local_dispatch(args, deferred_cls, push=None):
         _refuse("NOT_LOCAL", "president_local runs on the desktop app only")
     op = args.get("op") if isinstance(args, dict) else None
     allowed = {"op", "sealed"} if op in ("cert", "secrets") else \
-        {"op", "env", "url"} if op == "host" else {"op"}
-    if op not in LOCAL_OPS or set(args) - allowed:
+        {"op", "env", "url", "expect"} if op == "host" else {"op", "expect"} if op in _LOGIN_OPS else {"op"}
+    if op not in LOCAL_OPS or set(args) - allowed or (op in _LOGIN_OPS and "expect" not in args):
         _refuse("BAD_ARGS", "unknown president_local shape")
-    if op == "host" and not (len(args) == 2 and (args.get("env") in ("test", "live")
-                                                 or isinstance(args.get("url"), str))):
+    if op == "host" and not (("env" in args) != ("url" in args) and (args.get("env") in ("test", "live")
+                                                                     or isinstance(args.get("url"), str))):
         _refuse("BAD_ARGS", "host takes {env: test|live} or {url}")
     if not IS_WINDOWS:
         _refuse("NOT_WINDOWS", "統一期貨 needs Windows")
@@ -1499,6 +1532,8 @@ def local_dispatch(args, deferred_cls, push=None):
             except Exception as e:
                 _update("worker", status="failed", error=cc._code(e, "WORKER_FAILED"))
         return {"secrets": "ok"}
+    if op in _LOGIN_OPS:
+        _held_matches(args["expect"])
     _sweep_interrupted()
     job = _local_jobs(op, args)
     if not _busy.acquire(blocking=False):

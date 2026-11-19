@@ -15,10 +15,10 @@ if (!process.versions.electron) {
 
   // ── 字:spec 表上逐字 ──
   const COPY = {
-    "po.fogNew": ["請 agent 做一支策略，回測完成就能設金額。", "Ask the agent for a strategy. Once it’s backtested, you can size it."],
-    "mg.fogNew": ["請 agent 做幾支策略，回測完成就能優化。", "Ask the agent for a few strategies. Once they’re backtested, you can optimize."],
+    "po.fogNew": ["有回測完成的策略才能設金額。", "Sizing needs a backtested strategy."],   // 0.1.57 改短(spec first-strategy-sidebar §9.2)
+    "mg.fogNew": ["有回測完成的策略才能優化。", "Optimizing needs backtested strategies."],
     "tr.pick.empty": ["還沒有回測完成的策略。", "No backtested strategies yet."],
-    "tr.fogPosNew": ["請 agent 做一支策略，回測完成就能下單。", null],
+    "tr.fogPosNew": ["有回測完成的策略才能下單。", "Trading needs a backtested strategy."],
     "tr.noStrategies": ["還沒有可以下單的策略。先請 agent 做一支，回測完就能設金額。", null],
     "tr.noAccount": ["還沒連接下單帳戶", "No trading account connected"],
     "tr.fogConnect": ["連上帳戶，策略就能自動下單。", "Connect an account and your strategies can trade on their own."],

@@ -36,9 +36,12 @@ t("win32:會改 Python / Node 行為的也拔掉(PYTHONPATH / PYTHONHOME / NODE_
 t("win32:白名單物件的每一個 key 都在、值以它為準(含自己的 BLAVE_* 與 PYTHONPYCACHEPREFIX)", Object.keys(own).filter((k) => k !== "HOME").every((k) => win[k] === own[k]));
 t("win32:HOME 對映到 USERPROFILE", win.HOME === penv.USERPROFILE);
 t("win32:PYTHONUTF8=1 一定在;用戶自己設的 PYTHONUTF8=0 被拔掉、以我們的為準", win.PYTHONUTF8 === "1" && childEnv(own, "win32", { ...penv, PYTHONUTF8: "0" }).PYTHONUTF8 === "1");
-// 0.1.12 起建 venv / pip 在 shell/enginesetup.js(spawn);main.js 把 PY_ENV 與 WIN 三元的 WIN_PY_ENV 交給它,它原樣疊在 process.env 上
+// 0.1.12 起建 venv / pip 在 shell/enginesetup.js(spawn);main.js 把 PY_ENV 與 WIN 三元的 WIN_PY_ENV 交給它。
+// 0.1.57 起它先拔掉 process.env 的 PYTHON*／PIP_*(pyChildEnv),再疊 pyEnv:用戶的 PYTHONUTF8=0 不會蓋掉我們的
+const PCE = require(path.join(__dirname, "..", "shell", "enginesetup.js")).pyChildEnv;
 t("建 venv / pip 在 win32 也帶 PYTHONUTF8、darwin 不帶(WIN 三元)", /pyEnv: \{ \.\.\.PY_ENV, \.\.\.\(WIN \? WIN_PY_ENV : \{\}\) \}/.test(src)
-  && /spawn\(bin, args, \{ windowsHide: true, env: \{ \.\.\.process\.env, \.\.\.o\.pyEnv, PATH: envPath, PYTHONUNBUFFERED: "1" \} \}\)/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "enginesetup.js"), "utf8")));
+  && /spawn\(bin, args, \{ windowsHide: true, env: pyChildEnv\(process\.env, o\.pyEnv, envPath, \{ PYTHONUNBUFFERED: "1" \}\) \}\)/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "enginesetup.js"), "utf8"))
+  && PCE({ PYTHONUTF8: "0", SystemRoot: "C:\\Windows" }, { PYTHONUTF8: "1" }, "/p", { PYTHONUNBUFFERED: "1" }).PYTHONUTF8 === "1");
 t("win32:PATH 只有一份(process.env 的 Path 被白名單的 PATH 取代,不留兩個只差大小寫的 key)", Object.keys(win).filter((k) => k.toUpperCase() === "PATH").join() === "PATH" && win.PATH === own.PATH);
 t("win32:其餘的原樣通過(NUMBER_OF_PROCESSORS、ProgramFiles)", win.NUMBER_OF_PROCESSORS === "8" && win.ProgramFiles === penv.ProgramFiles);
 t("win32:process.env 沒有 SystemRoot 時補 C:\\Windows(不然 Python 起不來)", childEnv(own, "win32", { USERPROFILE: "C:\\Users\\u" }).SystemRoot === "C:\\Windows");
@@ -77,7 +80,7 @@ t("agent 回合的 spawn 用 childEnv(env)、windowsHide", /\], \{ env: childEnv
       if (!/windowsHide: true/.test(call)) bare.push(sites[sites.length - 1]);
     }
   }
-  t("windowsHide:十個呼叫點都帶(main.js run / agentLogin / compareVersions / 回合 spawn、enginesetup.js 的 venv 與 pip、背景編 .pyc、查行程建立時間、daemon.js、datasrc.js、winsandbox.js 的 icacls / powershell)→ 找到 " + sites.length + " 處,沒帶的:" + (bare.join(",") || "無"), sites.length === 10 && bare.length === 0);
+  t("windowsHide:十一個呼叫點都帶(main.js run / agentLogin / compareVersions / 回合 spawn、0.1.57 strategyDataNeed 的 blave_data_need、enginesetup.js 的 venv 與 pip、背景編 .pyc、查行程建立時間、daemon.js、datasrc.js、winsandbox.js 的 icacls / powershell)→ 找到 " + sites.length + " 處,沒帶的:" + (bare.join(",") || "無"), sites.length === 11 && bare.length === 0);
   // 突變:掃描器真的看得到「沒帶」——拿回合 spawn 那段把 windowsHide 拔掉再掃一次
   const turnSrc = src.replace("cwd: WS, windowsHide: true }", "cwd: WS }");
   const turnCall = callText(turnSrc, turnSrc.indexOf("spawn(VENV_PY") + "spawn".length);

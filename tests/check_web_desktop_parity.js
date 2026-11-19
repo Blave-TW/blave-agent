@@ -112,7 +112,15 @@ const EV_PAIRS = {
   evStart: "start",
   evConnected: "venue_connected",
   evDisconnected: "venue_disconnected",
-  evErr: "err" };
+  evErr: "err",
+  // 0.1.58 下單程式卡住自救、睡醒(copy-0158)
+  evExecHang: "exec_hang",
+  evHangRestarted: "hang_restarted",
+  evHangHalted: "hang_halted",
+  evHaltHangNote: "halt_hang_note",
+  evWoke: "woke",
+  evWokeNote: "woke_note",
+  evWokeNoteHeld: "woke_note_held" };
 for (const lang of ["zh", "en"]) {
   const dp = poMap(path.join(__dirname, "..", "shell", "i18n", lang + ".po")), wp = poMap(path.join(webDir, "app", "translations", lang, "LC_MESSAGES", "messages.po"));
   const diff = Object.entries(EV_PAIRS).filter(([d, w]) => !dp["tr.ov." + d] || dp["tr.ov." + d] !== wp["workspace_ov_ev_" + w]).map(([d]) => d);
@@ -251,6 +259,15 @@ for (const lang of ["zh", "en"]) {
   ok(`帳戶對不上的頁首句與事件列 ${lang} 兩邊逐字一致(${Object.keys(UNX_PAIRS).length} 句)`, bad.length === 0,
     bad.map(([d, w]) => d + "「" + dp[d] + "」 vs " + w + "「" + wp[w] + "」").join(";"));
 }
+// 0.1.58:睡了多久的三種寫法、一小時內第 3 次卡住的頁首句(copy-0158 §1.4、§2),兩邊逐字一致;任一邊沒有就紅
+const HANG_PAIRS = { "tr.ov.durMin": "workspace_ov_dur_min", "tr.ov.durHour": "workspace_ov_dur_hour", "tr.ov.durHourMin": "workspace_ov_dur_hour_min",
+  "tr.haltHangWatch": "workspace_pf_halt_hang_watch" };
+for (const lang of ["zh", "en"]) {
+  const dp = poMap(path.join(__dirname, "..", "shell", "i18n", lang + ".po")), wp = poMap(path.join(webDir, "app", "translations", lang, "LC_MESSAGES", "messages.po"));
+  const bad = Object.entries(HANG_PAIRS).filter(([d, w]) => typeof dp[d] !== "string" || typeof wp[w] !== "string" || dp[d] !== wp[w]);
+  ok(`卡住暫停頁首句／睡多久 ${lang} 兩邊逐字一致(${Object.keys(HANG_PAIRS).length} 句)`, bad.length === 0,
+    bad.map(([d, w]) => d + "「" + dp[d] + "」 vs " + w + "「" + wp[w] + "」").join(";"));
+}
 // 接回後讀帳是空的而自動暫停、帳戶比帳本少(designer rebind-autohalt-ux-2026-11-05 3.2／3.3):頁首專屬句、「帳戶實際 N」與它的 tooltip 逐字一致;
 // 兩邊都用 /^positions read back empty/ 認這一型,而那串字要真的是機器端 manager/reconciler.py 寫的原因開頭。任一邊沒有就紅
 const EMPTY_READ_PAIRS = { "tr.haltEmptyRead": "workspace_pf_halt_empty_read", "po.acctActual": "workspace_pf_acct_actual", "tr.acctActualTip": "workspace_pf_acct_actual_tip" };
@@ -319,6 +336,13 @@ for (const lang of ["zh", "en"]) {
   ok("已知差異(側欄底列,web 排下一版):電腦版沒有提示格的冷卻／關閉常數了", !/SLOT_PH|COOL_DAYS|MAX_CLOSES|SEEN_DAYS/.test(dSrc));
   ok("已知差異(側欄底列,web 排下一版):web 仍是提示格 SLOT_PH 原值(30 天、2 次、7 個使用日、下單後 30 分鐘);web 跟上時這條紅,換回兩邊比對",
     !!wS && wS[1] === "{ COOL_DAYS: 30, MAX_CLOSES: 2, SEEN_DAYS: 7, TRADE_QUIET_MIN: 30 }", wS && wS[1]); }
+/* 已知差異(spec first-strategy-sidebar §11):電腦版 0.1.57 把報告從側欄搬進左下選單、自動下單沒連帳戶且清單空時先出〔新增策略〕,
+   web 排下一版(同側欄底列那張工單)。逐條釘住兩邊現在的樣子;web 跟上時這幾條會紅,那時換回兩邊比對 */
+{ const dHtml = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "index.html"), "utf8"), dPo = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "portfolio.js"), "utf8");
+  ok("已知差異(報告入口,web 排下一版):電腦版側欄沒有報告列、左下第一格開選單 #side-menu", !/id="rpt-nav/.test(dHtml) && /id="side-menu" role="menu"/.test(dHtml));
+  ok("已知差異(報告入口,web 排下一版):web 側欄仍有報告列 #rp_nav;web 跟上時這條紅,換回兩邊比對", /id="rp_nav"/.test(web));
+  ok("已知差異(自動下單清單空的卡,web 排下一版):電腦版有 onb-new、web 沒有(仍先出連接帳戶 pfFogConnect);web 跟上時這條紅",
+    /kind === "onb-new"/.test(dPo) && !/onb_new|fog_onb_new|fogOnbNew/.test(web) && /pfFogConnect:/.test(web)); }
 // 對話分頁(0.1.37;技術方案 §1.4、§4):對著雲端主機、名額滿了的排隊行與〔取消排隊〕,電腦版 chattabs.js tabsQueued 與網頁 csShowQueued 同一句;
 // 歷史清單的狀態字(回覆中／排隊中／做完，還沒看)與分組(今天／昨天／更早)也跟網頁 workspace_cs_* 同一組
 // 聊天結果卡第二行(一句話:分隔字、報告句、卡專用類型與落點字,設計師 0.1.48 標點複查):兩邊逐字一致。en 的分隔字電腦版是「,」、空格由 CSS 間距補,web 寫進字串,所以分隔字只比去掉空白後的字
@@ -876,7 +900,7 @@ for (const lang of ["zh", "en"]) {
     "mg.needFund": "workspace_mg_need_fund", "mg.needStrat": "workspace_mg_need_strat", "mg.busy": "workspace_mg_busy", "mg.shortOpt": "workspace_mg_short_opt", "mg.optDoneToast": "workspace_mg_opt_done_toast", "mg.needMethod": "workspace_mg_need_method", "mg.needTarget": "workspace_mg_need_target", "mg.sizeNoHist": "workspace_mg_size_no_hist", "mg.sizeNoSolve": "workspace_mg_size_no_solve",
     "sz.shortMdd": "workspace_sz_short_mdd", "sz.staleMdd": "workspace_sz_stale_mdd", "sz.oldMdd": "workspace_sz_old_mdd", "sz.noVol": "workspace_sz_no_vol",
     "mg.why.alloc": "workspace_mg_why_alloc", "mg.why.tbMethod": "workspace_mg_why_tb_method", "mg.why.rerun": "workspace_mg_why_rerun", "mg.why.replaced": "workspace_mg_why_replaced", "mg.why.updCloud": "workspace_mg_why_upd_cloud", "mg.why.pickTitle": "workspace_mg_why_pick_title",
-    "tr.noAccount": "workspace_pf_no_account", "tr.fogConnect": "workspace_pf_fog_connect", "po.fogNew": "workspace_pf_fog_new", "mg.fogNew": "workspace_mg_no_strategies", "rpt.fogNew": "workspace_rp_fog_new" };
+    "tr.noAccount": "workspace_pf_no_account", "tr.fogConnect": "workspace_pf_fog_connect", "po.fogNew": "workspace_pf_fog_new", "mg.fogNew": "workspace_mg_no_strategies", "tr.fogPosNew": "workspace_pf_fog_pos_new", "rpt.fogNew": "workspace_rp_fog_new" };
   // en 兩條字樣小差,對齊前不比:sz.shortMdd 電腦版 Under、web Less than;mg.applyWhyQuote web 用直引號,其餘都是 ’
   const EN_OPEN = new Set(["sz.shortMdd", "mg.applyWhyQuote"]), norm = (s) => s.toLowerCase();
   for (const lang of ["zh", "en"]) { const d = poMap(path.join(__dirname, "..", "shell", "i18n", lang + ".po")), w = poMap(path.join(webDir, "app", "translations", lang, "LC_MESSAGES", "messages.po"));

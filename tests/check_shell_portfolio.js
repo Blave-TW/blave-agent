@@ -47,8 +47,9 @@ ok("內建方法「最佳化 Sharpe」有自己的介面字(不吃機器 display
   ok("選擇比對:成員順序不管、舊腳本的 allocator null = slope、走查窗雙方都釘住才比", F.mgSameSel(prop, ["a", "b"], "slope", { lookback: 180 }) && !F.mgSameSel(prop, ["a"], "slope", { lookback: 180 })
     && !F.mgSameSel(prop, ["a", "b"], "equal", {}) && !F.mgSameSel(prop, ["a", "b"], "slope", { lookback: 90 }) && F.mgSameSel({ members: ["a", "b"], allocator: "equal", lookback: 0 }, ["a", "b"], "equal", {})); }
 ok("資料不足:從回測 log 尾抓歷史天數(不 anchor 行首);認不得 null", F.mgShortDaysOf("Traceback…\nValueError: insufficient history: 120 days <= lookback 365") === 120 && F.mgShortDaysOf("boom") === null);
-ok("參數:只收方法宣告的 key、target_vol 永遠排除、現值在範圍內才沿用;沒值或不合法 = null,宣告值不當值代填", J(F.mgFitParams({ params: { lookback: 365, target_vol: 0.3, x: true } }, { lookback: 90, x: false, zz: 1 })) === J({ lookback: 90, x: false })
-  && J(F.mgFitParams({ params: { lookback: 365 } }, { lookback: 5 })) === J({ lookback: null }) && J(F.mgFitParams({ params: { lookback: 365, s: "x" } }, null)) === J({ lookback: null, s: null }));
+ok("參數:只收方法宣告的 key、target_vol 永遠排除、現值在範圍內才沿用;回看天數沒值或不合法帶 365(Wei 11-17),其他參數 null、宣告值不當值代填", J(F.mgFitParams({ params: { lookback: 365, target_vol: 0.3, x: true } }, { lookback: 90, x: false, zz: 1 })) === J({ lookback: 90, x: false })
+  && J(F.mgFitParams({ params: { lookback: 365 } }, { lookback: 5 })) === J({ lookback: 365 }) && J(F.mgFitParams({ params: { lookback: 365, s: "x" } }, null)) === J({ lookback: 365, s: null })
+  && J(F.mgFitParams({ params: { lookback: 120 } }, {})) === J({ lookback: 365 }) && J(F.mgFitParams({ params: { s: "x" } }, {})) === J({ s: null }));
 ok("權重 %:整數就整數、非整數留 1 位;壞值 null", F.mgWeightPct(0.25) === "25" && F.mgWeightPct(0.1234) === "12.3" && F.mgWeightPct(NaN) === null);
 ok("部位大小設定清理:壞值回沒填(方法也是 null,不預選目標波動)", J(F.mpsSizingClean({ fund: -1, method: "x", target: { vol: 12, mdd: "a" } })) === J({ fund: null, fundCcy: null, method: null, target: { vol: 12, mdd: null, lev: null } })
   && F.mpsSizingClean({ fund: 5, fundCcy: "TWD" }).fundCcy === "TWD" && F.mpsSizingClean({ fund: 5, fundCcy: "twd" }).fundCcy === null && F.mpsSizingClean({ fundCcy: "TWD" }).fundCcy === null);
@@ -654,7 +655,7 @@ const mgOptTest = (async () => {
   G = init({ manager: M(), config: { allocator: null, weights: {} } });
   ok("config 有 allocator:null 但沒上線:仍空著,不當 slope", G.alloc === null);
   G = init({ manager: M(), config: { weights: { a: 1 } } });
-  ok("已上線的舊 config 沒寫 allocator = slope(同 manager.py);宣告的 lookback 365 不代填,要用戶填", G.alloc === "slope" && G.params.lookback === null && call("mgOptBlockReason()") === 'mg.needParams{"method":"mg.slope"}', J([G.alloc, G.params]));
+  ok("已上線的舊 config 沒寫 allocator = slope(同 manager.py);回看天數沒填帶 365(Wei 11-17),不再擋著要用戶填", G.alloc === "slope" && G.params.lookback === 365 && call("mgOptBlockReason()") === null, J([G.alloc, G.params, call("mgOptBlockReason()")]));
   G = init({ manager: M({ proposal: { members: ["a", "b"], allocator: "sharpe", params: { lookback: 120 } }, backtest_job: { status: "done", members: ["a", "b"], allocator: "slope", params: { lookback: 90 } } }), config: { allocator: "equal" } });
   const j = [G.alloc, G.params.lookback];
   G = init({ manager: M({ proposal: { members: ["a", "b"], allocator: "sharpe", params: { lookback: 120 } } }), config: { allocator: "equal" } }); const p = [G.alloc, G.params.lookback];

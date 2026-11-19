@@ -85,6 +85,7 @@ import threading
 import time
 
 import atomic_file
+import hang_watch
 
 try:
     import fcntl
@@ -143,10 +144,12 @@ CLOCK_VENUES = {"CAPITAL", "PRESIDENT"}
 ACCOUNT_TIMEOUT_S = 180
 RESTART_DELAY_S = 10       # = manager/start_reconciler.sh's `sleep 10`
 CAPITAL_RESTART_EXIT = 76  # = manager/reconciler.py: 群益 9997, a fresh process logs in again
+TEST_HANG_ENV = "BLAVE_TEST_HANG_BEFORE_SEND"   # = manager/reconciler.py TEST_HANG_ENV
 # Shutdown has to fit between an app's SIGTERM and the SIGKILL that follows it:
 # the runner gets SWEEP_BUDGET_S to cancel its own resting orders, the daemon
 # waits STOP_GRACE_S for it, then kills.
 SWEEP_BUDGET_S = 3
+TG_EXIT_S = 1.5  # queued Telegram on the way out; SWEEP_BUDGET_S + this stays under the daemon's STOP_GRACE_S
 STOP_GRACE_S = 5
 SEEN_KEEP_S = 3600         # replay memory, well past TS_WINDOW_S
 LOCK_TAKE_S = 10           # Windows: how long a starting reconciler may wait for its lock
@@ -282,7 +285,7 @@ def _stamp():
     return time.strftime("%Y-%m-%d %H:%M:%S")
 
 
-def _workspace_first(ws):
+def _workspace_lib(ws):
     """`python local_daemon.py` puts runtime/ at sys.path[0] and nothing puts the
     workspace there — so a `from lib import …` made outside
     command_listener._in_workspace takes whatever `lib` sys.path finds first.
@@ -291,29 +294,29 @@ def _workspace_first(ws):
     package never re-points to a regular package found later, so after that
     `lib.guard` is ModuleNotFoundError for the rest of the process — halt /
     resume / close_all dead (0.1.18, the first such import being
-    president_connect's vault read). The workspace goes first, before any
-    sibling module is imported; a `lib` already bound somewhere else is dropped
-    so the next import resolves here. Returns where `lib` resolves."""
+    president_connect's vault read). Done before any sibling module is
+    imported; a `lib` already bound somewhere else is dropped so the next import
+    resolves here. Returns where `lib` resolves.
+
+    No workspace folder goes on sys.path at all (audit 2026-11-19 M1): this
+    process holds the broker passwords, and a name the stdlib and site-packages
+    lack (an optional requests dependency, a Windows-only module) would still be
+    found there. secret_imports puts a finder first that answers only `lib` and
+    `lib.<name>` from <ws>/lib, from source."""
     import importlib.util
+    import secret_imports
 
-    if ws not in sys.path:
-        sys.path.insert(0, ws)
-    want = os.path.join(ws, "lib") + os.sep
-
-    def _where():
-        try:
-            spec = importlib.util.find_spec("lib")
-        except (ImportError, ValueError):
-            return ""
-        return os.path.abspath(spec.origin) if spec and spec.origin else ""
-
-    origin = _where()
-    if origin.startswith(want):
-        return origin
-    _log(f"lib resolved outside the workspace ({origin or 'namespace package'}) — re-resolving")
-    for name in [n for n in sys.modules if n == "lib" or n.startswith("lib.")]:
-        del sys.modules[name]
-    origin = _where()
+    want = os.path.join(os.path.abspath(ws), "lib") + os.sep
+    bound = sys.modules.get("lib")
+    if bound is not None and not os.path.abspath(getattr(bound, "__file__", None) or "").startswith(want):
+        _log(f"lib resolved outside the workspace ({getattr(bound, '__file__', None) or 'namespace package'})"
+             " — re-resolving")
+    secret_imports.install(ws)
+    try:
+        spec = importlib.util.find_spec("lib")
+        origin = os.path.abspath(spec.origin) if spec and spec.origin else ""
+    except (ImportError, ValueError):
+        origin = ""
     if not origin.startswith(want):
         _log(f"lib still does not resolve to the workspace ({origin or 'nothing'})")
     return origin
@@ -563,6 +566,16 @@ def _take_president_line():
         _log(f"capital credentials not taken ({type(e).__name__})")
 
 
+def _reconciler_env(child_env, environ=os.environ):
+    """The reconciler's env builder. The test hang switch (TEST_HANG_ENV) comes only from this
+    daemon's own start (the shell's dev launch) and is taken out of it here, so no other child —
+    an agent turn included — can carry it; child_env's allowlist drops it for everyone else."""
+    test_hang = environ.pop(TEST_HANG_ENV, None)
+    if test_hang is None:
+        return child_env
+    return lambda **kw: child_env(**{TEST_HANG_ENV: test_hang, **kw})
+
+
 def run_reconciler(script, president_stdin=False):
     """`--run-reconciler`: manager/reconciler.py, unmodified, in this process —
     plus the two things it lacks for a machine whose supervisor can vanish.
@@ -579,7 +592,7 @@ def run_reconciler(script, president_stdin=False):
     import runpy
 
     ws = os.getcwd()
-    _workspace_first(ws)
+    _workspace_lib(ws)
     if president_stdin:
         _take_president_line()
 
@@ -594,8 +607,33 @@ def run_reconciler(script, president_stdin=False):
 
     gone = []  # the parent watch's reason; empty = a SIGTERM somebody sent us
 
+    def _finish(deadline):
+        # An order leg in flight finishes first (its lib/portfolio marker clears after the
+        # orders.jsonl write); the sweep gets what is left of the one budget. Past it the marker
+        # stays, and the next start's reap pauses trading on it.
+        ex = sys.modules.get("lib.execute")
+        active = getattr(ex, "sync_leg_active", None)
+        if callable(active) and callable(getattr(ex, "request_stop", None)):
+            ex.request_stop()  # no new leg (already set by _leave on the POSIX path)
+            while active() and time.monotonic() < deadline:
+                time.sleep(0.05)
+        t = threading.Thread(target=_sweep, daemon=True)
+        t.start()
+        t.join(max(0.0, deadline - time.monotonic()))
+        # the reconciler sends Telegram from a thread (manager/reconciler._tg_flush): what is queued gets
+        # the little left before the daemon's STOP_GRACE_S kill, then is logged as dropped — os._exit skips atexit
+        flush = getattr(sys.modules.get("__main__"), "_tg_flush", None)
+        if callable(flush):
+            try:
+                flush(time.monotonic() + TG_EXIT_S)
+            except Exception as e:
+                _log(f"notification flush skipped: {type(e).__name__}: {e}")
+        os._exit(0)
+
     def _leave(*_):
-        if threading.current_thread() is threading.main_thread():
+        deadline = time.monotonic() + SWEEP_BUDGET_S
+        on_main = threading.current_thread() is threading.main_thread()
+        if on_main:
             # a second SIGTERM must not re-enter; off the main thread (the
             # Windows watch) signal.signal() raises and nothing can re-enter anyway
             signal.signal(signal.SIGTERM, signal.SIG_IGN)
@@ -603,10 +641,15 @@ def run_reconciler(script, president_stdin=False):
         # a SIGTERM with no such line above it came from another process.
         _log(f"{_stamp()} reconciler leaving (pid {os.getpid()}): "
              f"{gone[0] if gone else 'SIGTERM'}")
-        t = threading.Thread(target=_sweep, daemon=True)
-        t.start()
-        t.join(SWEEP_BUDGET_S)
-        os._exit(0)
+        ex = sys.modules.get("lib.execute")
+        active = getattr(ex, "sync_leg_active", None)
+        if callable(active) and callable(getattr(ex, "request_stop", None)):
+            ex.request_stop()  # before the handler returns to the leg: no next leg after it
+        if on_main and callable(active) and active():
+            # the leg runs on this (main) thread: return from the handler so it can finish
+            threading.Thread(target=_finish, args=(deadline,), daemon=True, name="leave").start()
+            return
+        _finish(deadline)
 
     ppid = os.getppid()
 
@@ -679,6 +722,75 @@ class SingleInstance:
         return True
 
 
+# Windows: what a pid is right now, from the kernel (no PowerShell: tick holds its lock)
+_TH32CS_SNAPPROCESS = 0x2
+_PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+WIN_STAMP_SLACK_S = 120  # a reconciler writes its stamp within this of starting (imports, lock take)
+
+
+def _win_proc_info(pid):
+    """(parent pid, creation time epoch, image file name lowercased) of a live pid, None when
+    any of it cannot be read."""
+    import ctypes
+    from ctypes import wintypes
+
+    class PE(ctypes.Structure):
+        _fields_ = [("dwSize", wintypes.DWORD), ("cntUsage", wintypes.DWORD),
+                    ("th32ProcessID", wintypes.DWORD), ("th32DefaultHeapID", ctypes.c_void_p),
+                    ("th32ModuleID", wintypes.DWORD), ("cntThreads", wintypes.DWORD),
+                    ("th32ParentProcessID", wintypes.DWORD), ("pcPriClassBase", ctypes.c_long),
+                    ("dwFlags", wintypes.DWORD), ("szExeFile", ctypes.c_wchar * 260)]
+    k = ctypes.WinDLL("kernel32", use_last_error=True)
+    k.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+    k.OpenProcess.restype = wintypes.HANDLE
+    snap = k.CreateToolhelp32Snapshot(_TH32CS_SNAPPROCESS, 0)
+    if not snap or snap == wintypes.HANDLE(-1).value:
+        return None
+    ppid = image = None
+    try:
+        e = PE()
+        e.dwSize = ctypes.sizeof(PE)
+        ok = k.Process32FirstW(snap, ctypes.byref(e))
+        while ok:
+            if e.th32ProcessID == pid:
+                ppid, image = int(e.th32ParentProcessID), e.szExeFile.lower()
+                break
+            ok = k.Process32NextW(snap, ctypes.byref(e))
+    finally:
+        k.CloseHandle(snap)
+    if ppid is None:
+        return None
+    h = k.OpenProcess(_PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+    if not h:
+        return None
+    try:
+        t = [wintypes.FILETIME() for _ in range(4)]
+        if not k.GetProcessTimes(h, *[ctypes.byref(x) for x in t]):
+            return None
+        created = ((t[0].dwHighDateTime << 32) | t[0].dwLowDateTime) / 1e7 - 11644473600
+    finally:
+        k.CloseHandle(h)
+    return ppid, created, image
+
+
+def _win_is_our_reconciler(pid, launcher_pid, doc, info=None):
+    """The stamp's pid is, right now, our launcher's python child that wrote this stamp: its parent
+    is the launcher, it was created after the launcher, it is a python image, and the stamp's own
+    start time (`at`, written once at its startup) falls just after its creation — a pid the OS
+    handed to something else fails at least one. Anything unreadable is False: no kill."""
+    try:
+        info = info or _win_proc_info
+        me, parent = info(pid), info(launcher_pid)
+        at = (doc or {}).get("at")
+        if not me or not parent or not isinstance(at, (int, float)) or (doc or {}).get("pid") != pid:
+            return False
+        ppid, created, image = me
+        return (ppid == launcher_pid and created >= parent[1] - 1 and image.startswith("python")
+                and created - 1 <= at <= created + WIN_STAMP_SLACK_S)
+    except Exception:
+        return False
+
+
 class ReconcilerSupervisor:
     """What systemd's Restart=always / start_reconciler.sh are on the cloud box.
 
@@ -707,6 +819,7 @@ class ReconcilerSupervisor:
         self._lock_path = os.path.join(workspace, RECONCILER_LOCK)
         self._pid_path = os.path.join(workspace, "state", "local_reconciler.pid")
         self.asked_by = None  # the last command dispatched, for the stop reason
+        self._hang = hang_watch.Watch(self.ws)
 
     def _note(self, msg):
         """Into state/reconciler.log, next to the reconciler's own lines: our
@@ -835,6 +948,7 @@ class ReconcilerSupervisor:
             if not self._wanted:
                 return
             if self._proc is not None and self._proc.poll() is None:
+                self._hang_check_locked(self._proc)
                 return  # running — or a child we gave up on, not dead yet: never start beside it
             if self._respawn_at is None:
                 self._respawn_at = time.time() + RESTART_DELAY_S
@@ -882,6 +996,46 @@ class ReconcilerSupervisor:
                     self._respawn_failed(RuntimeError("reconciler did not take its lock — stopped"))
                     return
             time.sleep(0.2)
+
+    def _hang_check_locked(self, p):
+        """Under self._lock with _wanted and p alive: a child whose progress stamp has not moved
+        for hang_watch.HANG_STALL_S is killed; the exit branch of tick respawns it. Never while
+        respawn_when_idle holds its lock (it is stopping the child itself) or a hold is fresh."""
+        if self._idle_lock.locked() or self._hang.left_alone(p):
+            return
+        # Windows: p is the venv launcher, the reconciler its child (stamp ppid == p.pid)
+        stall = self._hang.stall(p.pid, via_parent=_nt(), key=p)
+        real = self._hang.target
+        if stall is None or stall < hang_watch.HANG_STALL_S:
+            return
+        import command_listener as cl
+        if cl.update_hold_fresh(os.path.join(self.ws, "state")):
+            return
+        if real != p.pid and not _win_is_our_reconciler(real, p.pid, hang_watch.stamp_doc(self.ws)):
+            # the stamp names a process we cannot prove is our launcher's child: never kill it
+            self._note(f"reconciler pid {real} from the progress stamp could not be confirmed as this "
+                       f"daemon's reconciler — not killed")
+            self._hang.handled(p, "skip")
+            return
+
+        def _trip():
+            from lib import guard
+            if os.path.exists(guard.HALT_PATH):  # a pause already on (the user's) keeps its source and reason
+                return False
+            guard.trip_halt(hang_watch.HALT_REASON, hang_watch.HALT_SOURCE)
+            return True
+
+        def _audit(event, **kw):
+            from lib import guard
+            guard.audit(event, **kw)
+
+        def _kill(_pid):
+            if real != p.pid:
+                os.kill(real, signal.SIGTERM)  # Windows: TerminateProcess on the confirmed reconciler
+            self._give_up_child(p)  # then the launcher, so tick sees the exit and respawns
+        done = hang_watch.act(self.ws, real, _kill, lambda: cl._in_workspace(_trip), self._note,
+                              now=self._hang.clock(), audit=lambda e, **kw: cl._in_workspace(_audit, e, **kw))
+        self._hang.handled(p, done)
 
     def _respawned(self):
         self.restarts += 1
@@ -1109,7 +1263,7 @@ class Daemon:
         import president_connect
         import capital_local
         self.pc, self.capl = president_connect, capital_local
-        self.sup = ReconcilerSupervisor(workspace, cl._local_child_env, cl._pid_cmdline,
+        self.sup = ReconcilerSupervisor(workspace, _reconciler_env(cl._local_child_env), cl._pid_cmdline,
                                         cl._child_kw, secret_line=secret_line_all)
         try:
             with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "VERSION")) as f:
@@ -1517,15 +1671,13 @@ def clock_sample(ws):
     """One lib/tw_clock skew sample off the api's Date header, into this workspace's
     state/clock_skew.json. tw_clock is loaded by path into a private module with its skew file
     made absolute (this thread must not depend on the cwd). False when nothing was sampled."""
-    import importlib.util
     path = os.path.join(ws, "lib", "tw_clock.py")
     if not os.path.isfile(path):
         return False
     try:
         import requests
-        spec = importlib.util.spec_from_file_location("_daemon_tw_clock", path)
-        tc = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(tc)
+        import secret_imports
+        tc = secret_imports.load_source("_daemon_tw_clock", path)  # from source, never a planted __pycache__ entry
         tc.SKEW_PATH = os.path.join(ws, "state", "clock_skew.json")
         base = os.environ.get("BLAVE_API_BASE", "https://api.blave.org")
         t0 = time.time()
@@ -1585,7 +1737,7 @@ def main(argv=None):
         _log("another local daemon already owns this workspace — exiting")
         return 3
     os.chdir(ws)
-    _workspace_first(ws)  # before Daemon() imports command_listener / president_connect
+    _workspace_lib(ws)  # before Daemon() imports command_listener / president_connect
     atomic_file.sweep_runtime_temps(ws, os.environ.get("BLAVE_AGENT_STATE") or os.path.join(base, "state"))
     _link_current(base)
     daemon = Daemon(ws, secret)

@@ -100,7 +100,7 @@ app.whenReady().then(async () => {
   const js = (s) => w.webContents.executeJavaScript(s, true);
   const T = (k) => js(`t(${JSON.stringify(k)})`);
   const Q = `const q = (x) => [...document.querySelectorAll(x)], g = (id) => document.getElementById(id);`;
-  const openRow = async (id) => { await js(`(async () => { const b = document.getElementById("rpt-back"); if (!b.hidden) b.click(); if (document.getElementById("rpt").hidden) document.getElementById("rpt-nav").click(); await new Promise((r) => setTimeout(r, 150)); document.querySelector('#rpt-rows .rpt-row[data-id="${id}"]').click(); })()`); await wait(500); };
+  const openRow = async (id) => { await js(`(async () => { const b = document.getElementById("rpt-back"); if (!b.hidden) b.click(); if (document.getElementById("rpt").hidden) rptMenuGo(); await new Promise((r) => setTimeout(r, 150)); document.querySelector('#rpt-rows .rpt-row[data-id="${id}"]').click(); })()`); await wait(500); };
 
   if (NEWS) {
     await openRow("tw-market-20260926");

@@ -1,7 +1,23 @@
-import hashlib, importlib, json, logging, os, re, sys, time
+import os, sys
+
+# Before any other import, in the process itself (not when a test imports this file): the workspace folders come
+# off sys.path and only lib/ is reachable from the workspace, through lib/secret_imports.py (audit 2026-11-19 M1).
+# os is loaded at interpreter startup and runpy is imported only once the workspace is off sys.path.
+# Same block in lib/president_worker.py, lib/capital_worker.py, lib/sinopac_worker.py, manager/reconciler.py,
+# manager/flatten.py.
+if __name__ == "__main__" and not __package__:
+    _WS = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+    _OWN = {os.path.normcase(os.path.realpath(d)) for d in (_WS, os.path.join(_WS, "lib"), os.path.join(_WS, "manager"))}
+    sys.path[:] = [p for p in sys.path if os.path.normcase(os.path.realpath(p or os.curdir)) not in _OWN]
+    import runpy
+    _imports = runpy.run_path(os.path.join(_WS, "lib", "secret_imports.py"))
+    _imports["install"](_WS, _imports["SCRIPT_SIBLINGS"])
+
+import hashlib, importlib, json, logging, re, time
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
+if not any(type(f).__name__ == "WorkspaceLibFinder" for f in sys.meta_path) and str(Path(__file__).parent.parent) not in sys.path:  # imported by a test; a run has the finder
+    sys.path.append(str(Path(__file__).parent.parent))
 
 from lib import events, guard, venue_errors, venue_traits
 try:
@@ -123,6 +139,9 @@ def _symbol_threshold(symbol, reduce_only=False):
     entirely. In account-read mode lib.portfolio also lays its drift band
     (max(5%, 2σ) of the target, same-side adjustments only) over both gates.
     """
+    # asked once per symbol inside reconcile() (compute_diff), next to its drift-band fetch: the
+    # progress stamp moves per symbol, so a long symbol loop is never read as a hang
+    _progress()
     now = time.time()
     cached = _min_order_gate.get(symbol)
     if not (cached and cached[0] > now):
@@ -144,6 +163,7 @@ def _symbol_threshold(symbol, reduce_only=False):
         cached = (now + MIN_ORDER_TTL_S, entry, reduce,
                   THRESHOLD - 0.5 * lot_usd if 0 < lot_usd < 2 * THRESHOLD else THRESHOLD)
         _min_order_gate[symbol] = cached
+        _progress()
     return cached[2] if reduce_only else cached[1]
 
 
@@ -1741,6 +1761,20 @@ def _president_claim_pending(started):
         _flush_settled(pending, PENDING_SENT_PATH, _save_pending_sent)
         return
     from lib import account_president, portfolio
+    no_data = getattr(account_president, 'positions_from_no_data', None)
+    try:
+        no_data_read = callable(no_data) and no_data()
+    except Exception:
+        no_data_read = False  # no readable snapshot: the read below fails (or is faked) as it always did
+    if no_data_read:
+        # a 查無資料 empty read says nothing about a parked order: matched against it a filled entry looks
+        # unfilled (cleared, then sent again) and a parked close looks like a late fill (the book zeroed
+        # over held lots). Claim nothing this round; the rows wait for a read with positions.
+        logging.info("[reconciler/president] positions read is 查無資料 — parked orders not claimed this round")
+        # the rows are unchanged, but the round's save still runs: it is what moves rows held outside the park
+        # file (its side file, this process) back into it (_save_claimed / _keep_outside)
+        _save_claimed(pending, venue_traits.PRESIDENT, end_of_round=True)
+        return
     nets = _president_nets()
     try:
         booked = portfolio._booked_park_ids('late_fill_park_id')
@@ -2467,6 +2501,46 @@ def get_positions():
     return auto_get_positions()
 
 
+# Test-only (spec live-order-hang-wake-0158 §6): every leg parks after its inflight marker and
+# before the send, so the hang watch, the kill, the respawn and its notices run for real on a
+# paper account. Only the environment of whoever starts the service turns it on (a systemd
+# drop-in, the desktop dev launch): no workspace file is read for it — the agent writes those —
+# and a process started from inside an agent turn (its turn variables are set) is refused.
+TEST_HANG_ENV = 'BLAVE_TEST_HANG_BEFORE_SEND'
+_TEST_HANG_S = None
+
+
+def _test_hang_from_env(env):
+    """Seconds each leg parks ('forever' / 'inf' = it never returns), or None = off."""
+    raw = env.get(TEST_HANG_ENV)
+    if raw is None or env.get('BLAVE_TURN_PID') or env.get('BLAVE_TURN_INTERRUPT_FILE'):
+        return None
+    raw = raw.strip().lower()
+    if raw in ('forever', 'inf'):
+        return float('inf')
+    try:
+        s = float(raw)
+    except ValueError:
+        return None
+    return s if 0 < s < float('inf') else None
+
+
+def _test_hang_label():
+    return 'forever' if _TEST_HANG_S == float('inf') else f'{_TEST_HANG_S:g}s'
+
+
+def _test_hang_park(symbol):
+    """Parks like a send that never answers: no progress touch and no stop check meanwhile. True =
+    the process is stopping by the time the park ends, so the leg is not sent."""
+    logging.warning(f"[reconciler] TEST {TEST_HANG_ENV}: {symbol} parked before the send "
+                    f"({_test_hang_label()})")
+    end = time.monotonic() + _TEST_HANG_S
+    while time.monotonic() < end:
+        time.sleep(max(0.0, min(1.0, end - time.monotonic())))
+    ex = sys.modules.get('lib.execute')
+    return bool(callable(getattr(ex, 'stopping', None)) and ex.stopping())
+
+
 def place_order(symbol, signed_diff, asset_spec=None, reduce_only=False,
                 exchange=None, contributors=None):
     """
@@ -2523,13 +2597,24 @@ def place_order(symbol, signed_diff, asset_spec=None, reduce_only=False,
         # within seconds and this reconciler is respawned with them — skip, not an error
         logging.info(f"[reconciler] {symbol}: 統一 credentials not handed over yet — skipped this round")
         return False
-    if venue_traits.has(exchange, 'hand_wired'):
-        return _hand_wired_impl(exchange)[1](symbol, signed_diff, asset_spec=asset_spec,
-                                             reduce_only=reduce_only)
-    from lib.execute import dispatch_order
-    return dispatch_order(symbol, signed_diff, asset_spec=asset_spec,
-                          reduce_only=reduce_only, exchange=exchange,
-                          contributors=contributors)
+    ex = sys.modules.get('lib.execute')
+    if callable(getattr(ex, 'stopping', None)) and ex.stopping():
+        # the desktop app is stopping this process: the leg in flight finishes, no new one starts
+        logging.info(f"[reconciler] {symbol}: stopping — not sent")
+        return False
+    _progress()
+    if _TEST_HANG_S is not None and _test_hang_park(symbol):
+        return False
+    try:
+        if venue_traits.has(exchange, 'hand_wired'):
+            return _hand_wired_impl(exchange)[1](symbol, signed_diff, asset_spec=asset_spec,
+                                                 reduce_only=reduce_only)
+        from lib.execute import dispatch_order
+        return dispatch_order(symbol, signed_diff, asset_spec=asset_spec,
+                              reduce_only=reduce_only, exchange=exchange,
+                              contributors=contributors)
+    finally:
+        _progress()
 
 
 # ── 讀持倉失敗怎麼辦 + 帳戶守門 (references/manager.md § Auto-halt) ──────────
@@ -2803,6 +2888,33 @@ def _save_account_guard(state):
         logging.warning(f"[reconciler] account guard state not persisted: {e}")
 
 
+def _president_no_data_held(venue=None):
+    """The 統一 rows the bot believes are held (its book, or the last good read) when this round's
+    統一 read is an empty list that came from 查無資料; None when the read is anything else."""
+    try:
+        venue = _current_venue() if venue is None else venue
+    except Exception:
+        return None
+    if venue != venue_traits.PRESIDENT:
+        return None
+    try:
+        from lib import account_president as _ap
+        if not callable(getattr(_ap, 'positions_from_no_data', None)) or not _ap.positions_from_no_data():
+            return None
+    except Exception:
+        return None  # no readable snapshot: get_positions has already failed on it
+    held = set()
+    try:
+        from lib.portfolio import ledger_positions
+        held |= {k for k, v in (ledger_positions(venue) or {}).items()
+                 if isinstance(v, dict) and float(v.get('size') or 0)}
+    except Exception:
+        held.add('(book unreadable)')  # cannot tell: not a flat to trust
+    held |= {k for k, v in _last_actual().items()
+             if isinstance(v, dict) and v.get('exchange') == venue and float(v.get('size') or 0)}
+    return sorted(held) or None
+
+
 def _last_actual():
     """The previous round's actual: reconcile() writes it before placing and a
     skipped round never reaches that write, so this is the last GOOD read."""
@@ -3018,6 +3130,14 @@ def _get_positions_guarded(now=None):
     """reconcile()'s get_positions_fn: the read plus failure classification,
     the outage events and the account guard. Raises ReadSkipped for a round
     that must place nothing without counting as a failure."""
+    _progress()
+    try:
+        return _get_positions_read(now)
+    finally:
+        _progress()
+
+
+def _get_positions_read(now=None):
     global _guard_due, _key_fp
     now = time.time() if now is None else now
     env = _read_env()
@@ -3061,6 +3181,16 @@ def _get_positions_guarded(now=None):
                               original=e) from e
         raise
     _claim_parked = False
+    held = _president_no_data_held()
+    if held:
+        # 統一 answered 查無資料 for the positions (the worker takes that as flat only with no margin in use),
+        # yet the book or the last good read holds 統一 rows. Taken as flat, two such reads would confirm a
+        # "manual close" (lib.portfolio.note_account_short), zero the book and open it again — double the
+        # real position. So it is a failed read: no orders, no book change; the outage clock runs as for
+        # any transient read failure. The same rule as manager/flatten._empty_read_untrusted.
+        e = RuntimeError(f"統一 answered 查無資料 for positions while {','.join(held)} are held — not taken as flat")
+        _on_read_failure(venue_traits.PRESIDENT, e, venue_errors.TRANSIENT, now)
+        raise ReadSkipped(f"president read not trusted — round skipped ({e})", original=e) from e
     _on_read_success(now)
     if not check:
         return result
@@ -3140,20 +3270,97 @@ except Exception as _e:
     _raw_send = None
 
 
+# Telegram goes out on its own thread, in order: lib/notify waits up to 30 s per chat per chunk, so a
+# slow or blocked api.telegram.org held the main loop for minutes after an order — long enough for the
+# hang watch (HANG_STALL_S) to kill a healthy reconciler, and three of those in an hour HALT it
+# (audit release-0157-merged D-M2). What is still queued at exit goes first (_tg_flush: atexit, a
+# cloud SIGTERM, runtime/local_daemon's stop path); past that budget it is logged as dropped.
+# A SIGKILL (the hang watch's kill, an OOM) loses what is queued without a line: accepted — HALT, order
+# errors and outages go through events.jsonl, not Telegram; what is lost is fill / summary chatter.
+# Bounded: at most TG_QUEUE_MAX waiting, and one older than TG_MAX_AGE_S when its turn comes (Telegram
+# was down for that long) is dropped with a line rather than sent as if it were news.
+import queue as _queue  # noqa: E402
+import threading as _threading  # noqa: E402
+
+_tg_queue = _queue.Queue(maxsize=200)
+TG_QUEUE_MAX = _tg_queue.maxsize
+_tg_thread = None
+_tg_lock = _threading.Lock()
+TG_FLUSH_EXIT_S = 60
+TG_TERM_S = 5          # a cloud SIGTERM (systemd stop, restart_reconciler): what the queue gets before we go
+TG_MAX_AGE_S = 30 * 60
+
+
+def _tg_deliver(msg):
+    try:
+        _raw_send(msg)
+    except Exception as e:
+        logging.warning(f"[reconciler] notification dropped ({e}): {str(msg)[:200]}")
+
+
+def _tg_worker():
+    while True:
+        at, msg = _tg_queue.get()
+        try:
+            if time.monotonic() - at > TG_MAX_AGE_S:
+                logging.warning(f"[reconciler] notification dropped (queued {int((time.monotonic() - at) // 60)} min ago, "
+                                f"Telegram unreachable meanwhile): {str(msg)[:200]}")
+            else:
+                _tg_deliver(msg)
+        finally:
+            _tg_queue.task_done()
+
+
 def send_telegram(msg):
-    """Never raises. A rejected send (429, "chat not found") inside the main
+    """Never raises, never waits on Telegram. A rejected send (429, "chat not found") inside the main
     loop's error handler would otherwise escape the loop and exit the process;
     inside _halt it would replace the error being classified. HALT, order
     errors and outage events reach the platform through the report payload
     and events.jsonl, not through this. Inline rather than lib.notify.safe:
     a workspace update can leave lib/notify.py older than this file."""
+    global _tg_thread
     if _raw_send is None:
         logging.warning(f"[notify-unavailable] {msg}")
         return
     try:
-        _raw_send(msg)
-    except Exception as e:
-        logging.warning(f"[reconciler] notification dropped ({e}): {str(msg)[:200]}")
+        with _tg_lock:  # one worker, or two threads' first calls could start two and reorder
+            if _tg_thread is None or not _tg_thread.is_alive():
+                _tg_thread = _threading.Thread(target=_tg_worker, name="telegram", daemon=True)
+                _tg_thread.start()
+    except Exception as e:  # no thread to be had: send here, the old way
+        logging.warning(f"[reconciler] notification thread unavailable ({e}) — sending inline")
+        _tg_deliver(msg)
+        return
+    try:
+        _tg_queue.put_nowait((time.monotonic(), msg))
+    except _queue.Full:
+        logging.warning(f"[reconciler] notification dropped ({TG_QUEUE_MAX} already waiting on Telegram): {str(msg)[:200]}")
+
+
+def _tg_flush(deadline=None):
+    """Wait for the queued notifications, up to `deadline` (monotonic; default TG_FLUSH_EXIT_S from
+    now), touching the progress stamp meanwhile. → how many are still unsent (logged as dropped)."""
+    q = _tg_queue
+    deadline = time.monotonic() + TG_FLUSH_EXIT_S if deadline is None else deadline
+    while q.unfinished_tasks and time.monotonic() < deadline and _tg_thread is not None and _tg_thread.is_alive():
+        _progress()
+        time.sleep(0.1)
+    left = q.unfinished_tasks
+    if left:
+        logging.warning(f"[reconciler] {left} notification(s) dropped: still unsent when the reconciler stopped")
+    return left
+
+
+def _on_term(signum, frame):
+    """The cloud's stop (systemd, restart_reconciler) is a plain SIGTERM: before, it ended the process at
+    once; now the queue gets TG_TERM_S, then the same exit status. Only installed when nobody else
+    handles SIGTERM — on the desktop runtime/local_daemon's handler owns it (and flushes itself)."""
+    _tg_flush(time.monotonic() + TG_TERM_S)
+    os._exit(128 + signum)
+
+
+import atexit as _atexit  # noqa: E402
+_atexit.register(_tg_flush)
 
 
 HEARTBEAT_PATH = Path('state/heartbeat/reconciler')
@@ -3199,10 +3406,14 @@ WAKE_GAP_S = 60
 
 
 def _poll_sleep():
+    global _poll_gap
     t0 = time.time()
     time.sleep(POLL_INTERVAL)
-    if time.time() - t0 <= POLL_INTERVAL + WAKE_GAP_S:
+    t1 = time.time()
+    if t1 - t0 <= POLL_INTERVAL + WAKE_GAP_S:
         return False
+    if os.environ.get("BLAVE_AGENT_LOCAL") == "1":
+        _poll_gap = (t0, t1)  # _wake_check picks it up at the top of the next round
     oc = sys.modules.get("lib.order_capital")
     if oc is not None and os.environ.get("BLAVE_AGENT_LOCAL") == "1":
         oc.reset_session()
@@ -3337,7 +3548,242 @@ def _hold_singleton():
     return fd
 
 
+# ── Hang watch: progress stamp + the startup half (desktop 0.1.58) ───────────────────────────────
+# The runtime watch (runtime/hang_watch.py, from local_daemon's tick and the cloud command_listener)
+# kills a reconciler whose stamp has not moved for its threshold and leaves the respawn to the
+# supervisor. Content written once at startup = this process's pid = its proof that it is a version
+# that marks every order leg (lib/portfolio's "<symbol>#market") — an older one is never killed.
+# Touched at the top of every loop, around the startup sweep/reap, around every order leg, every
+# position read and every venue-minimum lookup. Not the heartbeat: GATED_MARKER must stay in step
+# with that one.
+PROGRESS_PATH = Path('state/heartbeat/reconciler_progress')
+HANG_KILL_PATH = Path('state/execution/hang_kill.json')  # = runtime/hang_watch.RECORD
+HANG_RECORD_FRESH_S = 900
+_progress_on = False
+_progress_err_logged = False
+
+
+def _progress_capable():
+    """lib/execute and lib/portfolio are both 0.1.58+: a workspace can be half updated."""
+    try:
+        import inspect
+        from lib import execute as ex, portfolio as pf
+        if not all(callable(getattr(ex, n, None)) for n in ('sync_leg_active', 'stopping', 'request_stop')):
+            return False
+        if not callable(getattr(pf, 'set_wake_hold', None)):
+            return False
+        return 'cause' in inspect.signature(ex.reap_dead_inflight).parameters
+    except Exception:
+        return False
+
+
+def _progress_init():
+    global _progress_on
+    _progress_on = False
+    if not _progress_capable():
+        logging.info("[reconciler] lib older than the hang watch — no progress stamp")
+        return
+    try:
+        PROGRESS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        tmp = PROGRESS_PATH.with_name(PROGRESS_PATH.name + '.tmp')
+        # ppid: on the Windows desktop the daemon's child is the venv launcher, this process its child
+        # at: when this process started watching itself — the Windows desktop checks it against the
+        # process's creation time before it kills that pid (runtime/local_daemon._win_is_our_reconciler)
+        tmp.write_text(json.dumps({"pid": os.getpid(), "ppid": os.getppid(), "at": time.time(), "v": 1}))
+        atomic_replace(str(tmp), str(PROGRESS_PATH))
+        _progress_on = True
+    except OSError as e:
+        logging.warning(f"[reconciler] progress stamp not written ({e}) — not watched for hangs")
+
+
+def _progress():
+    global _progress_err_logged
+    if not _progress_on:
+        return
+    try:
+        os.utime(PROGRESS_PATH)
+        _progress_err_logged = False
+    except OSError as e:
+        if not _progress_err_logged:
+            _progress_err_logged = True
+            logging.warning(f"[reconciler] progress stamp touch failed: {e}")
+
+
+def _reap(cause):
+    """reap_dead_inflight, with the cause only when this lib takes it (signature, not a TypeError
+    retry: a TypeError from inside reap would run its HALT and event twice)."""
+    import inspect
+    from lib.execute import reap_dead_inflight
+    try:
+        takes = 'cause' in inspect.signature(reap_dead_inflight).parameters
+    except (TypeError, ValueError):
+        takes = False
+    return reap_dead_inflight(cause=cause) if cause and takes else reap_dead_inflight()
+
+
+def _startup_reap(now=None):
+    """The startup reap plus the one notice for a hang kill (spec §2.4); the type sent, or None.
+    Markers on disk now + self_ledger on = the reap HALTs and sends execution_interrupted (cause
+    hang when the kill record is this one's), so nothing else is sent. Otherwise a fresh record
+    gets reconciler_hang_halted (the watch tripped HALT, third hang) or reconciler_hang_restarted.
+    The record is removed whatever its age: one left by a failed respawn goes at the next good start."""
+    now = time.time() if now is None else now
+    try:
+        rec = load_json(str(HANG_KILL_PATH))
+        rec = rec if isinstance(rec, dict) else {}
+    except (OSError, ValueError):
+        rec = None
+    at = (rec or {}).get('at')
+    hang = (rec is not None and rec.get('pid') != os.getpid() and isinstance(at, (int, float))
+            and 0 <= now - at <= HANG_RECORD_FRESH_S)
+    if rec is not None and not hang:
+        logging.info(f"[reconciler] old hang record ({rec}) — removed, nothing sent")
+    had, own = [], True
+    try:
+        from lib.execute import list_inflight, _own_only
+        had = list_inflight()
+        try:
+            own = _own_only()
+        except Exception:
+            own = True  # reap's own rule: can't read config — assume the risky mode
+    except Exception as e:
+        logging.warning(f"[reconciler] in-flight markers unreadable before the reap: {e}")
+    try:
+        _reap('hang' if hang else None)
+    except Exception as e:
+        logging.warning(f"[reconciler] dead-inflight reap skipped: {e}")
+    sent = None
+    if hang and not (had and own):
+        if rec.get('halt') is True:
+            sent = 'reconciler_hang_halted'
+            events.emit("reconciler_hang_halted")
+        else:
+            sent = 'reconciler_hang_restarted'
+            events.emit("reconciler_hang_restarted")
+        logging.warning(f"[reconciler] previous process (pid {rec.get('pid')}) was killed hung — {sent}")
+    if rec is not None:
+        try:
+            HANG_KILL_PATH.unlink()
+        except FileNotFoundError:
+            pass
+        except OSError as e:
+            logging.warning(f"[reconciler] hang record not removed: {e}")
+    return sent
+
+
+# ── Woke from sleep (desktop only, Wei 11-17 甲) ───────────────────────────────────────────────
+# A gap is either a poll sleep that came back late (_poll_sleep) or, for a sleep inside a round,
+# wall clock running ahead of the monotonic clock between two loop tops (macOS and Linux do not
+# count suspend in it). After one: entries and adds of a strategy that has not recomputed since
+# wait up to WAKE_HOLD_MAX_S (lib/portfolio.set_wake_hold); reduces and closes go at once. A long
+# gap on a machine with real money at stake is told once (machine_woke).
+WAKE_HOLD_MAX_S = 180
+WAKE_NOTIFY_MIN_S = 1800
+WAKE_PATH = Path('state/execution/wake.json')
+_poll_gap = None
+_loop_clock = None
+_wake_until = None
+
+
+def _wake_check(wall=None, mono=None):
+    """At the top of each loop: (from, to) of a sleep since the last top, else None."""
+    global _poll_gap, _loop_clock
+    wall = time.time() if wall is None else wall
+    mono = time.monotonic() if mono is None else mono
+    prev, _loop_clock = _loop_clock, (wall, mono)
+    gap, _poll_gap = _poll_gap, None
+    if os.environ.get("BLAVE_AGENT_LOCAL") != "1":
+        return None
+    if prev is not None and (wall - prev[0]) - (mono - prev[1]) > WAKE_GAP_S:
+        gap = (prev[0], wall)
+    return gap
+
+
+def _write_wake(doc):
+    try:
+        WAKE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        tmp = WAKE_PATH.with_name(WAKE_PATH.name + '.tmp')
+        tmp.write_text(json.dumps(doc))
+        atomic_replace(str(tmp), str(WAKE_PATH))
+    except OSError as e:
+        logging.warning(f"[reconciler] {WAKE_PATH} not written: {e}")
+
+
+def _funded(cfg):
+    """{strategy: venue} with an amount on it."""
+    amounts, exchanges = strategy_amounts(cfg), cfg.get('exchanges') or {}
+    out = {}
+    for name, amt in amounts.items():
+        try:
+            if float(amt) != 0 and isinstance(exchanges, dict) and exchanges.get(name):
+                out[name] = str(exchanges[name]).lower()
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def _real_money_at_stake(cfg):
+    if any(v != 'paper' for v in _funded(cfg).values()):
+        return True
+    try:
+        snap = load_json('manager/last_reconcile.json')
+    except (OSError, ValueError):
+        return False
+    target = (snap.get('target') or {}) if isinstance(snap, dict) else {}
+    real_bound = any(v.lower() != 'paper' for v in _env_venue_ids())
+    for key, row in ((snap.get('actual') or {}) if isinstance(snap, dict) else {}).items():
+        if not isinstance(row, dict) or not float(row.get('size') or 0):
+            continue
+        venue = (target.get(key) or {}).get('exchange') if isinstance(target.get(key), dict) else None
+        if (venue and str(venue).lower() != 'paper') or (not venue and real_bound):
+            return True
+    return False
+
+
+def _on_wake(frm, to):
+    """A sleep from `frm` to `to` (wall clock): hold entries, tell once."""
+    global _wake_until
+    _write_wake({"from": int(frm), "to": int(to)})
+    pf = sys.modules.get('lib.portfolio')
+    if not callable(getattr(pf, 'set_wake_hold', None)):
+        return  # an older lib: trade at once, as before 0.1.58
+    pf.set_wake_hold(to, to + WAKE_HOLD_MAX_S)
+    _wake_until = to + WAKE_HOLD_MAX_S
+    logging.info(f"[reconciler] woke after {int(to - frm)}s — entries of strategies not recomputed since "
+                 f"wait up to {WAKE_HOLD_MAX_S}s")
+    if to - frm < WAKE_NOTIFY_MIN_S:
+        return
+    if guard.halted() or RESTART_STOP_PATH.exists() or not _venue_bound():
+        # paused, stopped after a reboot or nothing bound: no order is going out, so "trading
+        # resumed" would contradict the page (audit 0.1.57 S3)
+        logging.info("[reconciler] woke while not trading — no wake notice")
+        return
+    try:
+        cfg = load_portfolio_config()
+        if not _real_money_at_stake(cfg):
+            return
+        held = any(not pf._recomputed_since_one(n, to, cfg) for n in _funded(cfg))
+    except Exception as e:
+        logging.warning(f"[reconciler] wake notice skipped: {e}")
+        return
+    events.emit("machine_woke", minutes=int((to - frm) // 60), held=held)
+
+
+def _wake_expired(now=None):
+    """True once, when the wake window ends: the hold goes and a round is due."""
+    global _wake_until
+    if _wake_until is None or (time.time() if now is None else now) < _wake_until:
+        return False
+    _wake_until = None
+    pf = sys.modules.get('lib.portfolio')
+    if callable(getattr(pf, 'clear_wake_hold', None)):
+        pf.clear_wake_hold()
+    return True
+
+
 if __name__ == '__main__':
+    _TEST_HANG_S = _test_hang_from_env(os.environ)   # read before the turn variables go below
+    _test_hang_raw = os.environ.pop(TEST_HANG_ENV, None)   # no child of this process inherits it
     # resident, never part of an agent turn (a tmux / nohup start from inside one hands these over):
     # lib/guard must not hold the turn order lock for this process's whole life
     os.environ.pop("BLAVE_TURN_INTERRUPT_FILE", None)
@@ -3349,13 +3795,28 @@ if __name__ == '__main__':
         sys.exit(DUPLICATE_EXIT)
     logging.info(f"Reconciler started (poll={POLL_INTERVAL}s, "
                  f"threshold=max({THRESHOLD}, per-symbol venue minimum))")
+    if _TEST_HANG_S is not None:
+        logging.warning(f"[reconciler] !!! TEST SWITCH {TEST_HANG_ENV} ON: every order leg parks "
+                        f"{_test_hang_label()} after its inflight marker, before the send — "
+                        f"test machines on a paper account only !!!")
+    elif _test_hang_raw is not None:
+        logging.warning(f"[reconciler] {TEST_HANG_ENV}={_test_hang_raw!r} ignored "
+                        f"(started from inside an agent turn, or not a positive number / 'forever')")
+    _progress_init()
+    import signal as _signal
+    if _signal.getsignal(_signal.SIGTERM) in (_signal.SIG_DFL, None):
+        _signal.signal(_signal.SIGTERM, _on_term)
 
     # A crash mid-chase strands a resting limit order on the venue (market/TWAP
     # slices die clean — only chase posts resting orders). Sweep our own
     # fingerprinted orders once at startup; best-effort, never blocks the loop.
+    _progress()
     try:
         from lib.venue_wiring import sweep_orphan_orders
-        _swept = sweep_orphan_orders()
+        import inspect as _inspect
+        # every cancel moves the stamp: with a slow venue, 15 s × N orphans passed HANG_STALL_S (D-M2)
+        _swept = (sweep_orphan_orders(on_each=_progress)
+                  if 'on_each' in _inspect.signature(sweep_orphan_orders).parameters else sweep_orphan_orders())
         if _swept:
             send_telegram(f"♻️ cancelled {_swept} resting order(s) left by a previous run")
     except Exception as _e:
@@ -3365,12 +3826,10 @@ if __name__ == '__main__':
     # exchange without logging — under self_ledger that understates the book
     # and the next round would re-buy it. reap_dead_inflight() trips HALT and
     # notifies instead of trading on a book known to be missing fills
-    # (audit P1 #1). Best-effort like the sweep above.
-    try:
-        from lib.execute import reap_dead_inflight
-        reap_dead_inflight()
-    except Exception as _e:
-        logging.warning(f"[reconciler] dead-inflight reap skipped: {_e}")
+    # (audit P1 #1). Best-effort like the sweep above. A hang kill's one notice goes from here.
+    _progress()
+    _startup_reap()
+    _progress()
 
     try:  # resident: an unmeasured clock may ask the api once before a TW futures gate acts on it
         from lib import tw_clock as _twc
@@ -3396,6 +3855,12 @@ if __name__ == '__main__':
         HEARTBEAT_PATH.parent.mkdir(parents=True, exist_ok=True)
         HEARTBEAT_PATH.touch()
         GATED_MARKER_PATH.touch()
+        _progress()
+        _gap = _wake_check()
+        if _gap:
+            _on_wake(*_gap)
+        if _wake_expired():
+            force_next = True  # strategies still not recomputed trade their last target now
 
         if _update_hold():
             _poll_sleep()

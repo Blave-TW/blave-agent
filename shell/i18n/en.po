@@ -5741,7 +5741,7 @@ msgid "lib.bb.planRenew"
 msgstr "Renews every 30 days from {d}"
 
 msgid "lib.bb.planTail"
-msgstr "Renewals use your balance first, then your card. Cancel anytime on the plan page. No refunds."
+msgstr "Renewals come from your balance if it covers it all, otherwise all on your card. Cancel anytime on the plan page. No refunds."
 
 msgid "lib.bb.planOk"
 msgstr "Add Card & Pay {p}"
@@ -6022,6 +6022,16 @@ msgstr "Research"
 
 msgid "rpt.newMark"
 msgstr "New report"
+
+# 左下第一格的選單(app.js amPaint):說明文件那一項;第一格的名稱沒登入是 am.menu、已登入是 am.acct
+msgid "am.docs"
+msgstr "Docs"
+
+msgid "am.menu"
+msgstr "Menu"
+
+msgid "am.acct"
+msgstr "Account"
 
 # 新增報告 modal(§1.5;字逐字抄 web 的 workspace_rp_*,拿掉排程與「更多 › 報告」的地點詞)
 msgid "rpt.new.title"
@@ -6430,11 +6440,30 @@ msgstr "Message to send"
 msgid "ns.previewEmpty"
 msgstr "—"
 
-msgid "ns.libHint"
-msgstr "Not sure where to start?"
-
 msgid "ns.libLink"
 msgstr "Browse ready-made strategies"
+
+# 新增策略框的範例列(newstrategy.js NS_EX):三組名稱與邏輯四個市場共用,標的與週期在 NS_EX_SYM;字同 rpt.new.examples
+msgid "ns.ex"
+msgstr "Examples:"
+
+msgid "ns.ex.1.name"
+msgstr "MA Golden Cross"
+
+msgid "ns.ex.1.logic"
+msgstr "Go long when the short MA crosses above the long MA; exit when it crosses below."
+
+msgid "ns.ex.2.name"
+msgstr "RSI Bollinger Reversal"
+
+msgid "ns.ex.2.logic"
+msgstr "Go long when RSI is oversold and price touches the lower band; exit at the middle band."
+
+msgid "ns.ex.3.name"
+msgstr "Breakout"
+
+msgid "ns.ex.3.logic"
+msgstr "Go long when the close breaks the 20-day high; exit below the 10-day low."
 
 msgid "ns.submit"
 msgstr "Send to Chat"
@@ -8599,7 +8628,7 @@ msgid "pv.d.noTrial.m"
 msgstr "This account has no first-card trial. Blave data comes with a Blave Agent plan (from {p} TWD every {pd} days)."
 
 msgid "pv.d.trial.m"
-msgstr "Data is free until {d}. When the trial ends, the first period {p} TWD is charged, then it renews every {pd} days. Paid from your balance first, the card if it doesn’t cover a period."
+msgstr "Data is free until {d}. When the trial ends, the first period {p} TWD is charged, then it renews every {pd} days. From your balance if it covers it all, otherwise all on your card."
 
 msgid "pv.d.noPrice.m"
 msgstr "Your AI setup stays as it is. When the trial ends, the first plan period is charged automatically; cancel during the trial and nothing is charged."
@@ -8616,7 +8645,7 @@ msgid "pv.f.out.m"
 msgstr "After the trial, billing starts automatically at {p} TWD every {pd} days."
 
 msgid "pv.f.offer.m"
-msgstr "A {v} TWD card check goes to your balance, and auto top-up turns on. The trial runs {t} days, then the first period ({p} TWD every {pd} days) is charged automatically: from your balance first, this card if that’s short. Cancel during the trial and nothing is charged."
+msgstr "A {v} TWD card check goes to your balance, and auto top-up turns on. The trial runs {t} days, then the first period ({p} TWD every {pd} days) is charged automatically, from your balance if it covers it all, otherwise all on this card. Cancel during the trial and nothing is charged."
 
 msgid "pv.e.sub.m"
 msgstr "When the trial ends, the first period is charged automatically: {p} TWD every {pd} days. Cancel during the trial and nothing is charged."
@@ -8643,7 +8672,7 @@ msgid "pv.d.plan.m"
 msgstr "Blave data comes with a Blave Agent plan (from {p} TWD every {pd} days). Without one, this app runs on public data only."
 
 msgid "pv.f.plan.m"
-msgstr "Starting pays the first period now: from your wallet first, then your card."
+msgstr "Starting pays the first period now, from your balance if it covers it all, otherwise all on your card."
 
 msgid "pv.apiPlan"
 msgstr "API Plan"
@@ -8697,10 +8726,10 @@ msgid "cf.m.body1"
 msgstr "The plan (Linux Starter) includes Blave data, in this app right away. It doesn’t start a cloud machine; starting a Linux Starter machine on the website later costs nothing extra."
 
 msgid "cf.m.body2"
-msgstr "The first period is paid now: from your wallet first, then the card on file if the wallet can’t cover it."
+msgstr "The first period is paid now, from your balance if it covers it all, otherwise all on your card."
 
 msgid "cf.m.body2Trial"
-msgstr "Nothing is charged until {d}. Then the first period of the cycle you pick is paid: wallet first, then your card. Cancel on the website before then and nothing is charged."
+msgstr "Nothing is charged until {d}. Then the first period of the cycle you pick is paid, from your balance if it covers it all, otherwise all on your card. Cancel on the website before then and nothing is charged."
 
 msgid "cf.m.body3"
 msgstr "It renews each period. If a payment fails, Blave data pauses and it’s retried daily; after {g} days unpaid the plan ends. Cancelling keeps it to the end of the period, with no refund."
@@ -8858,7 +8887,7 @@ msgstr "Start Plan"
 msgid "cf.m.title"
 msgstr "Start the Blave Agent Plan?"
 msgid "pv.d.trial.mNoNum"
-msgstr "Data is free until {d}. When the trial ends, the first period {p} TWD is charged, then it renews each period. Paid from your balance first, the card if it doesn’t cover a period."
+msgstr "Data is free until {d}. When the trial ends, the first period {p} TWD is charged, then it renews each period. From your balance if it covers it all, otherwise all on your card."
 
 msgid "pv.h.plan.m"
 msgstr "Blave data, as soon as the plan starts"
@@ -9439,7 +9468,11 @@ msgid "tr.fogPosPick"
 msgstr "Pick strategies to start trading."
 
 msgid "tr.fogPosNew"
-msgstr "Ask the agent for a strategy. Once it’s backtested, it can trade."
+msgstr "Trading needs a backtested strategy."
+
+# 自動下單沒連帳戶、這台電腦清單是空的那張霧卡(portfolio.js poFog("onb-new"))
+msgid "tr.fogOnbNew"
+msgstr "Auto trading needs a strategy first."
 
 msgid "po.goAmounts"
 msgstr "Set Amounts"
@@ -10506,6 +10539,52 @@ msgstr "an order on {sym} may have filled, so nothing goes out. Don't place it a
 msgid "tr.ov.evHaltUnconfirmedNoteNosym"
 msgstr "an order may have filled, so nothing goes out. Don't place it again yourself: tell your agent how much filled, then press Start trading."
 
+# 0.1.58 下單程式卡住自救、睡醒(copy-0158)
+msgid "tr.ov.evExecHang"
+msgstr "Paused: hung while sending an order"
+
+msgid "tr.ov.evHangRestarted"
+msgstr "Order program restarted after hanging"
+
+msgid "tr.ov.evHangHalted"
+msgstr "Order program kept hanging; paused"
+
+msgid "tr.ov.evHaltHangNote"
+msgstr "order program kept hanging"
+
+msgid "tr.haltHangWatch"
+msgstr "The order program hung three times in an hour. Exits and stops won't run either; press Start trading to try again."
+
+msgid "tr.ov.evWoke"
+msgstr "Computer woke; trading resumed"
+
+msgid "tr.ov.evWokeNote"
+msgstr "slept {d}"
+
+msgid "tr.ov.evWokeNoteHeld"
+msgstr "slept {d}; entries and adds wait up to 3 min"
+
+msgid "tr.ov.durMin"
+msgstr "{m} min"
+
+msgid "tr.ov.durHour"
+msgstr "{h} h"
+
+msgid "tr.ov.durHourMin"
+msgstr "{h} h {m} min"
+
+msgid "tm.evExecHangNote"
+msgstr "Hung while sending; {keys} may have filled."
+
+msgid "tm.evHangHaltedNote"
+msgstr "The order program hung 3 times in an hour. Exits and stops won't run."
+
+msgid "tm.evWokeNote"
+msgstr "Your computer slept for {d} and placed no orders meanwhile. Trading now follows the latest signals."
+
+msgid "tm.evWokeNoteHeld"
+msgstr "Your computer slept for {d} and placed no orders meanwhile. Trading now follows the latest signals. New entries and adds wait for strategies to recompute, up to 3 minutes."
+
 msgid "tm.evHaltUnconfirmedNote"
 msgstr "An order may have filled, so nothing goes out. Don't place it again yourself: tell your agent how much filled, then press Start trading."
 
@@ -10908,10 +10987,10 @@ msgstr "Backtest a strategy on TAIFEX {code} {tf} bars, using {per}; the strateg
 
 # 電腦版 UI 修正 0.1.44(spec desktop-ui-fixes-2026-11-02)
 msgid "po.fogNew"
-msgstr "Ask the agent for a strategy. Once it’s backtested, you can size it."
+msgstr "Sizing needs a backtested strategy."
 
 msgid "mg.fogNew"
-msgstr "Ask the agent for a few strategies. Once they’re backtested, you can optimize."
+msgstr "Optimizing needs backtested strategies."
 
 msgid "lib.gate.naShort"
 msgstr "N/A"
@@ -11296,3 +11375,432 @@ msgstr "Don't Send"
 # 這一塊的說明行
 msgid "err.priv.note"
 msgstr "Error messages are sent only when you press Send. Each report includes the error type, where it failed, versions and install ID, plus your account if you're signed in. All reports are kept for 90 days."
+
+# 0.1.57 改價 v3 付款框與額度提示(renderer/planv3.js;mockup conversion-journey-2026-11-16)
+msgid "p3.a.title"
+msgstr "Blave Agent Plan"
+
+msgid "p3.a.unit"
+msgstr "TWD / {d} days"
+
+msgid "p3.a.unitNoNum"
+msgstr "TWD"
+
+msgid "p3.tick.data"
+msgstr "Blave data in the desktop app"
+
+msgid "p3.tick.ai"
+msgstr "AI credit"
+
+msgid "p3.tick.aiPeriod"
+msgstr "{n} TWD per period"
+
+msgid "p3.tick.aiTrial"
+msgstr "{q} TWD in the trial, then {n} TWD per period"
+
+msgid "p3.tick.pro"
+msgstr "Data Studio Pro"
+
+
+
+
+
+
+
+msgid "p3.topup"
+msgstr "Auto top-up covers AI use beyond your credit."
+
+msgid "p3.topupTip"
+msgstr "When your balance drops below {lo} TWD, this card adds {a} TWD."
+
+
+
+
+
+
+
+
+msgid "p3.a.out"
+msgstr "New accounts get a {t}-day free trial."
+
+msgid "p3.a.okTrial"
+msgstr "Add Card, Try {t} Days"
+
+msgid "p3.a.okTrialNoNum"
+msgstr "Add Card, Try It"
+
+msgid "p3.a.okBindPay"
+msgstr "Add Card and Pay {p} TWD"
+
+msgid "p3.a.okPay"
+msgstr "Pay {p} TWD"
+
+msgid "p3.a.walletPay"
+msgstr "Pay From Balance"
+
+msgid "p3.crypto"
+msgstr "Pay With Crypto"
+
+msgid "p3.pro.dup"
+msgstr "Your Pro subscription still renews. The plan already includes Pro."
+
+msgid "p3.pro.paid"
+msgstr "Pro is paid through {at}. No refunds."
+
+msgid "p3.pro.web"
+msgstr "Cancel Pro on the Website"
+
+msgid "p3.pro.ios"
+msgstr "Cancel in the App Store"
+
+msgid "p3.pro.android"
+msgstr "Cancel in Google Play"
+
+msgid "p3.repriced"
+msgstr "The price just changed. Please confirm again."
+
+msgid "p3.resourced"
+msgstr "How you'll pay just changed. Please confirm again."
+
+msgid "p3.paying"
+msgstr "Paying…"
+
+msgid "p3.h.title"
+msgstr "Start a Cloud Machine"
+
+msgid "p3.h.spec"
+msgstr "Machine size"
+
+msgid "p3.h.os"
+msgstr "System"
+
+msgid "p3.h.size"
+msgstr "Size"
+
+msgid "p3.h.starter"
+msgstr "Basic"
+
+msgid "p3.h.premium"
+msgstr "Advanced"
+
+msgid "p3.h.max"
+msgstr "Top"
+
+msgid "p3.h.winTip"
+msgstr "Only needed for Capital"
+
+msgid "p3.h.winNote"
+msgstr "Windows is only needed for Capital."
+
+msgid "p3.h.specV"
+msgstr "{c} vCPU · {r} GB"
+
+msgid "p3.tier.linux_starter"
+msgstr "Linux Basic"
+
+msgid "p3.tier.linux_premium"
+msgstr "Linux Advanced"
+
+msgid "p3.tier.linux_max"
+msgstr "Linux Top"
+
+msgid "p3.tier.windows_starter"
+msgstr "Windows Basic"
+
+msgid "p3.tier.windows_premium"
+msgstr "Windows Advanced"
+
+msgid "p3.tier.windows_max"
+msgstr "Windows Top"
+
+msgid "p3.tier.agent"
+msgstr "Blave Agent plan"
+
+msgid "p3.s.agent"
+msgstr "Blave Agent plan"
+
+msgid "p3.s.host"
+msgstr "{tier} machine"
+
+msgid "p3.s.hostPlan"
+msgstr "{tier} machine and plan"
+
+msgid "p3.s.hostLeft"
+msgstr "{tier} machine, {n} days left this period"
+
+msgid "p3.s.diff"
+msgstr "{tier} minus {paid}, {n} days left"
+
+msgid "p3.s.paidAlready"
+msgstr "{tier} machine, already paid this period"
+
+msgid "p3.s.tot"
+msgstr "{p} TWD"
+
+msgid "p3.src.wallet"
+msgstr "From your balance today"
+
+msgid "p3.src.card"
+msgstr "Today, card ending {l}"
+
+msgid "p3.src.cardAny"
+msgstr "Today, your card on file"
+
+msgid "p3.src.none"
+msgstr "Due today"
+
+msgid "p3.src.free"
+msgstr "No charge today"
+
+
+
+
+msgid "p3.h.next"
+msgstr "From {at}, {p} TWD every {d} days."
+
+msgid "p3.h.nextY"
+msgstr "From {at}, {p} TWD a year."
+
+msgid "p3.h.trialEnd"
+msgstr "This ends your trial and starts your first period today."
+
+msgid "p3.h.cap"
+msgstr "You've started {n} paid machines today. Try again after 00:00."
+
+msgid "p3.h.capNoNum"
+msgstr "Today's paid machine starts are used up. Try again after 00:00."
+
+msgid "p3.h.okPay"
+msgstr "Pay {p} TWD and Start"
+
+msgid "p3.h.okDiff"
+msgstr "Pay {p} TWD More and Start"
+
+msgid "p3.h.okFree"
+msgstr "Start Machine"
+
+msgid "p3.h.okBind"
+msgstr "Add Card and Pay {p} TWD"
+
+
+msgid "p3.unl"
+msgstr "You paid for a {tier} machine this period but haven't started it."
+
+msgid "p3.w.wait"
+msgstr "The payment page is open in your browser. Come back here when you're done."
+
+msgid "p3.w.reopen"
+msgstr "Reopen Payment Page"
+
+msgid "p3.w.drop"
+msgstr "Never Mind"
+
+msgid "p3.w.failTrial"
+msgstr "The card wasn't added. Nothing was charged."
+
+msgid "p3.w.failPay"
+msgstr "The payment didn't go through. Nothing was charged."
+
+msgid "p3.w.retry"
+msgstr "Try Again"
+
+msgid "p3.w.okPlan"
+msgstr "Your Blave Agent plan is active."
+
+msgid "p3.w.wallet"
+msgstr "{p} TWD was charged but the plan didn't start. The money is in your balance."
+
+msgid "p3.w.refund"
+msgstr "We'll contact you about a refund."
+
+msgid "p3.w.unsettled"
+msgstr "We're still confirming the payment. Please don't pay again."
+
+msgid "p3.err.quote"
+msgstr "Can't load the price right now. Try again shortly."
+
+msgid "p3.err.charge"
+msgstr "The charge didn't go through. Nothing was started."
+
+msgid "p3.err.busy"
+msgstr "A previous charge is still processing. Check back shortly."
+
+msgid "p3.err.net"
+msgstr "No response yet. Don't press again. Check Account & Plan shortly."
+
+msgid "p3.err.server"
+msgstr "That didn't work. Try again shortly."
+
+msgid "p3.err.capDown"
+msgstr "Can't start a cloud machine right now. Nothing was charged. Try again shortly."
+
+msgid "p3.err.paidNoServer"
+msgstr "{p} TWD was charged but the machine didn't start. Starting it again this period is free."
+
+msgid "p3.err.hasServer"
+msgstr "You already have a cloud machine."
+
+msgid "p3.err.active"
+msgstr "Your plan is already active."
+
+msgid "p3.err.walletShort"
+msgstr "Your balance doesn't cover this."
+
+msgid "p3.c.paperH"
+msgstr "Paper-trade your strategy, no AI needed"
+
+msgid "p3.c.recent"
+msgstr "Most recent: {name}"
+
+msgid "p3.c.see"
+msgstr "See My Strategy"
+
+msgid "p3.c.trialH"
+msgstr "{q} TWD of AI credit, plus Blave data"
+
+msgid "p3.c.trialHNoNum"
+msgstr "AI credit, plus Blave data"
+
+msgid "p3.c.planH"
+msgstr "{n} TWD of AI credit each period, plus Blave data"
+
+msgid "p3.c.planHNoNum"
+msgstr "AI credit each period, plus Blave data"
+
+msgid "p3.c.plan"
+msgstr "Start a Plan"
+
+msgid "p3.c.running"
+msgstr "Your strategies keep running."
+
+msgid "p3.low"
+msgstr "Under {n} TWD of AI credit left."
+
+msgid "p3.low.then"
+msgstr "Once it runs out, your balance pays, topped up with {a} TWD below {lo} TWD."
+
+msgid "p3.low.thenNoCard"
+msgstr "Once it runs out, your balance pays."
+
+msgid "p3.up"
+msgstr "AI credit is used up, so this turn came from your balance."
+
+msgid "p3.up.next"
+msgstr "{n} TWD more on {at}."
+
+msgid "p3.topped"
+msgstr "Auto top-up added {a} TWD (card ending {l})."
+
+msgid "p3.toppedNoCard"
+msgstr "Auto top-up added {a} TWD."
+
+msgid "p3.set.ai"
+msgstr "AI credit"
+
+msgid "p3.set.aiV"
+msgstr "{n} TWD / {g}"
+
+msgid "p3.set.over"
+msgstr "{o} TWD over this period, paid from your balance."
+
+msgid "p3.f.trial"
+msgstr "Cancel on the website during the trial and nothing is charged. Starting a cloud machine ends the trial and starts the first period that day."
+
+msgid "p3.d.planOn"
+msgstr "Your plan includes Blave data in the desktop app. To run strategies around the clock, add a cloud machine."
+
+msgid "p3.pro.dupAfter"
+msgstr "Your Pro subscription still renews."
+
+msgid "p3.s.hostYear"
+msgstr "{tier} machine, paid to the end of the year ({n} days left)"
+
+msgid "p3.lowReset"
+msgstr "Under {n} TWD of AI credit left, resets {at}."
+
+msgid "p3.w.reopenOk"
+msgstr "Open a New Page, {p} TWD"
+
+msgid "p3.w.reopenOkNoNum"
+msgstr "Open a New Page"
+
+msgid "p3.a.free"
+msgstr "No charge this period."
+
+msgid "p3.srcS.card"
+msgstr "Charged today to the card ending {l}."
+
+msgid "p3.srcS.cardAny"
+msgstr "Charged today to your card on file."
+
+msgid "p3.srcS.wallet"
+msgstr "Paid from your balance today."
+
+msgid "p3.srcS.free"
+msgstr "No charge today."
+
+msgid "p3.srcS.none"
+msgstr "Paid today."
+
+msgid "p3.h.nextNoNum"
+msgstr "From {at}, {p} TWD each period."
+
+msgid "p3.s.hostRest"
+msgstr "{tier} machine, for the rest of this period"
+
+msgid "p3.s.diffRest"
+msgstr "{tier} minus {paid}, for the rest of this period"
+
+msgid "p3.s.trialIncl"
+msgstr "{tier} machine, included in your trial"
+
+msgid "p3.w.openNote"
+msgstr "The last payment page is still open and can still be paid. If you open a new page and pay on both, the extra amount goes to your balance."
+
+msgid "pv.d.included.v3"
+msgstr "You only need a cloud machine when a strategy has to run around the clock."
+
+msgid "pv.f.offer.v3"
+msgstr "Adding a card charges {v} TWD to verify it, added to your balance. The trial lasts {t} days. Then the first period is {p} TWD, renewing every {pd} days. Cancel during the trial and nothing is charged."
+
+msgid "pv.f.offer.v3NoNum"
+msgstr "Adding a card charges {v} TWD to verify it, added to your balance. The trial lasts {t} days. Then the first period is {p} TWD, renewing each period. Cancel during the trial and nothing is charged."
+
+msgid "p3.a.trialUnit"
+msgstr "days free"
+
+msgid "p3.a.trialSub"
+msgstr "{p} TWD every {d} days from {at}. Cancel before then to pay nothing."
+
+msgid "p3.a.verifyLine"
+msgstr "Today: a {v} TWD card check, added to your balance."
+
+msgid "p3.a.renewShort"
+msgstr "Renews automatically. Cancel anytime. No refunds."
+
+msgid "p3.a.todayCard"
+msgstr "Charged today to the card ending {l}."
+
+msgid "p3.a.todayWallet"
+msgstr "Paid from your balance today."
+
+msgid "p3.a.todayCardAny"
+msgstr "Charged today to your card on file."
+
+msgid "p3.w.walletNoNum"
+msgstr "Your card was charged but the plan didn't start. The money is in your balance."
+
+msgid "pv.f.noTrial.v3"
+msgstr "Adding a card pays the first period, {p} TWD, then renews every {pd} days."
+
+msgid "pv.f.noTrial.v3NoNum"
+msgstr "Adding a card pays the first period, {p} TWD, then renews each period."
+
+msgid "priv.c.feat.10"
+msgstr "Opening the plan or machine box: where from, which size you picked and the result type"
+
+msgid "p3.f.trialConvert"
+msgstr "Starting a cloud machine ends the trial and pays the first period today: {p} TWD with {tier}."
+
+msgid "p3.f.trialConvertNoNum"
+msgstr "Starting a cloud machine ends the trial and pays the first period that day."

@@ -442,6 +442,12 @@ print(r["status"], r["symbol"], r["fill_qty"], r["ack"])
    `ot_qty_s`, `current_buy_open_position` / `current_sell_open_position`,
    `open_buy_position_average_cost`, `floating_pnl`, `product_base_number`). The test account comes
    preloaded with 1 long MXF.
+   **An account with no positions answers `get_position` with `ok=False` `查無資料!`** (a user's
+   「確認登入」 failed on it, 2026-11-19). `read_account` takes that as an empty list only when the same
+   snapshot's margin shows nothing open (margin also `查無資料!`, or `iamt` and `mamt` both 0 / None) and
+   marks the snapshot `positions_no_data: true`; margin in use, a failed margin read, or any other error
+   text still fails the read. `manager/flatten.py` never books such an empty read as flat while the bot's
+   book holds 統一 rows.
 3. **The open interest is `current_buy_open_position` / `current_sell_open_position`, not `ot_qty`.**
    Live account, 2026-10-02: an MXFJ6 row read `ot_qty_b=3`, `current_buy_open_position=2`, and the
    broker's app showed **2**. The libs reconcile on `current_*`; `ot_qty` is kept in the snapshot
