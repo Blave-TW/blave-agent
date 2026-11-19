@@ -3684,12 +3684,16 @@ def _saved_contracts(cfg):
     return {k: v for k, v in got.items() if v in _TXF_ASSET_SPECS} if isinstance(got, dict) else {}
 
 
+# = manager/reconciler PENDING_SENT_PATH / CAPITAL_PENDING_PATH / SINOPAC_PENDING_PATH
+_PARK_FILES = ("president_pending_sent.json", "capital_pending_sent.json", "sinopac_pending_sent.json")
+
+
 def _pending_sent_roots():
-    """Roots with 統一 lots parked unclaimed (manager/reconciler PENDING_SENT_PATH and its side
+    """Roots with 統一 / 群益 / 永豐 lots parked unclaimed (each broker's park file and its side
     file, the rows a refused save left out of it — lib/president_vault.park_side);
-    None = either file is there but unreadable."""
+    None = any of the files is there but unreadable."""
     roots = set()
-    for name in ("president_pending_sent.json", "president_pending_sent.json.unsaved"):
+    for name in [f + side for f in _PARK_FILES for side in ("", ".unsaved")]:
         try:
             rows = atomic_file.load_json(os.path.join(WORKSPACE_STATE, name), encoding="utf-8")
         except FileNotFoundError:
@@ -3898,7 +3902,7 @@ def _contracts_for_save(args, clean, prev_amounts, cfg):
     parked = _pending_sent_roots()
     for k in sorted(rolling):
         if parked is None or keys_of(k) & parked:
-            raise ValueError(f"CONTRACT_PARKED: 「{k}」的合約還有統一未回報成交的委託,"
+            raise ValueError(f"CONTRACT_PARKED: 「{k}」的合約還有券商未回報成交的委託,"
                              "請等對帳確認後再換")
     return out
 

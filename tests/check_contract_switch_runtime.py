@@ -11,8 +11,8 @@ portfolio_reporter.can_switch_contract / execution_contract).
      (CONTRACT_NEEDS_UPDATE — the 20× case: 20 lots saved for TMF traded as
      TXF), not a member / bad value (BAD_CONTRACT), not 台指期 (NOT_TXF_FAMILY),
      Type B (CONTRACT_TYPE), a funded rollover under HALT (CONTRACT_HALTED),
-     with a waiting strategy on either contract (CONTRACT_GATED), with 統一
-     lots parked on either contract or the park file unreadable
+     with a waiting strategy on either contract (CONTRACT_GATED), with 統一 /
+     群益 / 永豐 lots parked on either contract or a park file unreadable
      (CONTRACT_PARKED). An unfunded switch under HALT is fine (nothing trades).
   D  dispatch() (the cloud poll and local_daemon both call it) passes `contracts` on.
   M  the credential-evict mirror update carries `contracts` through.
@@ -50,7 +50,8 @@ SNAP = os.path.join(WS, "manager", "last_reconcile.json")
 HB = os.path.join(WS, "state", "heartbeat", "reconciler")
 HALT = os.path.join(WS, "state", "HALT")
 GATE = os.path.join(WS, "state", "signal_gate.json")
-PARK = os.path.join(WS, "state", "president_pending_sent.json")
+# = manager/reconciler PENDING_SENT_PATH / CAPITAL_PENDING_PATH / SINOPAC_PENDING_PATH
+PARKS = {v: os.path.join(WS, "state", f"{v}_pending_sent.json") for v in ("president", "capital", "sinopac")}
 
 
 def check(cond, msg):
@@ -103,7 +104,7 @@ def reconciler(running, caps):
 
 
 def reset():
-    for p in (CONFIG, MIRROR, HALT, GATE, PARK):
+    for p in (CONFIG, MIRROR, HALT, GATE, *PARKS.values()):
         if os.path.exists(p):
             os.remove(p)
 
@@ -228,26 +229,39 @@ check(err is None, f"X …a waiting strategy on an unrelated contract does not b
 save({"txf_a": 1, "txf_b": 1}, {})
 os.remove(GATE)
 
-json.dump({"TXFK6": {"root": "TXF", "lots": 1}}, open(PARK, "w"))
-refused("CONTRACT_PARKED", {"txf_a": 20, "txf_b": 1}, {"txf_a": "TMF"}, "統一 lots parked on the old contract")
-json.dump({"TMFK6": {"root": "TMF", "lots": 1}}, open(PARK, "w"))
-refused("CONTRACT_PARKED", {"txf_a": 20, "txf_b": 1}, {"txf_a": "TMF"}, "統一 lots parked on the new contract")
-open(PARK, "w").write("{not json")
-refused("CONTRACT_PARKED", {"txf_a": 20, "txf_b": 1}, {"txf_a": "TMF"}, "park file unreadable")
-os.remove(PARK)
-# the rows a refused save left out of the park file are in its side file (lib/president_vault.park_side)
-SIDE = PARK + ".unsaved"
-json.dump({"TXFK6": {"root": "TXF", "lots": 1}}, open(SIDE, "w"))
-refused("CONTRACT_PARKED", {"txf_a": 20, "txf_b": 1}, {"txf_a": "TMF"}, "統一 lots parked in the side file only")
-open(SIDE, "w").write("{not json")
-refused("CONTRACT_PARKED", {"txf_a": 20, "txf_b": 1}, {"txf_a": "TMF"}, "side file unreadable")
-# a settled mark (lib/president_vault.park_settled) is not a parked row: it names no root
-json.dump({"TXFK6": {"settled": 1795000000.5}, "TMFK6": {"settled": 1795000001.5}}, open(SIDE, "w"))
-err = save({"txf_a": 20, "txf_b": 1}, {"txf_a": "TMF"})
-check(err is None and stored()[0]["contracts"] == {"txf_a": "TMF"},
-      f"X side file holding settled marks only: the switch saves ({err})")
-save({"txf_a": 20, "txf_b": 1}, {})
-os.remove(SIDE)
+import manager.reconciler as _rec  # noqa: E402
+check({os.path.basename(p) for p in PARKS.values()} == set(cl._PARK_FILES)
+      == {os.path.basename(p) for p in (_rec.PENDING_SENT_PATH, _rec.CAPITAL_PENDING_PATH, _rec.SINOPAC_PENDING_PATH)},
+      f"X the park files read are the reconciler's three ({cl._PARK_FILES})")
+SWITCH = ({"txf_a": 20, "txf_b": 1}, {"txf_a": "TMF"})
+# 統一 keys its rows by product id, 群益 / 永豐 by root (manager/reconciler *_park)
+for venue, PARK in PARKS.items():
+    old_key, new_key = ("TXFK6", "TMFK6") if venue == "president" else ("TXF", "TMF")
+    json.dump({old_key: {"root": "TXF", "lots": 1}}, open(PARK, "w"))
+    refused("CONTRACT_PARKED", *SWITCH, f"{venue} lots parked on the old contract")
+    json.dump({new_key: {"root": "TMF", "lots": 1}}, open(PARK, "w"))
+    refused("CONTRACT_PARKED", *SWITCH, f"{venue} lots parked on the new contract")
+    open(PARK, "w").write("{not json")
+    refused("CONTRACT_PARKED", *SWITCH, f"{venue} park file unreadable")
+    os.remove(PARK)
+    # the rows a refused save left out of the park file are in its side file (lib/president_vault.park_side)
+    SIDE = PARK + ".unsaved"
+    json.dump({old_key: {"root": "TXF", "lots": 1}}, open(SIDE, "w"))
+    refused("CONTRACT_PARKED", *SWITCH, f"{venue} lots parked in the side file only")
+    open(SIDE, "w").write("{not json")
+    refused("CONTRACT_PARKED", *SWITCH, f"{venue} side file unreadable")
+    # a settled mark (lib/president_vault.park_settled) is not a parked row: it names no root
+    json.dump({old_key: {"settled": 1795000000.5}, new_key: {"settled": 1795000001.5}}, open(SIDE, "w"))
+    err = save(*SWITCH)
+    check(err is None and stored()[0]["contracts"] == {"txf_a": "TMF"},
+          f"X {venue} side file holding settled marks only: the switch saves ({err})")
+    check(save({"txf_a": 1, "txf_b": 1}, {}) is None, f"X …switched back, so the next case is a rollover again")
+    os.remove(SIDE)
+    json.dump({"MXFK6" if venue == "president" else "MXF": {"root": "MXF", "lots": 1}}, open(PARK, "w"))
+    err = save(*SWITCH)
+    check(err is None, f"X {venue} lots parked on an unrelated contract do not block ({err})")
+    check(save({"txf_a": 1, "txf_b": 1}, {}) is None, f"X …switched back before the next broker")
+    os.remove(PARK)
 err = save({"txf_a": 20, "txf_b": 1}, {"txf_a": "TMF"})
 check(err is None and stored()[0]["contracts"] == {"txf_a": "TMF"}, f"X with none of the above it saves ({err})")
 lib_disk(False)

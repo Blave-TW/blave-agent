@@ -1002,7 +1002,7 @@ three is ignored. Rules:
   force and the lib on disk lacks the marker; a funded switch already in force is refused only on positive
   evidence of old code), `CONTRACT_EXPOSURE_MISMATCH`, `CONTRACT_HALTED` (HALT set and the code
   that trades cannot freeze a rollover — an older lib), `CONTRACT_GATED` (a strategy on either contract waits for a new
-  signal), `CONTRACT_PARKED` (統一 lots parked on either contract, or the park file unreadable) —
+  signal), `CONTRACT_PARKED` (統一 / 群益 / 永豐 lots parked on either contract, or a park file unreadable) —
   the last three whenever the new amount is above 0 —, `NOT_TXF_FAMILY`, `CONTRACT_TYPE`
   (Type B/C), `BAD_CONTRACT`.
 

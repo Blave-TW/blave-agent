@@ -8,6 +8,8 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **換合約檢查擋三家券商的停放單(`command_listener._pending_sent_roots`)**:`CONTRACT_PARKED` 原本只讀統一的 `state/president_pending_sent.json`,群益、永豐有委託還沒回報成交時照樣換得了合約,那筆單晚一步成交就是舊合約與新合約各一份曝險。現在三家的停放檔(`president_`／`capital_`／`sinopac_pending_sent.json`)與各自的 `.unsaved` 旁檔都讀:任一個有該商品的列就擋,任一個在但讀不到也擋。拒絕訊息的「統一」改成「券商」。檔案都不存在時行為與之前相同。測試 `tests/check_contract_switch_runtime.py`(五個案例三家各跑一次)。
+
 ## 1.1.166 — 2026-11-19(desktop 0.1.57)
 
 - **建議句寫成工具呼叫的樣子也收成建議(`extract_suggestions`,0.1.57 驗收)**:DeepSeek 偶發把結尾建議寫成 `<invoke name="suggest"><parameter>句子</parameter></invoke>`(`<parameter>` 可能沒有 `name=`),以前沒有任何一層認得,原文整段留在回覆泡泡。現在先收斂成 `<suggest>` 區塊再走原本那條路(60 字上限、全形標點、kind 照舊);截斷的尾段整段剝,別的 `<invoke>` 不動。網頁、電腦版、TG 與 `visible_text` 同一處生效,外殼沒改。測試 `tests/check_suggest_rule_026.py`。
