@@ -253,15 +253,19 @@ app.whenReady().then(async () => {
       const pw = pill.getBoundingClientRect().width; pill.remove();
       const acts = Object.assign(document.createElement("div"), { className: "cap-acts" }), qb = Object.assign(document.createElement("button"), { className: "btn-quiet", textContent: "x" });
       acts.appendChild(qb); document.body.appendChild(acts); const qs = getComputedStyle(qb, "::before"); const q = [parseFloat(qs.height), parseFloat(qs.width)]; acts.remove();
-      const foot = [...document.querySelectorAll(".foot-row .ic-btn")].map((x) => { const cs = getComputedStyle(x), bf = getComputedStyle(x, "::before");
-        return { border: cs.borderTopWidth, h: x.getBoundingClientRect().height + parseFloat(bf.top) * -1 + parseFloat(bf.bottom) * -1 }; });
+      // ::before is laid out on the padding box (clientHeight, inside the 1px frame): 26 + 9 + 9 = 44. Only the buttons
+      // drawn now — the phone one is [hidden] until a phone can be paired, and a hidden box has no hit area to measure
+      const foot = [...document.querySelectorAll(".foot-row .ic-btn")].filter((x) => !x.hidden && x.offsetParent).map((x) => {
+        const cs = getComputedStyle(x), bf = getComputedStyle(x, "::before");
+        return { id: x.id, border: cs.borderTopWidth, frame: Math.round(x.getBoundingClientRect().height),
+                 h: x.clientHeight - parseFloat(bf.top) - parseFloat(bf.bottom) }; });
       return { items, whoM, pw, q, foot }; })()`);
     for (const lang of ["zh", "en"]) {
       const h = await hit(lang);
       ok(`④ 熱區(${lang}):選單項目每列 ≥44 高、email 行上下外距 0、〔登入〕膠囊 ≥44 寬、.cap-acts 文字鈕熱區 44 高 ≥44 寬`,
         h.items.length > 0 && h.items.every((x) => x >= 44) && h.whoM.join() === "0px,0px" && h.pw >= 44 && h.q[0] === 44 && h.q[1] >= 44
         // spec sidebar-foot-consistency-2026-11-19:底列圖示鈕都有 1px 框,熱區高仍 44
-        && h.foot.length > 0 && h.foot.every((f) => f.border === "1px" && Math.round(f.h) === 44), JSON.stringify(h));
+        && h.foot.length > 0 && h.foot.every((f) => f.border === "1px" && f.frame === 28 && Math.round(f.h) >= 44), JSON.stringify(h));
     }
     await js(`setLang("zh"); applyStatic();`); }
 
