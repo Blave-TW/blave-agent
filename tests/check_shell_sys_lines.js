@@ -63,11 +63,13 @@ app.whenReady().then(async () => {
       for (const m of code.matchAll(/addMsg\("sys", (?:t\([^)]*\)|\w+\(\)|\w+)|className = "msg sys"|(?<!function )sysLine\(([a-zA-Z]+)\)|faultCard\(\)\.set|(\w+) = faultCard\(\)/g)) sites.push(f + ": " + m[0]); }); }
   const EMIT = { "engine.js: className = \"msg sys\"": "engDone", "app.js: className = \"msg sys\"": "upSayLine", "app.js: sysLine(line)": "turn.error", "app.js: sysLine(exitLine)": "turn.exit", "app.js: sysLine(x)": "pendingErr",
     "app.js: addMsg(\"sys\", fn()": "sysLine", "app.js: addMsg(\"sys\", t(say)": "attach", "app.js: addMsg(\"sys\", t(\"ws.attachReadFail\")": "attachRead", "app.js: addMsg(\"sys\", t(\"turn.busy\")": "busy",
-    "app.js: faultCard().set": "engineFailed／minv", "engine.js: c = faultCard()": "engWarn", "app.js: dataCard = faultCard()": "dataCard", "app.js: c = faultCard()": "plan.done", "app.js: acctCard = faultCard()": "acctCard", "app.js: card = faultCard()": "addFault", "errreport.js: card = faultCard()": "errReport" };
+    "app.js: faultCard().set": "engineFailed／minv", "engine.js: c = faultCard()": "engWarn", "app.js: dataCard = faultCard()": "dataCard", "app.js: c = faultCard()": "plan.done", "app.js: acctCard = faultCard()": "acctCard", "app.js: card = faultCard()": "addFault", "errreport.js: card = faultCard()": "errReport",
+    // 0.1.57 改價 v3:planv3.js 的每一行(付款回程、額度提示、付了主機還沒開機…)都經 p3Card 這一處開卡
+    "planv3.js: c = faultCard()": "p3Card" };
   const unknown = [...new Set(sites)].filter((x) => !EMIT[x]), gone = Object.keys(EMIT).filter((x) => !sites.includes(x));
   ok("③ 每一處畫聊天系統行／卡的原始碼都在 EMIT 表、都有情境(" + new Set(sites).size + " 處)", !unknown.length && !gone.length, JSON.stringify({ unknown, gone }));
   const bareSet = [];
-  for (const f of ["app.js", "engine.js", "errreport.js"]) srcOf(f).split("\n").forEach((l, i) => { if (/\b(card|acctCard|dataCard|c)\.set\(\{|faultCard\(\)\.set\(\{|\b(card|c)\.set\(resendState/.test(l.replace(/\/\/.*$/, ""))) bareSet.push(f + ":" + (i + 1)); });
+  for (const f of ["app.js", "engine.js", "errreport.js", "planv3.js"]) srcOf(f).split("\n").forEach((l, i) => { if (/\b(card|acctCard|dataCard|c)\.set\(\{|faultCard\(\)\.set\(\{|\b(card|c)\.set\(resendState/.test(l.replace(/\/\/.*$/, ""))) bareSet.push(f + ":" + (i + 1)); });
   ok("③ 卡的內容一律經 sysLz 包起來(寫死字的 set 換語言不會跟著換)", !bareSet.length, JSON.stringify(bareSet));
 
   // 畫一輪:每一種系統行各一則,全在 zh;agent 回覆與用戶的字各一則當對照組
@@ -97,6 +99,7 @@ app.whenReady().then(async () => {
     dataCard = faultCard(); dataCardSync({ can_run: true, data_access: "none" }); mark("dataCard", lastOf());
     { const B0 = window.blave; window.blave = new Proxy({}, { get: (_, k) => k === "errReportPending" ? async () => ({ id: "sys1", n: 2, text: '{"error":"x"}' }) : B0[k] });
       try { await errAsk(); } finally { window.blave = B0; } mark("errReport", errLive && errLive.el === lastOf() ? errLive.el : null); }
+    p3Unlaunched("linux_starter", 0); mark("p3Card", lastOf());   // planv3.js p3Card:付了主機還沒開機那一行(句子＋〔開主機〕,階名與鈕都要跟著換語言)
     addHistoryYou("手機來的", "mobile"); mark("fromPhone", lastOf());
     addHistoryAi("回覆\\n[中斷前已執行:Bash strategies/、Read lib/x.py、…另有 2 步]"); 
     const zh = {}; for (const k of Object.keys(list)) zh[k] = A.el.querySelector('[data-sys-case="' + k + '"]').textContent;
