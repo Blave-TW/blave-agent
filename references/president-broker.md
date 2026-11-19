@@ -307,6 +307,34 @@ print(r["status"], r["symbol"], r["fill_qty"], r["ack"])
   while the park file still refuses it trips HALT again; once it is settled, trading goes on even if
   the park file still refuses. Never delete either file by hand. If the side file is refused too (a
   full disk), the row is kept in the reconciler process only and a restart forgets it.
+  **A side file that cannot be read has no way out in the app.** If the side file
+  (`state/president_pending_sent.json.unsaved`) exists but cannot be opened, does not parse as a
+  JSON object, or holds an entry that is not itself a JSON object (`null`, a number, a string),
+  every press of Start trading is followed by HALT again in the next reconciler round — closes and
+  stops are not sent either — and doing what the pause reason says (check the position, press Start
+  trading) only repeats it. This is not something the user did wrong. Confirm it read-only before
+  saying so: `state/HALT` has `source` `reconciler` and the "no fill report, may not be booked"
+  reason — naming `TXF/MXF/TMF` when the file does not read at all, the bad entry's own key when one
+  entry is not an object; `state/audit.jsonl` shows `halt_tripped` again after each `halt_cleared`;
+  the side file is there and fails `json.load`, or loads with an entry that is not an object; the
+  reconciler log has a line naming the side file itself, `….unsaved does not parse (…) while … is
+  held outside the park file — HALT`. Do not go by the reason alone: a pause that was already on
+  keeps its own source and reason, so this one may only appear after the user has pressed Start
+  trading once, and with a bad entry it reads exactly like the ordinary case. The side file and the
+  log line are what settle it: the ordinary case (a side file that loads and holds only rows and
+  marks) logs `park file not saved … is held outside it — HALT` and ends when the claim settles the
+  row; a park file that does not read names the park file in that line, not `.unsaved`, and ends
+  when it reads again. A file another program holds for a moment clears by itself — look again after
+  a minute before concluding. Where that log is: on the desktop app, `state/reconciler.log` (`.1`
+  beside it is the one before); on a cloud Linux machine, the output of the
+  `blave-agent-reconciler.service` unit, or the `reconciler` tmux session on a machine without the
+  unit; a cloud Windows machine keeps no reconciler log (the `blaveclaw-reconciler` service has no
+  output file) — there, go by the side file and `state/audit.jsonl`. Then tell the user that while
+  this lasts Blave sends nothing on any venue — no entry, no close, no stop — so they must watch and
+  handle their positions in the broker's own app, and ask them to write to info@blave.org to have it
+  cleared. Never delete, edit or move the side file or the park file yourself (they may hold a send
+  that filled: removed, it goes out again), and never suggest unbinding the broker to get past it —
+  that empties the bot's book as well.
   `unknown` is **P3 today** (the lib's
   `order_unknown_status` audit line + a reconciler log warning; it is deliberately not written to
   `manager/order_errors.json`, because the platform turns every row there into a P1 下單失敗 TG +

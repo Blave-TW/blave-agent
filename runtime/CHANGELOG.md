@@ -8,7 +8,7 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
-- **換合約檢查多讀統一停放檔的旁檔(`command_listener._pending_sent_roots`)**:workspace 的對帳器在 `state/president_pending_sent.json` 存不進時,把那一列寫到同資料夾的 `president_pending_sent.json.unsaved`(blave-agent VERSION `2026-11-19-a`)。換合約的 `CONTRACT_PARKED` 檢查現在兩個檔都讀:旁檔有該商品的列就擋,旁檔在但讀不到也擋。旁檔不存在時行為與之前相同,所以 runtime 先到或 workspace 先到都沒事。測試 `tests/check_contract_switch_runtime.py`。
+- **換合約檢查多讀統一停放檔的旁檔(`command_listener._pending_sent_roots`)**:workspace 的對帳器在 `state/president_pending_sent.json` 存不進時,把那一列寫到同資料夾的 `president_pending_sent.json.unsaved`(blave-agent VERSION `2026-11-19-a`)。換合約的 `CONTRACT_PARKED` 檢查現在兩個檔都讀:旁檔有該商品的列就擋,旁檔在但讀不到也擋;旁檔裡的結清記號(`{"settled": …}`,沒有 `root`)不算停放列。旁檔不存在時行為與之前相同,所以 runtime 先到或 workspace 先到都沒事。測試 `tests/check_contract_switch_runtime.py`。
 
 ## 1.1.165 — 2026-11-17(desktop 0.1.56)
 
