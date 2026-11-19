@@ -198,7 +198,7 @@ start, on every credentials change, and in close-all before it sells anything:
   flag (an older page) the book is kept. Binding another venue over it never
   empties it, flag or not: seed `venue_reset`, its
   `venue_account` and migration `pending` dropped, its parked unconfirmed
-  orders released, 統一/群益 `*_pending_sent.json` deleted, and the last
+  orders released, 統一/群益/永豐 `*_pending_sent.json` and its `.unsaved` side file deleted, and the last
   snapshot (`manager/last_reconcile.json`) removed. Whatever stays on the
   account is the user's — bound back, even to the same account, those
   positions are manual and a strategy may open its own on top. Other venues'
@@ -1005,6 +1005,18 @@ three is ignored. Rules:
   signal), `CONTRACT_PARKED` (統一 / 群益 / 永豐 lots parked on either contract, or a park file unreadable) —
   the last three whenever the new amount is above 0 —, `NOT_TXF_FAMILY`, `CONTRACT_TYPE`
   (Type B/C), `BAD_CONTRACT`.
+  A `CONTRACT_PARKED` that waiting does not end: the park file's name says whose it is
+  (`state/president_pending_sent.json` 統一, `capital_…` 群益, `sinopac_…` 永豐, each with its
+  `.unsaved` side file). If that broker is not in the `ids` of `manager/credentials.ui.json`, the
+  file is left from a broker that is no longer connected (an older page's disconnect, or another
+  venue bound over it); the reconciler only settles the parked rows of the broker it reads, so this
+  one stays. Both ways out start with the user connecting that broker again (AGENTS.md § Broker
+  Onboarding; it replaces a broker connected now and pauses trading). Then either the reconciler
+  settles the row on its next account read — after a disconnect it stays stopped until the user
+  presses 啟動下單 — or the user disconnects that broker again on the 自動下單 page (desktop 0.1.48
+  or later, or the web), which deletes the file and empties the bot's book for that broker. The
+  second way is only for a broker that is not in `ids`: for one that is, never suggest unbinding
+  to get past a parked row. Never delete the file yourself.
 
 **Drift band (`notional` rows, `self_ledger` off).** Target is a fixed notional and `actual` is
 size × mark, so a held position reads as a gap every heartbeat and the reconciler trades the

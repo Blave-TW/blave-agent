@@ -256,6 +256,11 @@ for venue, PARK in PARKS.items():
     check(err is None and stored()[0]["contracts"] == {"txf_a": "TMF"},
           f"X {venue} side file holding settled marks only: the switch saves ({err})")
     check(save({"txf_a": 1, "txf_b": 1}, {}) is None, f"X …switched back, so the next case is a rollover again")
+    # both files there: the side file is read after the park file and must add to it, not replace it
+    json.dump({old_key: {"root": "TXF", "lots": 1}}, open(PARK, "w"))
+    json.dump({new_key: {"settled": 1795000001.5}}, open(SIDE, "w"))
+    refused("CONTRACT_PARKED", *SWITCH, f"{venue} lots in the park file beside a side file of other keys' settled marks")
+    os.remove(PARK)
     os.remove(SIDE)
     json.dump({"MXFK6" if venue == "president" else "MXF": {"root": "MXF", "lots": 1}}, open(PARK, "w"))
     err = save(*SWITCH)
