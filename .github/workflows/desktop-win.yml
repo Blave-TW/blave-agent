@@ -58,7 +58,7 @@ jobs:
           node-version-file: shell/.nvmrc
           cache: npm
           cache-dependency-path: shell/package-lock.json
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         id: py
         with:
           python-version: "3.12"
