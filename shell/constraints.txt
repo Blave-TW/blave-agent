@@ -1,6 +1,6 @@
 # Mirror of WORKSPACE_LOCK in main.js (regenerate with tools/lock-deps.js); checked by tests/check_shell_engine_setup.js.
 annotated-types==0.8.0
-anyio==4.15.1
+anyio==4.16.0
 attrs==26.1.0
 cffi==2.1.1
 charset-normalizer==3.5.2
