@@ -22,7 +22,7 @@ packaging==26.3
 pillow==13.0.0
 pycparser==3.12
 pydantic==2.14.2
-pydantic-core==2.50.2
+pydantic-core==2.50.4
 pyjwt==2.15.1
 pyparsing==3.3.3
 python-dateutil==3.0.0
