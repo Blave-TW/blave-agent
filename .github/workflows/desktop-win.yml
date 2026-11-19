@@ -247,7 +247,7 @@ jobs:
 
       - name: Upload workflow artifact
         id: unsigned
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: blave-desktop-win-${{ steps.meta.outputs.version }}-${{ env.TRACK }}
           path: shell/dist/upload/
@@ -265,7 +265,7 @@ jobs:
       #
       # - name: Upload unsigned installer for SignPath
       #   id: for-signing
-      #   uses: actions/upload-artifact@v4
+      #   uses: actions/upload-artifact@v7
       #   with:
       #     name: blave-desktop-win-${{ steps.meta.outputs.version }}-unsigned-exe
       #     path: shell/dist/upload/Blave-Setup-${{ steps.meta.outputs.version }}.exe
