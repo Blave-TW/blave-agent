@@ -21,7 +21,7 @@ opentelemetry-api==1.45.2
 packaging==26.3
 pillow==13.0.0
 pycparser==3.12
-pydantic==2.14.2
+pydantic==2.14.3
 pydantic-core==2.50.2
 pyjwt==2.15.1
 pyparsing==3.3.3
