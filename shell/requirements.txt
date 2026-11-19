@@ -4,7 +4,7 @@
 claude-agent-sdk==0.2.159
 cryptography==48.0.1
 pandas==3.0.6
-numpy==2.5.3
+numpy==2.5.5
 matplotlib==3.11.2
 pyarrow==25.0.1
 requests==2.34.2
