@@ -1,7 +1,7 @@
 # Mirror of SDK_PINS + WORKSPACE_DEPS in main.js, for Dependabot and the dependency graph; the app installs from main.js.
 # tests/check_shell_engine_setup.js fails if the two differ.
 -c constraints.txt
-claude-agent-sdk==0.2.159
+claude-agent-sdk==0.2.182
 cryptography==48.0.1
 pandas==3.0.6
 numpy==2.5.3
