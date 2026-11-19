@@ -686,16 +686,20 @@ check(e is not None and "marker" in str(e) and not api.sent, "marker write fails
 
 # ── 9. two processes closing at once: only one passes ────────────────────────
 import subprocess  # noqa: E402
-# today's near month: a fixed month code goes past its settlement and the close is refused
-# (ListUnknown, this snapshot has no broker list) before the lock is ever contested
+# the pinned clock's near month, and the children pin the same clock: on the wall clock a month
+# code goes past its settlement and the close is refused (ListUnknown, this snapshot has no
+# broker list) before the lock is ever contested
 MXF_NOW = op.near_month("MXF", [f"MXF{c}{d}" for c in op.MONTH_CODES for d in "0123456789"])
 snapshot([{"root": "MXF", "productid": MXF_NOW, "net": 1, "net_current": 1}])
 open(op.LAST_ORDER_PATH, "w").write("{}")
 GO = os.path.join(TMP, "go")
 child = f"""
 import os, sys, time
+from datetime import datetime
 sys.path.insert(0, {ROOT!r}); os.chdir({TMP!r})
-from lib import account_president, order_president as op
+from lib import account_president, order_president as op, president_contracts as pc
+_real_now = pc._now
+pc._now = lambda now: _real_now(now or datetime.fromisoformat({FIXED_NOW.isoformat()!r}))
 account_president._SNAPSHOT = {account_president._SNAPSHOT!r}
 op.LAST_ORDER_PATH, op.SEND_LOCK_PATH = {op.LAST_ORDER_PATH!r}, {op.SEND_LOCK_PATH!r}
 op._REFRESH_FLAG = {op._REFRESH_FLAG!r}
