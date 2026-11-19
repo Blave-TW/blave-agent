@@ -311,7 +311,7 @@ jobs:
           path: upload
 
       - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ vars.BLAVE_RELEASE_ROLE_ARN }}
           aws-region: ${{ secrets.BLAVE_RELEASE_AWS_REGION }}
