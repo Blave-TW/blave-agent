@@ -235,6 +235,19 @@ refused("CONTRACT_PARKED", {"txf_a": 20, "txf_b": 1}, {"txf_a": "TMF"}, "統一 
 open(PARK, "w").write("{not json")
 refused("CONTRACT_PARKED", {"txf_a": 20, "txf_b": 1}, {"txf_a": "TMF"}, "park file unreadable")
 os.remove(PARK)
+# the rows a refused save left out of the park file are in its side file (lib/president_vault.park_side)
+SIDE = PARK + ".unsaved"
+json.dump({"TXFK6": {"root": "TXF", "lots": 1}}, open(SIDE, "w"))
+refused("CONTRACT_PARKED", {"txf_a": 20, "txf_b": 1}, {"txf_a": "TMF"}, "統一 lots parked in the side file only")
+open(SIDE, "w").write("{not json")
+refused("CONTRACT_PARKED", {"txf_a": 20, "txf_b": 1}, {"txf_a": "TMF"}, "side file unreadable")
+# a settled mark (lib/president_vault.park_settled) is not a parked row: it names no root
+json.dump({"TXFK6": {"settled": 1795000000.5}, "TMFK6": {"settled": 1795000001.5}}, open(SIDE, "w"))
+err = save({"txf_a": 20, "txf_b": 1}, {"txf_a": "TMF"})
+check(err is None and stored()[0]["contracts"] == {"txf_a": "TMF"},
+      f"X side file holding settled marks only: the switch saves ({err})")
+save({"txf_a": 20, "txf_b": 1}, {})
+os.remove(SIDE)
 err = save({"txf_a": 20, "txf_b": 1}, {"txf_a": "TMF"})
 check(err is None and stored()[0]["contracts"] == {"txf_a": "TMF"}, f"X with none of the above it saves ({err})")
 lib_disk(False)

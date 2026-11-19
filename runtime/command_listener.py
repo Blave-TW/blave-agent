@@ -3558,18 +3558,22 @@ def _saved_contracts(cfg):
 
 
 def _pending_sent_roots():
-    """Roots with 統一 lots parked unclaimed (manager/reconciler PENDING_SENT_PATH);
-    None = the file is there but unreadable."""
-    try:
-        rows = atomic_file.load_json(os.path.join(WORKSPACE_STATE, "president_pending_sent.json"),
-                                     encoding="utf-8")
-    except FileNotFoundError:
-        return set()
-    except (OSError, ValueError):
-        return None
-    if not isinstance(rows, dict):
-        return None
-    return {r.get("root") for r in rows.values() if isinstance(r, dict)}
+    """Roots with 統一 lots parked unclaimed (manager/reconciler PENDING_SENT_PATH and its side
+    file, the rows a refused save left out of it — lib/president_vault.park_side);
+    None = either file is there but unreadable."""
+    roots = set()
+    for name in ("president_pending_sent.json", "president_pending_sent.json.unsaved"):
+        try:
+            rows = atomic_file.load_json(os.path.join(WORKSPACE_STATE, name), encoding="utf-8")
+        except FileNotFoundError:
+            continue
+        except (OSError, ValueError):
+            return None
+        if not isinstance(rows, dict):
+            return None
+        # a side-file entry with no root is a settled mark, not a parked row
+        roots |= {r["root"] for r in rows.values() if isinstance(r, dict) and r.get("root")}
+    return roots
 
 
 _CONTRACT_CV = {"TXF": 200, "MXF": 50, "TMF": 10}

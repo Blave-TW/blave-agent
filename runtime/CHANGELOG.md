@@ -8,6 +8,8 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **換合約檢查多讀統一停放檔的旁檔(`command_listener._pending_sent_roots`)**:workspace 的對帳器在 `state/president_pending_sent.json` 存不進時,把那一列寫到同資料夾的 `president_pending_sent.json.unsaved`(blave-agent VERSION `2026-11-19-a`)。換合約的 `CONTRACT_PARKED` 檢查現在兩個檔都讀:旁檔有該商品的列就擋,旁檔在但讀不到也擋。旁檔不存在時行為與之前相同,所以 runtime 先到或 workspace 先到都沒事。測試 `tests/check_contract_switch_runtime.py`。
+
 ## 1.1.165 — 2026-11-17(desktop 0.1.56)
 
 - **`venue_traits.py` 永豐列加 `verified_modes: ()`、`bound_marker`,新函式 `dormant(workspace)`**(與 `lib/venue_traits.py` 同一份):Wei 11-17 拿掉永豐零股路徑,永豐只做期貨;期貨真帳跑過之前這格是空的,sinopac 進 `unverified()`。`dormant()` = `unverified()` 加上 `bound_marker` 檔不在的那幾家(永豐是 `state/sinopac_futures_enabled.json`:期貨 worker 第一次啟動就寫、之後不刪,解除綁定也留著;只有期貨綁定會起 worker)。開過期貨的機器快照不見照樣報讀取失敗、全部平倉記永豐失敗,不會安靜跳過(Wei 11-17)。`account_reader._venues` 與 workspace 的 flatten 改用它跳過;`portfolio_reporter.venues()` 照舊列出這家(金鑰還能解除綁定),`account` 在 dormant 時給 false。只綁過零股、`.env` 留著六個 `sinopac_*` 的機器:翻閘前後都不讀、不平倉、不出讀取失敗(以前也沒有 `lib/account_sinopac.py`,畫面跟現在一樣)。真帳跑過的那顆 commit 改成 `("futures",)`。測試 `tests/check_venue_traits.py`、`tests/check_sinopac_futures_wiring.py` S6。

@@ -730,7 +730,7 @@ def _capital_place_order(symbol, signed_diff, asset_spec=None, reduce_only=False
         row = _pending_sent(CAPITAL_PENDING_PATH).get(root)
     except PendingUnreadable as e:
         # unknown whether lots are parked: entries wait, closes go — but for a row held here
-        row = (_park_unsaved.get(CAPITAL_PENDING_PATH) or {}).get(root) or {'legs': []}
+        row = _rows_outside(CAPITAL_PENDING_PATH).get(root) or {'legs': []}
         _note_capital_pending_unreadable(root, e)
     if reduce_only and any(l.get('queued_until') or (l.get('broker_ack') and l.get('intent') == 'reduce')
                            for l in (row or {}).get('legs') or []):
@@ -781,7 +781,7 @@ def _capital_place_order(symbol, signed_diff, asset_spec=None, reduce_only=False
     if got + 1e-9 < lots or row is not None:
         park_id = _capital_park(root, result, requested, base, intent)
         parked = park_id is not False
-    if root in (_park_unsaved.get(CAPITAL_PENDING_PATH) or {}):
+    if root in _rows_outside(CAPITAL_PENDING_PATH):
         pass  # the park was not saved: HALT (_park_saved), whose reason is the P1 — this row says closes go on
     elif result.get('status') != 'filled' or got + 1e-9 < lots:
         # P1 (notifications.md 下單失敗 row): order_errors.json is diffed by the platform into an
@@ -1007,6 +1007,7 @@ def _capital_claim_pending(started):
         _note_capital_pending_unreadable(None, e)
         return
     if not pending:
+        _flush_settled(pending, CAPITAL_PENDING_PATH, _save_capital_pending)
         _capital_release_orphan_rows(set())
         return
     from lib import portfolio
@@ -1243,75 +1244,186 @@ def _president_broker_shut(sym, reduce_only, e):
 
 
 class PendingUnreadable(RuntimeError):
-    """state/president_pending_sent.json exists but cannot be read or parsed:
-    whether lots are parked is unknown, so entries wait (fail-closed)."""
+    """A park file (state/<venue>_pending_sent.json) or its side file exists but cannot be read
+    or parsed: whether lots are parked is unknown, so entries wait (fail-closed)."""
+
+
+class _Park(dict):
+    """_pending_sent's answer. `held`: the keys whose row the park file lacks (its side file, this
+    process); `seen`: those and the keys marked settled there; `main`: the park file's own layer.
+    A refused save needs all three (_keep_outside)."""
+    held = seen = frozenset()
+    main = {}
+
+
+def _park_layer(p):
+    from lib import president_vault
+    try:
+        return president_vault.park_layer(p) or {}
+    except OSError as e:
+        raise PendingUnreadable(f"{p}: {type(e).__name__}") from e
+    except ValueError as e:
+        raise PendingUnreadable(f"{p} does not parse ({e})") from e
+
+
+def _stat_sig(p):
+    try:
+        st = os.stat(p)
+    except OSError:
+        return None
+    return st.st_mtime_ns, st.st_size
+
+
+def _outside(path):
+    """{key: row | settled mark} held outside the park file: its side file
+    (lib/president_vault.park_side), what only this process holds laid over it. A mark names the
+    one row of the park file that is settled and stale there (president_vault.park_settled)."""
+    from lib import president_vault
+    side = president_vault.park_side(path)
+    sig = _side_stale.get(path)
+    if sig is not None and sig == _stat_sig(side):
+        layer = {}
+    else:
+        _side_stale.pop(path, None)  # removed since, or written again by another process (flatten)
+        layer = _park_layer(side)
+    return {**layer, **(_park_unsaved.get(path) or {})}
 
 
 def _pending_sent(path=PENDING_SENT_PATH):
-    """The park file, with the rows only this process holds (_park_unsaved) laid over it by key.
-    The file is read every time: another process (flatten) parks into it too."""
+    """The parked rows: the park file, with what is held outside it (_outside) laid over it by
+    key. Both files are read every time: another process (flatten) parks into them too."""
+    from lib import president_vault
+    main, out = _park_layer(path), _outside(path)
     try:
-        raw = read_retry(Path(path).read_text, encoding='utf-8')
-    except FileNotFoundError:
-        return dict(_park_unsaved.get(path) or {})
-    except OSError as e:
-        raise PendingUnreadable(f"{path}: {type(e).__name__}") from e
-    try:
-        d = json.loads(raw)
+        rows = _Park(president_vault.park_merge(main, out))
     except ValueError as e:
-        raise PendingUnreadable(f"{path} does not parse ({e})") from e
-    if not isinstance(d, dict):
-        raise PendingUnreadable(f"{path} is not a JSON object")
-    return {**d, **(_park_unsaved.get(path) or {})}
+        raise PendingUnreadable(f"{president_vault.park_side(path)} does not parse ({e})") from e
+    rows.held = frozenset(k for k, v in out.items() if rows.get(k) is v)
+    rows.seen, rows.main = frozenset(out), main
+    return rows
 
 
-# {path: {key: row}} rows a park's save was refused for after the send (full disk, a file another
-# program holds): only this process has them. Laid over the file by _pending_sent, so the claim
-# still settles the send and its root's entries wait; dropped once a save puts them in the file
-# or the claim settles them. A restart forgets them — hence the HALT while any is left.
+# {path: {key: row | settled mark}} what neither the park file nor its side file took (full disk): only
+# this process has it, and a restart forgets it. Empty whenever the side file took the save.
 _park_unsaved = {}
+# {path: stat of its side file}: the park file took a save and os.remove of the side file was
+# refused. This process stops reading that file — its rows are in the park file; the next save
+# removes it. A restart (or flatten) reads it once more: its rows are settled again by the claim
+# (a booked one by its park id), and its settled marks name rows the park file no longer holds.
+_side_stale = {}
+
+
+def _rows_outside(path):
+    """{key: row} of the rows the park file lacks. A side file that does not read may hold one:
+    '?' stands for it."""
+    from lib.president_vault import park_is_settled
+    try:
+        return {k: v for k, v in _outside(path).items() if not park_is_settled(v)}
+    except PendingUnreadable:
+        return {**{k: v for k, v in (_park_unsaved.get(path) or {}).items() if not park_is_settled(v)}, '?': {}}
+
+
+def _keep_outside(path, pending, key=None):
+    """The park file refused a save of `pending`. What it then lacks goes to the side file, which
+    a restart reads back: the row just parked (`key`), the rows already held outside, and for each
+    of those the claim has settled a mark naming the older row the park file still holds under
+    that key — read again, that row is booked as a late fill. No such row in the park file → no
+    mark. A settled row the park file alone held is left to it: the next round settles the same
+    row again (a booked one by its park id).
+    The side file refused too (full disk) → kept in this process."""
+    from lib import president_vault
+    mem = _park_unsaved.get(path) or {}
+    held = (set(getattr(pending, 'held', ())) | {key}
+            | {k for k, v in mem.items() if not president_vault.park_is_settled(v)})
+    seen = set(getattr(pending, 'seen', ())) | set(mem)
+    main = getattr(pending, 'main', {})
+    marks = {k: president_vault.park_settled(main[k]) for k in seen if k not in pending and k in main}
+    delta = {**{k: m for k, m in marks.items() if m}, **{k: pending[k] for k in held if k in pending}}
+    if not delta:
+        _park_unsaved.pop(path, None)
+        if seen:
+            _drop_side(path)  # all it held is settled and the park file never had it
+        return
+    try:
+        president_vault.replace_json(president_vault.park_side(path), delta)
+        _side_stale.pop(path, None)
+        _park_unsaved.pop(path, None)
+    except Exception as e:
+        _park_unsaved[path] = delta
+        logging.error(f"[reconciler] {president_vault.park_side(path)} not saved either ({type(e).__name__}: {e}) "
+                      f"— {', '.join(delta)} kept in this process only (a restart forgets it)")
+
+
+def _drop_side(path):
+    from lib import president_vault
+    side = president_vault.park_side(path)
+    try:
+        read_retry(os.remove, side)
+    except FileNotFoundError:
+        pass
+    except OSError as e:
+        _side_stale[path] = _stat_sig(side)
+        logging.warning(f"[reconciler] {side} not removed ({type(e).__name__}) — not read by this process, "
+                        f"removed at the next save")
+        return
+    _side_stale.pop(path, None)
 
 
 def _save_park_file(path, pending):
     from lib import president_vault
     president_vault.replace_json(path, pending)
     _park_unsaved.pop(path, None)  # `pending` held every row of this path: all in the file now
+    _drop_side(path)
+
+
+def _flush_settled(pending, path, save):
+    """A claim found nothing parked. A settled mark in the side file still stands for a stale row in
+    the park file, and a side file os.remove refused is still there: one save of the empty set puts
+    both right once the park file takes it. Quiet when it does not — no root is waiting on it."""
+    if not getattr(pending, 'seen', None) and path not in _side_stale:
+        return
+    try:
+        save(pending)
+    except OSError as e:
+        logging.info(f"[reconciler] {path} still refuses a save ({type(e).__name__}) — settled keys stay in its side file")
 
 
 def _unsaved_halt(venue, what):
     if guard.halted():  # a HALT already on keeps its source and reason (_park_unexplained's rule)
         return
     try:
-        guard.trip_halt(_unverified_words(venue, what), 'reconciler')
+        guard.trip_halt(_unverified_words(venue, 'TXF/MXF/TMF' if what == '?' else what), 'reconciler')
     except Exception as e:
         logging.error(f"[reconciler/{venue}] HALT file not written ({e}) — halted in this process")
 
 
 def _unsaved_unreadable(path, venue, err):
-    """The park file is there but cannot be read while rows are held only in this process: HALT
-    again and True — never the row telling the user to reopen Blave (a restart forgets them)."""
-    unsaved = _park_unsaved.get(path)
-    if not unsaved:
+    """The park file or its side file is there but cannot be read while rows are held outside the
+    park file (or the side file itself is what does not read): HALT again and True — never the
+    row saying closes go on."""
+    held = _rows_outside(path)
+    if not held:
         return False
-    logging.error(f"[reconciler/{venue}] {err} while {', '.join(unsaved)} is held only in this process — HALT")
-    _unsaved_halt(venue, next(iter(unsaved)))
+    logging.error(f"[reconciler/{venue}] {err} while {', '.join(held)} is held outside the park file — HALT")
+    _unsaved_halt(venue, next(iter(held)))
     return True
 
 
 def _park_saved(save, path, pending, key, venue, sym):
     """A park's save of pending[key], after the order went out. Never raises: an exception from
     here leaves place_order as a failed order — nothing booked, no row holding the root — and the
-    next diff sends the same lots again. Refused → the row stays in this process (_park_unsaved)
-    and HALT (its reason is the user's P1, no order_errors row beside it). False = not on disk."""
+    next diff sends the same lots again. Refused → the row goes to the side file, or stays in this
+    process when that is refused too (_keep_outside), and HALT either way (its reason is the
+    user's P1, no order_errors row beside it). False = not in the park file."""
     try:
         save(pending)
         return True
     except Exception as e:
-        _park_unsaved.setdefault(path, {})[key] = pending[key]
+        _keep_outside(path, pending, key)
         guard.audit('order_unfilled_park_unsaved', venue=venue, symbol=sym, contract=key,
                     error=f"{type(e).__name__}: {e}")
         logging.error(f"[reconciler/{venue}] {key}: the park record was not saved ({type(e).__name__}: {e}) — "
-                      f"kept in this process, HALT (a restart forgets it)")
+                      f"kept outside the park file, HALT")
         _unsaved_halt(venue, key)
         return False
 
@@ -1555,17 +1667,13 @@ def _save_claimed(pending, venue, end_of_round=False, path=PENDING_SENT_PATH, sa
             _claim_save_fails.pop(venue, None)
         return True
     except OSError as e:
-        unsaved = _park_unsaved.get(path)
-        for key in [k for k in unsaved or {} if k not in pending]:
-            del unsaved[key]  # settled by this claim: nothing left that only this process knows
-        if unsaved == {}:
-            del _park_unsaved[path]
-        elif unsaved and end_of_round:
-            # rows only this process holds, and the file still refuses them: no "重新開啟 Blave" row
-            # (a restart forgets them and the next diff sends again) — HALT again instead
+        _keep_outside(path, pending)
+        held = _rows_outside(path)
+        if held and end_of_round:
+            # rows the park file lacks, and it still refuses them: HALT again, as when they were parked
             logging.error(f"[reconciler/{venue}] park file not saved ({type(e).__name__}: {e}) while "
-                          f"{', '.join(unsaved)} is held only in this process — HALT")
-            _unsaved_halt(venue, next(iter(unsaved)))
+                          f"{', '.join(held)} is held outside it — HALT")
+            _unsaved_halt(venue, next(iter(held)))
             return False
         n = _claim_save_fails.get(venue, 0)
         if end_of_round:
@@ -1630,6 +1738,7 @@ def _president_claim_pending(started):
         _note_pending_unreadable(None, e)
         return
     if not pending:
+        _flush_settled(pending, PENDING_SENT_PATH, _save_pending_sent)
         return
     from lib import account_president, portfolio
     nets = _president_nets()
@@ -1755,7 +1864,7 @@ def _president_place_order(symbol, signed_diff, asset_spec=None, reduce_only=Fal
         parked = [pid for pid, _r in rows]
     except PendingUnreadable as e:
         # unknown whether lots are parked: entries wait, closes go — but for the rows held here
-        rows = [(pid, r) for pid, r in (_park_unsaved.get(PENDING_SENT_PATH) or {}).items()
+        rows = [(pid, r) for pid, r in _rows_outside(PENDING_SENT_PATH).items()
                 if r.get('root') == sym]
         parked = [pid for pid, _r in rows] or ['?']
         _note_pending_unreadable(sym, e)
@@ -2033,6 +2142,7 @@ def _sinopac_claim_pending(started):
         _note_sinopac_pending_unreadable(None, e)
         return
     if not pending:
+        _flush_settled(pending, SINOPAC_PENDING_PATH, _save_sinopac_pending)
         return
     from lib import portfolio
     from lib.sinopac_vault import ORDER_SETTLE_S
@@ -2169,7 +2279,7 @@ def _sinopac_place_order(symbol, signed_diff, asset_spec=None, reduce_only=False
         row = _pending_sent(SINOPAC_PENDING_PATH).get(sym)
     except PendingUnreadable as e:
         # unknown whether lots are parked: entries wait, closes go — but for a row held here
-        row = (_park_unsaved.get(SINOPAC_PENDING_PATH) or {}).get(sym) or {'legs': []}
+        row = _rows_outside(SINOPAC_PENDING_PATH).get(sym) or {'legs': []}
         _note_sinopac_pending_unreadable(sym, e)
     if reduce_only and any(l.get('queued_until') or (l.get('broker_ack') and l.get('intent') == 'reduce')
                            for l in (row or {}).get('legs') or []):
@@ -2254,7 +2364,7 @@ def _sinopac_place_order(symbol, signed_diff, asset_spec=None, reduce_only=False
     park_id = None
     if got + 1e-9 < lots or row is not None:
         park_id = _sinopac_park(sym, result, requested, base, intent)
-    if sym in (_park_unsaved.get(SINOPAC_PENDING_PATH) or {}):
+    if sym in _rows_outside(SINOPAC_PENDING_PATH):
         pass  # the park was not saved: HALT (_park_saved), whose reason is the P1 — this row says closes go on
     elif result.get('broker_ack') and got + 1e-9 < lots:
         # P1 (notifications.md 下單失敗 row, kind order_unconfirmed): the claim settles it

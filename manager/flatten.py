@@ -185,6 +185,20 @@ def _capital_hold_until(sent_at):
     return max(until, float(queued) + CAPITAL_SETTLE_S) if queued else until
 
 
+def _capital_parked():
+    """群益's parked rows, the side file a refused save leaves laid over the park file
+    (lib/president_vault.park_rows); a half-updated workspace's lib reads the park file alone."""
+    from lib import president_vault
+    rows = getattr(president_vault, "park_rows", None)
+    if rows is not None:
+        return rows(CAPITAL_PENDING_PATH)
+    from lib.winreplace import load_json
+    try:
+        return load_json(CAPITAL_PENDING_PATH, encoding="utf-8") or {}
+    except FileNotFoundError:
+        return {}
+
+
 def _capital_close_queued(key, now=None):
     """(held, until): a 群益 close of `key` that 群益 took and has not reported may still sit
     queued to the open — under sNewClose=2 a second close fills beside it as the reverse position.
@@ -193,11 +207,8 @@ def _capital_close_queued(key, now=None):
     flatten (_CAP_QUEUED). until = when it may be sent again; None = not known (park file
     unreadable: held, the user is told to close it at 群益)."""
     now = time.time() if now is None else now
-    from lib.winreplace import load_json
     try:
-        row = (load_json(CAPITAL_PENDING_PATH, encoding="utf-8") or {}).get(key) or {}
-    except FileNotFoundError:
-        row = {}
+        row = _capital_parked().get(key) or {}
     except (OSError, ValueError, AttributeError):
         return True, None
     until = 0.0
@@ -260,12 +271,9 @@ def _capital_park_close(key, side, lots, result, base):
         _CAP_BASE[key][code] = _CAP_BASE[key].get(code, 0.0) + filled
     try:
         if got + 1e-9 >= lots:
-            from lib.winreplace import load_json
             try:
-                if key not in (load_json(CAPITAL_PENDING_PATH, encoding="utf-8") or {}):
+                if key not in _capital_parked():
                     return None
-            except FileNotFoundError:
-                return None
             except (OSError, ValueError, AttributeError):
                 pass  # unreadable: _capital_park reports it
         return _reconciler()._capital_park(

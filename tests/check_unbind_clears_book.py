@@ -189,10 +189,13 @@ try:
     machine("president")
     env_file(PRES)
     json.dump({"o1": {"symbol": "TXF", "qty": 1}}, open(PRES_SENT, "w"))
+    json.dump({"o2": {"symbol": "TXF", "qty": 1}}, open(PRES_SENT + ".unsaved", "w"))
     cl.president_connect.drop_vault = lambda *a, **k: None
     unbind(PRES)
     check(not os.path.exists(PRES_SENT) and qty("president") is None,
           "統一 unbound: president_pending_sent.json deleted (a rebind has nothing to claim), book empty")
+    check(not os.path.exists(PRES_SENT + ".unsaved"),
+          "…and its side file (the rows a refused save left out of it) with it")
 
     # ── 4. a bind never empties the venue it evicts (Wei 11-06): a clear_book sent with it is ignored ──
     machine("binance")

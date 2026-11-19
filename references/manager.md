@@ -582,8 +582,12 @@ fill could silently go missing from the book now fail loud instead:
 - a failed `manager/orders.jsonl` append under `self_ledger` trips HALT (the
   file IS the book there; in account-read mode it stays best-effort);
 - a 統一 / 群益 / 永豐 send whose park record (`state/*_pending_sent.json`) cannot be saved: the row
-  is kept in the reconciler process and HALT is tripped; a restart forgets the row, and pressing
-  Start trading while the file still refuses it trips HALT again;
+  goes to the park file's side file (`<park file>.unsaved`) and HALT is tripped; a restart reads it
+  back, and the next save the park file takes merges it in and removes the side file. Until the
+  claim settles that row (its fill booked, or cleared as not filled), pressing Start trading while
+  the park file still refuses it trips HALT again; once it is settled, trading goes on even if the
+  park file still refuses. Never delete either file by hand. If the side file is refused too (a full
+  disk), the row is kept in the reconciler process only and a restart forgets it;
 - `manager/seed_ledger.py` REFUSES to seed while any execution is in flight
   (seeding mid-execution double-counts its fills);
 - `manager/flatten.py` waits up to 30s after tripping HALT for in-flight

@@ -1207,13 +1207,14 @@ def _finish_venue_reset(venue):
                 except Exception as e:
                     left.append(f"park {pid} not released ({type(e).__name__})")
     sent = _PENDING_SENT_PATHS.get(venue)
-    if sent:
+    # with its side file (lib/president_vault.park_side): left behind, its rows are read as parked
+    for path in (sent, sent + '.unsaved') if sent else ():
         try:
-            _read_retry(os.remove, sent)
+            _read_retry(os.remove, path)
         except FileNotFoundError:
             pass
         except OSError as e:
-            left.append(f"{sent} not deleted ({type(e).__name__})")
+            left.append(f"{path} not deleted ({type(e).__name__})")
     if not left:
         with _seed_lock():
             todo = _read_reset_todo()

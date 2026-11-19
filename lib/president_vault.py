@@ -369,6 +369,70 @@ def replace_json(path, obj):
         raise
 
 
+def park_side(path):
+    """A park file's side file: what the park file itself refused (manager/reconciler
+    _keep_outside), by key — a row it lacks, or a settled mark (park_settled) for a row it still
+    holds and the claim settled. Laid over the park file by park_merge; dropped by the next save
+    the park file takes."""
+    return path + ".unsaved"
+
+
+def _first_sent(row):
+    legs = row.get("legs") if isinstance(row, dict) else None
+    return legs[0].get("at") if legs and isinstance(legs[0], dict) else None
+
+
+def park_settled(row):
+    """The mark that hides `row` of the park file: it names the row by its first leg's send time
+    (the reconciler's park id), so a side file left behind never hides a row parked later under
+    the same key. None when the row has no such time: it cannot be told from a later one."""
+    at = _first_sent(row)
+    return None if at is None else {"settled": at}
+
+
+def park_is_settled(v):
+    return isinstance(v, dict) and set(v) == {"settled"}
+
+
+def park_merge(main, outside):
+    """The park file's rows with the outside layer over them: a row replaces the key's row, a
+    settled mark removes the one row it names and nothing else. A side file can be left behind
+    (os.remove refused, a kill between the save and the remove), so neither may touch a row the
+    park file took later: a row parked after the outside one (a later first send) stays.
+    Anything else in the outside layer → ValueError (what it stands for is unknown)."""
+    rows = dict(main)
+    for k, v in outside.items():
+        if park_is_settled(v):
+            if k in rows and _first_sent(rows[k]) == v["settled"]:
+                del rows[k]
+        elif isinstance(v, dict):
+            mine, theirs = _first_sent(v), _first_sent(rows.get(k))
+            if mine is not None and theirs is not None and theirs > mine:
+                continue
+            rows[k] = v
+        else:
+            raise ValueError(f"{k}: not a parked row")
+    return rows
+
+
+def park_layer(path):
+    """One of the two files as a dict, None when it is not there. There and not readable as a
+    JSON object → OSError / ValueError: what it holds is unknown, never "nothing"."""
+    try:
+        d = load_json(path, encoding="utf-8")
+    except FileNotFoundError:
+        return None
+    if not isinstance(d, dict):
+        raise ValueError(f"{path} is not a JSON object")
+    return d
+
+
+def park_rows(path):
+    """The parked rows as a process other than the reconciler reads them (flatten): the park
+    file with its side file laid over it. OSError / ValueError when either does not read."""
+    return park_merge(park_layer(path) or {}, park_layer(park_side(path)) or {})
+
+
 def stopped():
     """The class of the failed login that stopped logins here, or None."""
     try:
