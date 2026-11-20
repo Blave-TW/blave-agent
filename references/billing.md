@@ -30,8 +30,8 @@ Three generations of pricing exist. Each account is on exactly one at a time:
    plan. *Hourly billing*, below.
 
 - **How to tell:** Settings › 帳號與方案 (en: Account & plan) in the desktop app, or the plan
-  page on the web (`/agent/<lang>/usage#plan`). An AI credit line ("this period" with a figure
-  out of 300) = Agent plan pricing. A plan named after a server tier with no AI credit line =
+  page on the web (`/agent/<lang>/usage#plan`). An AI credit line for "this period" = Agent plan
+  pricing. A plan named after a server tier with no AI credit line =
   earlier plan pricing. A per-hour price, or usage-page rows like `Server hourly (<tier>, …): 1h`
   = hourly billing.
 - **Cannot tell** (no access to those pages from where you are): before the switch date, treat earlier
@@ -43,12 +43,20 @@ Three generations of pricing exist. Each account is on exactly one at a time:
 ## Agent plan (from the switch date)
 
 - **The plan: 888 TWD per 30 days** (annual: 8,880 TWD per 365 days, ten months' price). It
-  includes Blave data on the desktop app and on a cloud server, **300 TWD of AI credit each
-  period**, and Data Studio Pro. **It does not include a cloud server.**
+  includes Blave data on the desktop app and on a cloud server, **AI credit each period**, and
+  Data Studio Pro. **It does not include a cloud server.**
+- **Never state how much AI credit an Agent plan period, a card trial started after the switch
+  or the sign-in credit (the AI credit the desktop app gives at sign-in) includes** — no TWD
+  figure, even if the plan page, a tool output or an API response shows one. Say the plan (or the
+  trial) includes AI credit, and call the other one "the sign-in credit". A trial started before the switch keeps its
+  100 TWD figure (below). For usage, say how much is used, never how much is left: a whole
+  percentage of this period's credit (used ÷ granted), rounded down, and 100% only once it is
+  used up (so 99.6% is 99%); or point to Settings › 帳號與方案 (en: Account & plan). Anything
+  beyond the credit — what the wallet pays, model prices, auto top-up — is stated in TWD as usual.
 - **AI credit resets each period.** Unused credit does not carry over; it follows the plan's
-  30-day period, not the calendar month. Annual plans get 300 every 30 days (the last slot of
-  the year is 50). Blave AI turns use the period's credit first, then the 30 TWD sign-in credit,
-  then the wallet. All models can use the credit.
+  30-day period, not the calendar month. Annual plans get a fresh credit every 30 days (the last,
+  shorter slot of the year gets a proportionally smaller one). Blave AI turns use the period's
+  credit first, then the sign-in credit, then the wallet. All models can use the credit.
 - **A cloud server is an add-on** on top of the plan, each tier priced on its own (per 30 days;
   annual add-ons are twelve months' price, no discount). Quote the add-on, not a total, unless
   the user asks what the first payment will be:
@@ -75,10 +83,10 @@ Three generations of pricing exist. Each account is on exactly one at a time:
   (cloud view) pay without leaving the app — a card already on file is charged in the box, a new
   card goes through the payment page in the browser. Paid server starts from the desktop are
   limited to 5 per day (Taipei time); upgrading a running server is done on the website.
-- **Card trial: 14 days, 150 TWD of AI credit, no server.** Adding a card starts it (a 10 TWD
+- **Card trial: 14 days, AI credit included, no server.** Adding a card starts it (a 10 TWD
   card check goes into the wallet) and means agreeing to the first period, 888 TWD, when the
   trial ends; cancelling before then charges nothing. Opening a server during the trial ends the
-  trial at once and starts the first period (plan + add-on), with 300 TWD of credit for it.
+  trial at once and starts the first period (plan + add-on), with that period's AI credit.
   A trial that started before the switch keeps its old terms during the trial (100 TWD credit,
   Linux Starter included); if it ends after the switch, the first period is charged at Agent plan
   pricing: 888 TWD with no server, 1,440 TWD (888 + 552) with its Linux Starter server.
@@ -118,7 +126,7 @@ desktop the same meters exist, but which ones apply depends on two things the us
 - **LLM — depends on the engine.** On the user's own Claude Code / Codex, Blave charges nothing
   for AI: that usage is on the user's own plan with that provider. With the engine set to
   **Blave AI**, every turn is billed as Meter 3 describes — from the period's AI credit first on
-  an Agent plan, otherwise from the 30 TWD sign-in credit and then the wallet. Never say LLM is
+  an Agent plan, otherwise from the sign-in credit and then the wallet. Never say LLM is
   billed "only on a cloud machine".
 - **Data — depends on the account, not on the app.** Exchange klines and Taiwan daily bars from
   TWSE / TPEx need no Blave key and cost nothing. Blave data through the key the app received at
@@ -129,7 +137,7 @@ desktop the same meters exist, but which ones apply depends on two things the us
 - **Server — only if the user opens a cloud server.** Under Agent plan pricing quote the add-on
   from the table above; otherwise the Meter 1 figure.
 - **Where the user sees their own numbers:** Settings › 帳號與方案 (en: Account & plan)
-  shows the plan, the AI credit left this period and any overage, and the wallet; the web usage
+  shows the plan, how much of this period's AI credit is used and any overage, and the wallet; the web usage
   page lists every deduction. Point there for anything this file does not state, instead of
   answering that there is no number.
 
@@ -242,10 +250,10 @@ write, cache read, output). Prices are TWD per 1M tokens (`LLM_PRICING`):
   `haiku` → `opus-5-5` → any other `opus` (legacy price) → `fable-5-1` → any other `fable`
   (legacy price) → otherwise Sonnet. Legacy ids still work at their own (older) price. Switching is per session and applies from the
   next message (`references/models.md`).
-- Free trial: LLM usage draws from the trial's own allowance instead of the balance (150 TWD for a
-  trial started under Agent plan pricing, 100 TWD before). When it runs out, usage comes from any
-  30 TWD sign-in credit left and then the wallet; Blave AI stops only when all of them are empty.
-- Agent plan: each period's 300 TWD of AI credit is used first; beyond it, the 30 TWD sign-in
+- Free trial: LLM usage draws from the trial's own allowance instead of the balance (for a trial
+  started before the switch, 100 TWD; never quote the amount for one started after it). When it runs out, usage comes from any
+  sign-in credit left and then the wallet; Blave AI stops only when all of them are empty.
+- Agent plan: each period's AI credit is used first; beyond it, the sign-in
   credit, then the wallet. Blave AI stops only when all three are empty.
 - Long conversations cost more per turn (the whole context is input every call); cache reads are
   10× cheaper than fresh input, so the runtime's prompt caching is what keeps that in check.
@@ -271,7 +279,7 @@ every wake-up — that is why `references/deployment.md` forbids per-tick agent 
   Agent plan. Nothing else on the machine is. (Desktop app: only when the engine is Blave AI —
   see *Desktop app*.)
 - 「電腦版要錢嗎？雲端主機一個月多少？」— The app is free. Agent plan pricing: the plan is 888 TWD
-  per 30 days (data, 300 TWD of AI credit each period, Pro), and a cloud server is an add-on from
+  per 30 days (data, AI credit each period, Pro), and a cloud server is an add-on from
   +552 TWD (Linux Basic) — give the figure from the table. Earlier plan pricing: the Meter 1
   figure (Linux Starter 1,440 TWD per 30 days, data included). Hourly billing: the same monthly
   figure, billed hourly while the machine exists.
@@ -282,7 +290,11 @@ every wake-up — that is why `references/deployment.md` forbids per-tick agent 
   needed) or an API plan; the card trial includes it too. Earlier plan pricing: a plan (any tier)
   or an API plan. Hourly billing: free during the card trial, then per active clock hour
   (Meter 2).
-- 「AI 額度用完會怎樣？」— Agent plan: the turn keeps running, paid from the 30 TWD sign-in credit
+- 「方案／試用含多少 AI 額度？我還剩多少？」— The plan and the card trial include AI credit; never give
+  a TWD amount for it (a trial started before the switch: 100 TWD). Say how much is used, not how
+  much is left: a whole percentage rounded down, 100% only when used up; Settings › 帳號與方案
+  shows this period's usage. What happens beyond it is the next answer.
+- 「AI 額度用完會怎樣？」— Agent plan: the turn keeps running, paid from the sign-in credit
   and then the wallet; auto top-up refills the wallet if a card is on file. The credit comes back
   at the start of the next 30-day slot.
 - 「扣款失敗／餘額不夠會怎樣？」— Plan pricing: the server stops and data pauses, it is retried

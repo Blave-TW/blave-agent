@@ -56,5 +56,39 @@ else:
     ok = f"**The plan: {plan:,} TWD per 30 days**" in doc and len(v3rows) == len(addon)
     red += not ok
     print(("PASS  " if ok else "FAIL  ") + f"v3 方案價 {plan} 寫在 Agent plan 那一節、加購表列數 = api")
+# 對外不寫 AI 額度數字（改價後的方案每期、試用都一樣）：提到 AI credit／allowance 的條列裡不能有裸的額度數字。
+# 放行錢包儲值的句型（自動儲值 300 TWD into the wallet、Top-up sizes 那列）。
+CREDIT = os.path.join(API, "account", "agent_ai_credit.py")
+if os.path.exists(CREDIT):
+    ctree = ast.parse(open(CREDIT, encoding="utf-8").read())
+    grants = [ast.literal_eval(n.value) for n in ctree.body if isinstance(n, ast.Assign)
+              and any(getattr(t, "id", None) in ("GRANT_PERIOD_TWD", "GRANT_TRIAL_TWD") for t in n.targets)]
+    # 電腦版登入送的 AI 額度也不對外講
+    ftree = ast.parse(open(os.path.join(API, "account", "agent_free_credit.py"), encoding="utf-8").read())
+    grants += [ast.literal_eval(n.value) for n in ftree.body if isinstance(n, ast.Assign)
+               and any(getattr(t, "id", None) == "FREE_AI_CREDIT" for t in n.targets)]
+    # 匯率（30 TWD/USD）與天數（30 days、30-day、30 d）不是額度
+    ALLOW = re.compile(r"\b\d[\d,]* TWD into the wallet|Top-up sizes:[^\n]*|\b30 TWD/USD|\b30(?:-day| days?\b| d\b)")
+
+    def grant_hits(text):
+        # 以條列（空行或下一個 "- " 為界）為單位：一句話跨行時數字與 "credit" 常不在同一行
+        items = re.split(r"\n(?=\s*- |\s*\n)", text)
+        return [" ".join(it.split())[:90] for it in items if re.search(r"(?i)\bAI credit|\ballowance\b|sign-in credit", it)
+                and any(re.search(rf"(?<![\d,.]){g}(?![\d,])", ALLOW.sub("", it)) for g in grants)]
+
+    must_red = ["- The plan includes 300 TWD AI credit.", "- AI credit: 300 TWD per period.",
+                "- Trial: 150 TWD in AI credit.", "- Annual plans get 300 every 30 days of AI credit.",
+                "- The trial's own allowance is 150.", "- Then the 30 TWD sign-in credit, then the wallet.",
+                "- Sign-in credit: 30 TWD of AI credit."]
+    must_pass = ["- Auto top-up charges 300 TWD into the wallet; AI credit comes first.",
+                 "- Top-up sizes: 300 / 800 / 1500 / 3000 TWD. AI credit is separate.",
+                 "- AI credit: 1,300 users.", "- AI credit follows the 30-day period, renewed every 30 days.",
+                 "- AI credit is billed in TWD; the site shows USD at 30 TWD/USD."]
+    ok = (len(grants) == 3 and all(grant_hits(x) for x in must_red) and not any(grant_hits(x) for x in must_pass))
+    red += not ok
+    print(("PASS  " if ok else "FAIL  ") + f"額度數字偵測自我檢查(額度 {grants})")
+    hits = grant_hits(doc)
+    red += bool(hits)
+    print(("PASS  " if not hits else "FAIL  ") + f"billing.md 講 AI credit／allowance 的條列沒有額度數字:{hits or '無'}")
 print("ALL PASS" if not red else f"{red} 紅")
 sys.exit(1 if red else 0)
