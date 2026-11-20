@@ -2014,7 +2014,7 @@ def fetch_liquidation_map(symbol, headers):
       estimated  oi_value[] / cumsum[] — a MODEL ESTIMATE of where open interest would be
                  liquidated, USD. Not real orders and not actual events; any block built from
                  it must say so.
-    `symbol` accepts BTC / BTCUSDT / btc. Needs data access (cloud plan, API plan or, before plan billing, the data fee); no cache —
+    `symbol` accepts BTC / BTCUSDT / btc. Needs data access (a Blave Agent plan, its card trial, or an API plan); no cache —
     the server snapshot is the state. 400 with "symbol is required" never happens from here."""
     sym = normalize_symbol(symbol if str(symbol).upper().endswith('USDT') else str(symbol).upper() + 'USDT')
     return _raw_snapshot('liquidation/get_map', headers, {'symbol': sym})

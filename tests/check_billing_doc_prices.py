@@ -38,5 +38,23 @@ if agent and agent.get("monthly_twd"):
     ok = all(v == agent["monthly_twd"] for v in stated)
     red += not ok
     print(("PASS  " if ok else "FAIL  ") + f"agent: api {agent['monthly_twd']} / billing.md {stated or '沒寫(不比)'}")
+addon = next((ast.literal_eval(n.value) for n in tree.body
+              if isinstance(n, ast.Assign) and any(getattr(t, "id", None) == "V3_ADDON_MONTHLY_TWD" for t in n.targets)), None)
+if addon is None:
+    print("SKIP  api 還沒有 V3_ADDON_MONTHLY_TWD:不比 Agent plan 那張加購表")
+else:
+    plan = tiers["agent"]["monthly_twd"]
+    names = {"starter": "Basic", "premium": "Advanced", "max": "Top"}
+    v3rows = {(m.group(1).lower(), m.group(2)): (int(m.group(3).replace(",", "")), int(m.group(4).replace(",", "")))
+              for m in re.finditer(r"^\| (Linux|Windows) (Basic|Advanced|Top)[^|]*\|[^|]*\| \+([\d,]+) \| ([\d,]+) \|", doc, re.M)}
+    for key, add in addon.items():
+        os_, size = key.split("_")
+        got = v3rows.get((os_, names[size]))
+        ok = got == (add, plan + add)
+        red += not ok
+        print(("PASS  " if ok else "FAIL  ") + f"v3 {key}: api +{add} / {plan + add},billing.md {got}")
+    ok = f"**The plan: {plan:,} TWD per 30 days**" in doc and len(v3rows) == len(addon)
+    red += not ok
+    print(("PASS  " if ok else "FAIL  ") + f"v3 方案價 {plan} 寫在 Agent plan 那一節、加購表列數 = api")
 print("ALL PASS" if not red else f"{red} 紅")
 sys.exit(1 if red else 0)

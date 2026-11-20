@@ -4,111 +4,153 @@ The single answer sheet for 「這樣會不會扣錢」/「扣什麼錢」questi
 from the platform code, not remembered — sources are named per section. If a question is not
 covered here, say you are not sure and point the user to the usage page; never invent a number.
 
-Gist: chat on Blave's models costs tokens; a cloud server includes Blave data and is billed hourly until the account switches to a plan (monthly or annual, data also in the desktop app) — check which one the account is on (*Two billing schemes*, below); letting code run costs nothing extra. Itemised: `/agent/<lang>/usage`.
+Gist: chat on Blave's models costs tokens; Blave data and a cloud server come with a Blave Agent
+plan; letting code run costs nothing extra. Prices changed over time, so check which pricing the
+account is on (*Which pricing applies*, below). Itemised: `/agent/<lang>/usage`.
 
 Sources (api repo): `account/credit.py` (`PRICING`, `LLM_PRICING`, `WEB_SEARCH_PRICING_TWD`,
 `deduct_credit`, `deduct_blave_api_credit`, `deduct_server_credit`), `openclaw/lightsail.py`
 (`SERVER_TIERS`, `WINDOWS_SERVER_TIERS`), `openclaw/proxy.py` (`_deepseek_peak_multiplier`,
 `deduct_llm_credit` call sites), `snapshot/cron_deduct_server_credit.py`, `account/agent_trial.py`,
-`decorators.py` (`api_plan_required`); plan billing: `account/agent_plan_config.py`, `account/agent_plan.py`.
+`decorators.py` (`api_plan_required`); plan billing: `account/agent_plan_config.py`
+(`TIERS`, `V3_ADDON_MONTHLY_TWD`, `V3_FROM`), `account/agent_plan.py`, `account/agent_ai_credit.py`.
 
-## Two billing schemes — find out which one this account is on first
+## Which pricing applies — find out first
 
-Blave Agent is moving from **hourly billing** (the server, and Blave data for accounts without a
-machine, charged from the wallet every clock hour) to **plan billing** (a cloud plan paid per
-period). Each account moves on a switch date the platform emails to that user; until then
-everything under *Hourly billing* below is what really happens, and nothing under *Plan billing*
-applies yet.
+Three generations of pricing exist. Each account is on exactly one at a time:
+
+1. **Agent plan pricing** — from the platform's switch date (`V3_FROM`, emailed to users and not
+   known to you). The plan is 888 TWD per 30 days and does not include a server; a cloud server is an
+   add-on. *Agent plan*, below.
+2. **Earlier plan pricing** — from 2026-10-12 until that switch date. A plan was a server tier
+   (Linux Starter 1,440 TWD per 30 days, data included). A period that started before the switch
+   is still charged at the price it started with; the next period uses Agent plan pricing.
+   *Earlier plan pricing*, below.
+3. **Hourly billing** — before 2026-10-12, and accounts that still have an old machine without a
+   plan. *Hourly billing*, below.
 
 - **How to tell:** Settings › 帳號與方案 (en: Account & plan) in the desktop app, or the plan
-  page on the web (`/agent/<lang>/usage#plan`). A plan with a billing cycle and a next payment
-  date = plan billing. A per-hour price, or usage-page rows like `Server hourly (<tier>, …): 1h`
+  page on the web (`/agent/<lang>/usage#plan`). An AI credit line ("this period" with a figure
+  out of 300) = Agent plan pricing. A plan named after a server tier with no AI credit line =
+  earlier plan pricing. A per-hour price, or usage-page rows like `Server hourly (<tier>, …): 1h`
   = hourly billing.
-- **Cannot tell** (no access to those pages from where you are): say both briefly — "billed by
-  the hour until your account switches to a plan; after that, a monthly or annual plan" — and
-  point to Settings › 帳號與方案. Never present plan-billing facts as current for an account you
-  have not seen switched.
+- **Cannot tell** (no access to those pages from where you are): this file may reach you before the
+  switch date, so do not assume Agent plan pricing is live. Treat earlier plan pricing as the
+  default, say the price is changing to the Agent plan, and point to Settings › 帳號與方案 for what
+  this account pays. Never present Agent plan facts as current for an account you have not seen on
+  it, and never quote 1,440 as "the plan price" without saying it includes a Linux server.
 
-## Plan billing (accounts already switched)
+## Agent plan (from the switch date)
 
-- **A plan is the access, a machine is optional.** Tiers are Linux or Windows, Starter / Premium
-  / Max, at the monthly prices in the table under *Meter 1* (same figure per tier; there is no
-  hourly price on a plan). Every plan includes Blave data — in the desktop app, and on the cloud
-  machine if the account runs one. The desktop app starts a plan without a machine (Linux
-  Starter price); a cloud machine is started on the website, under the same plan.
-- **Only keys Blave Agent issues are covered** — the cloud machine's own key and the desktop
-  app's sign-in key. A key the user created themselves (API page; their own scripts, an external
-  agent) needs an **API plan**, even with a Blave Agent plan or during the trial; without one it
-  gets `403 ERR007` pointing to the API plan. Never tell someone their Agent plan covers a key
-  they made themselves.
-- **There is no desktop-only data plan and no hourly data purchase.** Someone who only uses the
-  desktop app and wants Blave data needs a cloud plan or an API plan. During the card trial the
-  desktop gets the data anyway. Without any of these, exchange klines and the key-free public
-  fetchers still work.
-- **Two cycles:** monthly (a 30-day period) or annual (a one-year period priced below twelve
-  months). Quote the annual figure the plan page or Settings › 帳號與方案 shows; never work it
-  out yourself.
-- **Paid up front, wallet first.** Each period — the first and every renewal — comes from the
-  wallet if the balance covers the whole period; otherwise the bound card is charged for the
-  whole period and the wallet is left alone. No card and not enough balance = the payment fails.
-- **Payment fails → the machine stops and Blave data pauses.** It is retried daily, and a top-up
-  or a new card triggers a retry at once ("pay again" on the plan page does too). If it stays
-  unpaid, the machine is deleted after a grace period, with the strategies, data and keys on it
-  — the plan page shows the date. A successful payment restarts the machine and starts a new
-  period from then.
-- **Cancel = runs to the end of the period, no refund**; after that the machine is deleted on
-  the same grace rule. Deleting the machine on the web also cancels the plan. A cancelled plan
-  can be resumed on the plan page — after the period has ended, resuming charges a new period
-  at once (and starts a deleted machine again).
-- **Upgrade (same OS, to a bigger tier) applies at once** and charges only the difference for
-  the time left in the period; the period end does not move. The plan page shows the exact
-  amount before confirming. Not during the free trial, and not on a cancelled plan.
-- **Switching monthly ↔ annual applies from the next period.** A smaller tier or the other OS is
-  not supported on a cloud plan; say so and point to the plan page rather than promising a date.
-- **Stopped or running makes no difference** to the plan: the period is already paid and it
-  still renews. Only cancelling ends it.
-- **Card trial (Linux Starter):** no plan charge during the trial; the first period of the
-  chosen cycle is charged when it ends. Cancelling before then charges nothing.
-- **The wallet** still holds the AI credit (Blave AI turns, *Meter 3*) and pays plan periods.
-  Auto top-up adds a fixed amount when the balance drops below a threshold — the usage page
-  shows both; do not quote the hourly-billing figures below for a plan account.
+- **The plan: 888 TWD per 30 days** (annual: 8,880 TWD per 365 days, ten months' price). It
+  includes Blave data on the desktop app and on a cloud server, **300 TWD of AI credit each
+  period**, and Data Studio Pro. **It does not include a cloud server.**
+- **AI credit resets each period.** Unused credit does not carry over; it follows the plan's
+  30-day period, not the calendar month. Annual plans get 300 every 30 days (the last slot of
+  the year is 50). Blave AI turns use the period's credit first, then the 30 TWD sign-in credit,
+  then the wallet. All models can use the credit.
+- **A cloud server is an add-on** on top of the plan, each tier priced on its own (per 30 days;
+  annual add-ons are twelve months' price, no discount). Quote the add-on, not a total, unless
+  the user asks what the first payment will be:
 
-## Hourly billing (accounts not yet switched)
+| Server | vCPU / RAM | Add-on per 30 days | Plan + server per 30 days |
+|---|---|---|---|
+| Linux Basic (default) | 2 / 4 GB | +552 | 1,440 |
+| Linux Advanced | 4 / 16 GB | +3,400 | 4,288 |
+| Linux Top | 8 / 32 GB | +7,400 | 8,288 |
+| Windows Basic | 2 / 8 GB | +3,100 | 3,988 |
+| Windows Advanced | 4 / 16 GB | +5,200 | 6,088 |
+| Windows Top | 8 / 32 GB | +11,000 | 11,888 |
 
-Everything from here to *Meter 3* describes hourly billing. On a plan account, *Meter 1*'s table
-still gives the monthly price per tier, and the rest of those two sections does not apply.
+  Basic / Advanced / Top are the user-facing names; code and older pages say Starter / Premium /
+  Max. Windows is only needed for brokers whose API runs on Windows (Capital).
+- **What a renewal charges:** on the renewal day, if the account has a server (running *or*
+  stopped), the plan plus that server's add-on; with no server, 888. **A stopped server still
+  pays its add-on** — only terminating it stops that.
+- **Opening a server mid-period** charges the difference for the days left; restarting a tier
+  already paid for this period is free. Terminating a server does not cancel the plan and is not
+  refunded (an annual plan loses the rest of the year's add-on; the website's terminate box shows
+  the amount). Terminating is done on the website.
+- **From the desktop app:** the plan box (data wall, Settings, the sidebar) and the server box
+  (cloud view) pay without leaving the app — a card already on file is charged in the box, a new
+  card goes through the payment page in the browser. Paid server starts from the desktop are
+  limited to 5 per day (Taipei time); upgrading a running server is done on the website.
+- **Card trial: 14 days, 150 TWD of AI credit, no server.** Adding a card starts it (a 10 TWD
+  card check goes into the wallet) and means agreeing to the first period, 888 TWD, when the
+  trial ends; cancelling before then charges nothing. Opening a server during the trial ends the
+  trial at once and starts the first period (plan + add-on), with 300 TWD of credit for it.
+  A trial that started before the switch keeps its old terms during the trial (100 TWD credit,
+  Linux Starter included); if it ends after the switch, the first period is charged at Agent plan
+  pricing: 888 TWD with no server, 1,440 TWD (888 + 552) with its Linux Starter server.
+- **Paid up front, wallet first.** Each payment comes from the wallet if the balance covers the
+  whole amount; otherwise the card is charged for the whole amount. No card and not enough
+  balance = the payment fails: the server stops and Blave data pauses, it is retried daily, and
+  after the grace period the plan page shows, the server is deleted with the strategies, data and
+  keys on it.
+- **Cancel = runs to the end of the period, no refund.**
+- **Only keys Blave Agent issues are covered** — the cloud server's key and the desktop app's
+  sign-in key. A key the user created themselves (API page; their own scripts, an external agent)
+  needs an **API plan** (`403 ERR007` points to it). The Agent plan does not include an API plan.
+- **Already paying for Pro?** The Agent plan includes Pro; a separate Pro subscription keeps
+  renewing until the user cancels it where they bought it (website, App Store, Google Play).
+
+## Earlier plan pricing (2026-10-12 until the switch)
+
+- **A plan was a server tier** — Linux or Windows, Starter / Premium / Max, at the monthly
+  figures in the table under *Meter 1* (same figure per tier, no hourly price). Every plan
+  included Blave data, on the desktop app too. The desktop app started a plan without a machine
+  at the Linux Starter price; the machine was started on the website.
+- **Card trial (Linux Starter):** no plan charge during the trial; the first period of the chosen
+  cycle is charged when it ends. LLM use during the trial draws from a 100 TWD allowance.
+- **Annual:** a one-year period priced below twelve months; quote the plan page.
+- **Upgrade (same OS, bigger tier)** applies at once for the difference over the days left;
+  monthly ↔ annual switches from the next period.
+- Payment order, failure, cancel and API-plan rules are the same as under *Agent plan*.
+- **There was no AI credit per period** — Blave AI turns were paid from the wallet.
 
 ## Desktop app — read this first when the question comes from the desktop
 
-`BLAVE_AGENT_LOCAL=1`. The rest of this file was written from the cloud machine's side; on the
-desktop the same three meters exist, but which ones apply depends on two things the user chose.
+`BLAVE_AGENT_LOCAL=1`. Much of this file was written from the cloud machine's side; on the
+desktop the same meters exist, but which ones apply depends on two things the user chose.
 
 - **The app itself is free.** No licence, no subscription, no fee for backtests, scans, paper or
   live trading on this computer.
 - **LLM — depends on the engine.** On the user's own Claude Code / Codex, Blave charges nothing
   for AI: that usage is on the user's own plan with that provider. With the engine set to
-  **Blave AI**, every turn is billed from the Blave balance exactly as Meter 3 describes. Never
-  say LLM is billed "only on a cloud machine".
+  **Blave AI**, every turn is billed as Meter 3 describes — from the period's AI credit first on
+  an Agent plan, otherwise from the 30 TWD sign-in credit and then the wallet. Never say LLM is
+  billed "only on a cloud machine".
 - **Data — depends on the account, not on the app.** Exchange klines and Taiwan daily bars from
-  TWSE / TPEx need no Blave key and cost nothing. Blave data (indicators, Taiwan-market
-  datasets) through the key the app received at sign-in is free while the card trial runs, or
-  when the account has a cloud machine or an API plan; otherwise it is Meter 2 — charged per
-  clock hour in which any call was made, never per call. Never say the data fee is only for
-  people calling the API with their own key.
-- **Server — only if the user opens a cloud machine.** Meter 1, table below: quote the monthly
-  figure of the tier asked about (Linux Starter when they name none) and say data is included.
+  TWSE / TPEx need no Blave key and cost nothing. Blave data through the key the app received at
+  sign-in comes with the card trial, a Blave Agent plan (no server needed under Agent plan
+  pricing) or an API plan. Under plan pricing there is no hourly data purchase; under hourly
+  billing it is Meter 2. Never say the data fee is only for people calling the API with their
+  own key.
+- **Server — only if the user opens a cloud server.** Under Agent plan pricing quote the add-on
+  from the table above; otherwise the Meter 1 figure.
 - **Where the user sees their own numbers:** Settings › 帳號與方案 (en: Account & plan)
-  shows the monthly price of their machine and whether data is included for them; the web usage
+  shows the plan, the AI credit left this period and any overage, and the wallet; the web usage
   page lists every deduction. Point there for anything this file does not state, instead of
   answering that there is no number.
 
-## The wallet
+## The wallet and auto top-up
 
-- One prepaid credit balance in TWD. Top-up sizes: 300 / 800 / 1500 / 3000 TWD. With a card bound,
-  auto top-up adds 300 TWD when the balance drops below 100 TWD.
-- Three meters draw from it, and only three: **server** (`usage_vm`), **LLM** (`usage_llm`),
-  **data** (`usage_blave`). Marketplace purchases are a fourth line item but not a meter.
+- One prepaid credit balance in TWD. Top-up sizes: 300 / 800 / 1500 / 3000 TWD.
+- **Auto top-up** (card required): since 2026-10-12, when the balance drops below 50 TWD the card
+  is charged 300 TWD into the wallet (below 100 TWD under hourly billing). Under Agent plan pricing
+  it only pays for AI use beyond the period's credit and is separate from the plan: switching it
+  off does not stop plan renewals. It is on once a card is added. The app tells the user after a
+  top-up happened; if they ask how to change it, point to the usage page.
+- What draws from it: AI beyond the credit (`usage_llm`), plan periods when the balance covers a
+  whole period, marketplace purchases, and under hourly billing the server (`usage_vm`) and data
+  (`usage_blave`).
 - Itemised list: web usage page `/agent/<lang>/usage` (every deduction with its description).
+
+## Hourly billing (before 2026-10-12, and old machines without a plan)
+
+Everything from here to *Meter 3* describes hourly billing. On a plan account, *Meter 1*'s table
+still gives the monthly price per tier under earlier plan pricing, and the rest of those two
+sections does not apply.
 
 ## Meter 1 — server hourly (`usage_vm`) — includes Blave data
 
@@ -200,8 +242,11 @@ write, cache read, output). Prices are TWD per 1M tokens (`LLM_PRICING`):
   `haiku` → `opus-5-5` → any other `opus` (legacy price) → `fable-5-1` → any other `fable`
   (legacy price) → otherwise Sonnet. Legacy ids still work at their own (older) price. Switching is per session and applies from the
   next message (`references/models.md`).
-- Free trial: LLM usage draws from a separate 100 TWD allowance instead of the balance; when the
-  allowance is used up the proxy refuses further model calls until the trial ends.
+- Free trial: LLM usage draws from the trial's own allowance instead of the balance (150 TWD for a
+  trial started under Agent plan pricing, 100 TWD before). When it runs out, usage comes from any
+  30 TWD sign-in credit left and then the wallet; Blave AI stops only when all of them are empty.
+- Agent plan: each period's 300 TWD of AI credit is used first; beyond it, the 30 TWD sign-in
+  credit, then the wallet. Blave AI stops only when all three are empty.
 - Long conversations cost more per turn (the whole context is input every call); cache reads are
   10× cheaper than fresh input, so the runtime's prompt caching is what keeps that in check.
 
@@ -222,32 +267,41 @@ every wake-up — that is why `references/deployment.md` forbids per-tick agent 
 ## Answering the common questions
 
 - 「在這邊聊天會消耗 token 嗎？」— Yes. Every message, on Telegram or the web workspace, is
-  billed as LLM tokens at the current model's rate. Nothing else on the machine is. (Desktop
-  app: only when the engine is Blave AI — see *Desktop app*.)
-- 「電腦版要錢嗎？雲端主機一個月多少？」— The app is free; a cloud machine is the monthly figure
-  in Meter 1 (Linux Starter 1,440 TWD per 30 days, data included) — billed hourly while it
-  exists under hourly billing, or paid per period on a plan (annual also available; quote the
-  plan page). Give the number — it is in this file.
-- 「自己寫程式／用別的 agent，拿自己建的 key 打 Blave API 要什麼方案？」— Plan billing: an API plan,
+  billed as LLM tokens at the current model's rate — from the period's AI credit first on an
+  Agent plan. Nothing else on the machine is. (Desktop app: only when the engine is Blave AI —
+  see *Desktop app*.)
+- 「電腦版要錢嗎？雲端主機一個月多少？」— The app is free. Agent plan pricing: the plan is 888 TWD
+  per 30 days (data, 300 TWD of AI credit each period, Pro), and a cloud server is an add-on from
+  +552 TWD (Linux Basic) — give the figure from the table. Earlier plan pricing: the Meter 1
+  figure (Linux Starter 1,440 TWD per 30 days, data included). Hourly billing: the same monthly
+  figure, billed hourly while the machine exists.
+- 「自己寫程式／用別的 agent，拿自己建的 key 打 Blave API 要什麼方案？」— Plan pricing: an API plan,
   always — a Blave Agent plan covers only the cloud machine's key and the desktop app's key.
-  Hourly billing (not yet switched): an API plan, owning a Blave Agent machine, or the hourly data
-  fee (Meter 2).
-- 「只用電腦版，要 Blave 資料怎麼辦？」— Hourly billing: free during the card trial, then per
-  active clock hour (Meter 2). Plan billing: a cloud plan (any tier, data in the desktop app
-  too) or an API plan; there is no desktop-only data plan.
-- 「扣款失敗／餘額不夠會怎樣？」— Hourly billing: a balance under 50 TWD stops the machine and a
-  balance of 0 deletes it. Plan billing: the machine stops and data pauses, it is retried daily,
-  and it is deleted after the grace period the plan page shows.
+  Hourly billing: an API plan, owning a Blave Agent machine, or the hourly data fee (Meter 2).
+- 「只用電腦版，要 Blave 資料怎麼辦？」— Agent plan pricing: the Blave Agent plan (888, no server
+  needed) or an API plan; the card trial includes it too. Earlier plan pricing: a plan (any tier)
+  or an API plan. Hourly billing: free during the card trial, then per active clock hour
+  (Meter 2).
+- 「AI 額度用完會怎樣？」— Agent plan: the turn keeps running, paid from the 30 TWD sign-in credit
+  and then the wallet; auto top-up refills the wallet if a card is on file. The credit comes back
+  at the start of the next 30-day slot.
+- 「扣款失敗／餘額不夠會怎樣？」— Plan pricing: the server stops and data pauses, it is retried
+  daily, and it is deleted after the grace period the plan page shows. Hourly billing: a balance
+  under 50 TWD stops the machine and a balance of 0 deletes it.
 - 「每小時都被收 API 使用費，把 cron 排在同一小時省錢？」— A machine owner is not charged the data
-  fee at all; data is inside the server hour. Spacing or bunching crons changes nothing on the
-  bill. (Even under the old per-hour data fee, bunching only mattered because the fee was
-  per-active-hour, never per call.) Schedule crons on what the strategy needs, not on billing.
+  fee at all; data is inside the server hour or the plan. Spacing or bunching crons changes
+  nothing on the bill. (Even under the old per-hour data fee, bunching only mattered because the
+  fee was per-active-hour, never per call.) Schedule crons on what the strategy needs, not on
+  billing.
 - 「聊天用 Flash、寫 code 才換 Pro 省錢嗎？」— Yes, that is a real saving: flash costs about a quarter
-  of pro on input and under a third on output (5.5 vs 24.75 and 22 vs 74.25 TWD per million tokens), and the switch is per session with no restart. Mention the DeepSeek weekday peak-hour
+  of pro on input and under a third on output (5.5 vs 24.75 and 22 vs 74.25 TWD per million
+  tokens), and the switch is per session with no restart. Mention the DeepSeek weekday peak-hour
   ×2 and that Claude models cost more but have no surcharge.
-- 「停機會不會扣錢？」— Hourly billing: yes, a stopped machine is still billed the server hour; only
-  deleting it stops the meter. Plan billing: stopping does not change the plan — it still
-  renews; only cancelling ends it, at the end of the period, with no refund.
-- 「回測／掃參數／定期報告會扣錢嗎？」— Nothing beyond the server hour (or the plan); the only
+- 「停機會不會扣錢？」— Agent plan pricing: the plan renews as usual and a stopped server still pays
+  its add-on; terminating the server (on the website) is what stops the add-on, from the next
+  period. Earlier plan pricing: stopping does not change the plan — it still renews; only
+  cancelling ends it, at the end of the period, with no refund. Hourly billing: yes, a stopped
+  machine is still billed the server hour; only deleting it stops the meter.
+- 「回測／掃參數／定期報告會扣錢嗎？」— Nothing beyond the plan (or the server hour); the only
   extra is the LLM tokens of the chat turn you are in.
 - 「Web search 會扣錢嗎？」— 0.4 TWD per search on Claude models; not billed on DeepSeek.
