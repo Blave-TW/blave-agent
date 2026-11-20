@@ -1178,9 +1178,10 @@ html.ws-sc .side-rail { flex: 1 1 auto; }
 .priv-gh { margin: 0 0 var(--space-2); font-size: 12px; font-weight: 400; line-height: 1.7; color: var(--ink); }
 /* 法遵入口(服務條款 / 隱私權政策):安靜文字鈕自己一行,跟上面那一段拉開一個群組間距 */
 .set-legal { margin: var(--space-16) 0 0; font-size: 12px; color: var(--ink-3); }   /* 字級 / 色給兩份之間的「·」 */
-/* 不釘底、排在內容最後:釘著時它壓在「關於」標題正下方,看起來像已經到底,版本與識別碼被藏在捲動下面;
-   隱私頁則壓住捲動中的文字(0.1.57 驗收 N6)。.set-content 自己捲,矮視窗捲到底就看得到 */
-.set-pane > .set-legal { margin-top: var(--space-32); padding: 0 0 var(--space-16); }   /* 跟上一組隔群組間距 32(同一般頁其他組);底下留 16,捲到底「關於」那段不貼框底 */
+/* 框腳:內容區自己捲,法遵連結釘在這一頁的底,矮視窗(955×670)捲到頂也看得到(tests/check_shell_ui_fixes_044 §19);bottom 抵銷 .set-content 的內距。
+   上緣一條細線把它跟捲動中的內容分開:0.1.57 驗收 N6 是它沒有分隔、貼在「關於」標題正下方,看起來像已經到底;有了框腳的線,
+   讀得出底下還有內容。在流裡排在最後、上面隔群組間距 32,捲到底時它回到原位,不壓住任何一行 */
+.set-pane > .set-legal { position: sticky; bottom: calc(-1 * var(--space-16)); margin-top: var(--space-32); padding: var(--space-8) 0 var(--space-16); background: var(--surface-card); border-top: 1px solid var(--border-hairline); }
 /* 「來自手機」:泡泡正下方、靠右,離泡泡 4;圖示跟分頁上的手機記號同一顆(desktop-phone-chat-settings §2) */
 .msg.you.from-phone { flex-direction: column; align-items: flex-end; }
 .msg.you .msg-from { display: flex; align-items: center; gap: var(--space-6); margin-top: var(--space-4); font-size: 12px; line-height: 1.4; color: var(--ink-3); }
