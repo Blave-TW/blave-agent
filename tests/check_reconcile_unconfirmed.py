@@ -225,6 +225,51 @@ check(p3.get("reduce_only") is True, f"a close with an unknown outcome is parked
 check(round_() == 0, f"…and no second close goes out for the part it may have sold ({CALLS})")
 unconfirmed.resolve("2330", 0)
 
+# ── a parked order that cannot be settled this round (booking / the park file raises) ──
+full = book_cost()
+amount(32_000)
+MODE["raise"] = unknown("X9")
+round_()
+MODE["raise"] = None
+ANSWER["boom"] = True
+
+
+def held_now():
+    return portfolio._settle_parked(query=query, cancel=lambda entry: False)
+
+
+h = held_now()
+check(h == {KEY: 0.0}, f"an ENTRY that fails to settle holds the symbol and counts as no parked close ({h})")
+amount(8_000)
+n = round_()
+legs = list(CALLS)
+check(n == 1 and legs[0][2] is True and abs(abs(legs[0][1]) - full / 2) < 1e-6,
+      f"…so a cut smaller than that entry still goes out ({legs}, book was {full})")
+amount(4_000)
+MODE["raise"] = unknown("X10")
+round_()
+c10 = abs(parked().get("X10", {}).get("signed_diff") or 0)
+amount(0)
+MODE["raise"] = unknown("X11")
+round_()
+MODE["raise"] = None
+c11 = abs(parked().get("X11", {}).get("signed_diff") or 0)
+h = held_now()
+check(c10 > 0 and c11 > 0 and abs(h.get(KEY, 0) - (c10 + c11)) < 1e-6,
+      f"two CLOSES that fail to settle add up, the entry still adds nothing ({h}, {c10} + {c11})")
+check(abs(c10 + c11 - book_cost()) < 1e-6 and round_() == 0,
+      f"…the whole close sent the book minus the first parked close; nothing is left to send ({CALLS})")
+ANSWER["boom"] = False
+keep_update = unconfirmed.update
+unconfirmed.update = lambda *a, **k: (_ for _ in ()).throw(OSError(28, "No space left on device"))
+h = held_now()
+unconfirmed.update = keep_update
+check(abs(h.get(KEY, 0) - (c10 + c11)) < 1e-6,
+      f"a close already counted is not counted again when its read count cannot be saved ({h})")
+for pid in ("X9", "X10", "X11"):
+    unconfirmed.resolve("2330", 0, park_id=pid)
+check(not parked(), "all three released")
+
 # ── cannot park → HALT, inflight marker kept ─────────────────────────────────
 amount(16_000)
 round_()

@@ -548,9 +548,10 @@ def book_unconfirmed(key, entry, qty, price, source, pid=None):
 def _settle_parked(query=None, now=None, cancel=None):
     """Query every parked order first thing in a round (before the book is read, so a
     fill booked here is in this round's diff). Returns {key: parked reduce cost} for the
-    keys still held (that cost is what a parked close may already have taken off the
-    book — reduce legs leave it alone); None = the park file is unreadable, nothing may
-    trade this round. One order's trouble keeps only that order parked."""
+    keys still held (that cost is what parked closes may already have taken off the
+    book — reduce legs leave it alone; a parked entry adds 0, its key alone holds entries);
+    None = the park file is unreadable, nothing may trade this round. One order's trouble
+    keeps only that order parked."""
     if _unconfirmed is None:
         return {}
     _close_inflight_rows()
@@ -571,8 +572,13 @@ def _settle_parked(query=None, now=None, cancel=None):
             cancel = lambda entry: False  # noqa: E731
     now = time.time() if now is None else now
     held = {k: float('inf') for k in waiting}
+
+    def _reduce_cost(entry):
+        return abs(float(entry.get('signed_diff') or 0)) if entry.get('reduce_only') else 0.0
+
     for pid, entry in rows.items():
         key = entry.get('key') if isinstance(entry, dict) else None
+        counted = False
         try:
             res = None if entry.get('manual') else query(entry)
             if res is None and entry.get('limit') and not entry.get('manual') and cancel(entry):
@@ -591,8 +597,8 @@ def _settle_parked(query=None, now=None, cancel=None):
                                 executed_qty=qty)
                     logging.info(f"[reconcile] parked {key} {pid} resolved: filled {qty:g}")
                 continue
-            held[key] = held.get(key, 0.0) + (abs(float(entry.get('signed_diff') or 0))
-                                              if entry.get('reduce_only') else 0.0)
+            held[key] = held.get(key, 0.0) + _reduce_cost(entry)
+            counted = True
             remind = _unconfirmed.remind_due(entry, now)
             fields = {'reads': int(entry.get('reads') or 0) + 1}
             if remind:
@@ -607,8 +613,8 @@ def _settle_parked(query=None, now=None, cancel=None):
                            **({'manual': True} if entry.get('manual') else {})})
         except Exception as e:
             logging.error(f"[reconcile] parked {key} {pid}: {type(e).__name__}: {e} — kept parked")
-            if key:
-                held.setdefault(key, abs(float((entry or {}).get('signed_diff') or 0)))
+            if key and not counted:
+                held[key] = held.get(key, 0.0) + _reduce_cost(entry)
     return held
 
 
@@ -5047,14 +5053,14 @@ def reconcile(get_positions_fn, place_order_fn, threshold=RECONCILE_THRESHOLD, s
 
         for sub_diff, reduce_only, is_entry in sub_orders:
             if parked and symbol in parked:
-                # Wei 10-27: a parked order holds new exposure, not exits — a reduce-only close of
-                # what the book holds still goes out (stops keep working); a parked close may
-                # already have taken its cost off, so that part is left alone
+                # Wei 10-27: a parked order holds new exposure, not exits (stops keep working).
+                # A parked close may already have filled: its cost comes off what this leg
+                # wants to reduce and only the rest goes out — a whole close sends book − parked
                 if is_entry or not reduce_only:
                     logging.info(f"[reconcile] {symbol} {sub_diff:+.2f} held — parked order "
                                  f"outcome unknown")
                     continue
-                sure = max(0.0, abs(a_signed) - parked[symbol])
+                sure = max(0.0, min(abs(a_signed), abs(sub_diff)) - parked[symbol])
                 if sure <= 1e-9:
                     continue
                 if abs(sub_diff) > sure:
