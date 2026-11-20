@@ -17,7 +17,7 @@
     "release": "npm run fetch-python && BLAVE_RELEASE=1 electron-builder --config electron-builder.config.js --mac --publish never"
   },
   "devDependencies": {
-    "electron": "44.10.0",
+    "electron": "45.3.3",
     "electron-builder": "26.18.1"
   },
   "dependencies": {
