@@ -19,8 +19,8 @@ Sources (api repo): `account/credit.py` (`PRICING`, `LLM_PRICING`, `WEB_SEARCH_P
 
 Three generations of pricing exist. Each account is on exactly one at a time:
 
-1. **Agent plan pricing** — from the platform's switch date (`V3_FROM`, emailed to users and not
-   known to you). The plan is 888 TWD per 30 days and does not include a server; a cloud server is an
+1. **Agent plan pricing** — from the switch date, 2026-11-20 12:00 Taipei time
+   (04:00 UTC). The plan is 888 TWD per 30 days and does not include a server; a cloud server is an
    add-on. *Agent plan*, below.
 2. **Earlier plan pricing** — from 2026-10-12 until that switch date. A plan was a server tier
    (Linux Starter 1,440 TWD per 30 days, data included). A period that started before the switch
@@ -34,11 +34,11 @@ Three generations of pricing exist. Each account is on exactly one at a time:
   out of 300) = Agent plan pricing. A plan named after a server tier with no AI credit line =
   earlier plan pricing. A per-hour price, or usage-page rows like `Server hourly (<tier>, …): 1h`
   = hourly billing.
-- **Cannot tell** (no access to those pages from where you are): this file may reach you before the
-  switch date, so do not assume Agent plan pricing is live. Treat earlier plan pricing as the
-  default, say the price is changing to the Agent plan, and point to Settings › 帳號與方案 for what
-  this account pays. Never present Agent plan facts as current for an account you have not seen on
-  it, and never quote 1,440 as "the plan price" without saying it includes a Linux server.
+- **Cannot tell** (no access to those pages from where you are): before the switch date, treat earlier
+  plan pricing as the default and say the price is changing to the Agent plan; from the switch
+  date on, Agent plan pricing is the default for new plans and for every period that starts after
+  it. Either way, point to Settings › 帳號與方案 for what this account pays, and never quote 1,440
+  as "the plan price" without saying it includes a Linux server.
 
 ## Agent plan (from the switch date)
 
