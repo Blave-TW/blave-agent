@@ -949,7 +949,7 @@ body.resizing * { cursor: col-resize !important; }
 .cv-pill::before { content: ""; position: absolute; inset: -9px -1px; }
 .cv-pill:hover { background: var(--surface-muted); }
 .row-note { flex: none; padding: 0 var(--space-4); font-size: 12px; line-height: 1; color: var(--ink-3); white-space: nowrap; }
-/* 更新圓鈕(canon › In-app 功能動作鈕 › 具名例外):列裡與細軌同一個長相,28 的橘圓、墨色圖示、不寫字。
+/* 更新鈕(canon › In-app 功能動作鈕 › 具名例外):細軌與放不下時是 28 的橘圓、墨色圖示;列裡是下面的膠囊。
    1px 框留著給停用態用,所以熱區是 -9(28 − 2 + 18 = 44)。停用照 Disabled 退灰(不用 opacity) */
 .up-pill {
   position: relative; flex: none; width: 28px; height: 28px; min-height: 0; padding: 0;
@@ -963,6 +963,13 @@ body.resizing * { cursor: col-resize !important; }
 .up-pill::before { content: ""; position: absolute; inset: -9px; }
 .up-pill:hover:not(:disabled):not([aria-disabled="true"]) { background: var(--color-primaryDark); }
 .up-pill:disabled, .up-pill[aria-disabled="true"] { background: var(--surface-muted); border-color: var(--color-greyMedium); color: var(--ink-3); cursor: not-allowed; }   /* 同 .btn-fill:disabled */
+/* 列裡那顆(spec update-button-label-2026-11-19 A):28 高的膠囊只寫「更新」,幾何同帳號膠囊(熱區 -9／-1:兩側空隙已給相鄰熱區)。
+   圖示留在 DOM,放不下(.is-icon)與細軌才用回上面的 28 圓 */
+.up-pill .t { display: none; }
+.foot-row .up-pill:not(.is-icon) { width: auto; min-width: 44px; padding: 0 var(--space-8); font-size: 12px; font-weight: 500; line-height: 1; white-space: nowrap; }
+.foot-row .up-pill:not(.is-icon) .t { display: inline; }
+.foot-row .up-pill:not(.is-icon) .ic { display: none; }
+.foot-row .up-pill:not(.is-icon)::before { inset: -9px -1px; }
 /* 回合中按更新的原因句:出在列的上方(插在 #foot-why 後面),左緣對齊齒輪圖示 */
 .ws-foot .busy-why { margin: 0 0 var(--space-4); padding-left: var(--space-6); text-align: left; white-space: normal; }
 /* 細軌底部:更新圓鈕、它下面齒輪,間距 16;沒有更新時齒輪自己釘底 */
@@ -1171,8 +1178,9 @@ html.ws-sc .side-rail { flex: 1 1 auto; }
 .priv-gh { margin: 0 0 var(--space-2); font-size: 12px; font-weight: 400; line-height: 1.7; color: var(--ink); }
 /* 法遵入口(服務條款 / 隱私權政策):安靜文字鈕自己一行,跟上面那一段拉開一個群組間距 */
 .set-legal { margin: var(--space-16) 0 0; font-size: 12px; color: var(--ink-3); }   /* 字級 / 色給兩份之間的「·」 */
-/* 框腳:內容區自己捲,法遵連結釘在一般那頁的底(矮視窗不被切);bottom 抵銷 .set-content 的內距 */
-.set-pane > .set-legal { position: sticky; bottom: calc(-1 * var(--space-16)); padding: var(--space-8) 0; background: var(--surface-card); }
+/* 不釘底、排在內容最後:釘著時它壓在「關於」標題正下方,看起來像已經到底,版本與識別碼被藏在捲動下面;
+   隱私頁則壓住捲動中的文字(0.1.57 驗收 N6)。.set-content 自己捲,矮視窗捲到底就看得到 */
+.set-pane > .set-legal { margin-top: var(--space-32); padding: 0 0 var(--space-16); }   /* 跟上一組隔群組間距 32(同一般頁其他組);底下留 16,捲到底「關於」那段不貼框底 */
 /* 「來自手機」:泡泡正下方、靠右,離泡泡 4;圖示跟分頁上的手機記號同一顆(desktop-phone-chat-settings §2) */
 .msg.you.from-phone { flex-direction: column; align-items: flex-end; }
 .msg.you .msg-from { display: flex; align-items: center; gap: var(--space-6); margin-top: var(--space-4); font-size: 12px; line-height: 1.4; color: var(--ink-3); }
@@ -1240,6 +1248,14 @@ html.ws-sc .side-rail { flex: 1 1 auto; }
 .plan-bal .l { font-size: 12px; color: var(--ink-3); }
 .plan-bal .v { font-size: 13px; color: var(--ink); font-variant-numeric: tabular-nums; }
 .plan-bal .v.na { color: var(--ink-3); }
+/* AI 額度用量條(設計 ai-credit-usage-bar-2026-11-20 §2,web 同一份):條＋「已用 N%」,不寫 TWD。條沒有基線,這一列改置中對齊。
+   四種狀態不換色、不動畫寬度;條 aria-hidden,資訊在旁邊的字。120／6／64 是元件尺寸(同 spec) */
+.plan-bal.is-meter { align-items: center; }
+.ai-meter { display: flex; align-items: center; gap: var(--space-12); }
+.ai-track { display: block; flex: 0 0 120px; height: 6px; border-radius: var(--radius-pill); background: var(--surface-muted); overflow: hidden; }
+.ai-fill { display: block; height: 100%; border-radius: var(--radius-pill); background: var(--ink-2); }
+.ai-fill.on { min-width: 6px; }   /* 1% 也看得到一個點 */
+.ai-meter .pct { min-width: 64px; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }   /* 42% → 100% 字變寬時條的左緣不跳 */
 /* 帳號與方案最上面那一組:帳號列＋訊息格＋餘額列。兩列同一個形(.plan-bal);細線由這一組帶、不由列帶——未登入只有一列時線還在。
    組內列距 8、組底到細線 12、細線到方案內容 16(組內小於組間) */
 .plan-id { display: flex; flex-direction: column; gap: var(--space-8); padding-bottom: var(--space-12); margin-bottom: var(--space-16); border-bottom: 1px solid var(--border-hairline); }
@@ -1375,8 +1391,9 @@ html.ws-sc .side-rail { flex: 1 1 auto; }
 /* 同網頁 .cf-opt(canon › Active 亮色白格):未選灰底、hover 白、選中白加框——亮色的白對卡只有 1.05:1,hover 與選中要靠框分開 */
 .cf-opt:hover, .cf-opt:has(input:checked) { background: var(--surface-control-on); }
 .cf-opt:has(input:checked) { border-color: var(--border-frame); }
+/* 圓鈕跨右欄最多四列:標題、說明、會下的單、情境句 */
 .cf-opt input {
-  grid-row: 1 / 4; margin: 1px 0 0; width: 18px; height: 18px; appearance: none; -webkit-appearance: none;
+  grid-row: 1 / 5; margin: 1px 0 0; width: 18px; height: 18px; appearance: none; -webkit-appearance: none;
   border-radius: var(--radius-pill); border: 1px solid var(--check-border); background: transparent; position: relative; cursor: pointer;
 }
 .cf-opt input:checked { background: var(--control-fill); border-color: var(--control-fill); }
@@ -1385,7 +1402,8 @@ html.ws-sc .side-rail { flex: 1 1 auto; }
 .cf-opt-t { font-size: 13px; font-weight: 500; line-height: 20px; color: var(--ink); }
 .cf-opt:has(input:checked) .cf-opt-t { font-weight: 600; }
 .cf-opt-d { font-size: 12px; line-height: 1.6; color: var(--ink-2); text-wrap: pretty; }
-.cf-opt-w { margin-top: var(--space-4); font-size: 12px; line-height: 1.6; color: var(--ink); }   /* 情境句:主墨,不用紅 */
+.cf-opt-w, .cf-opt-l { margin-top: var(--space-4); font-size: 12px; line-height: 1.6; color: var(--ink); }   /* 情境句與會下的單:主墨,不用紅 */
+.del-body.lines p.cf-tail { margin: var(--space-12) 0 0; font-size: 12px; line-height: 1.6; color: var(--ink); }   /* 框底一句(按下時單變了):主墨,不用紅 */
 .cf-opt.off, .cf-opt.off input { cursor: not-allowed; }
 .cf-opt.off, .cf-opt.off:hover, .cf-opt.off:has(input:checked) { background: var(--bg-body); }   /* 鎖住:底一律灰(選中的留框),同網頁 .is-off */
 .cf-opt.off .cf-opt-t, .cf-opt.off .cf-opt-d { color: var(--ink-3); }

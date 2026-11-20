@@ -1,5 +1,5 @@
 /* 左下角一列的手機圖示與它的步驟框(spec sidebar-conversion-2026-11-10 §3.2、§6.5;pop 內容 spec phone-pair-popover-2026-11-17)。
-   出不出只看六條,沒有冷卻、關閉次數、使用日或不畫表;放不下(§4.3)時手機讓位,其餘三樣不動 */
+   出不出只看六條,沒有冷卻、關閉次數、使用日或不畫表;放不下(§4.3)時手機先讓位,還不夠更新鈕才退回圓鈕(slotUpFit),其餘不動 */
 /* o:{ ph(主行程 relay 狀態), revoked(登入失效), rail(側欄收合), fits(這一列放得下四樣) } → { draw, why }。
    主行程的 signedIn 只看有沒有 token,登入失效時仍是 true,所以 revoked 另外擋;paired_ever 只認 false,讀不到當作配對過 */
 function slotPhPlan(o) {
@@ -80,6 +80,13 @@ function slotPopClose(refocus) {
   $("ph-pop").hidden = true; $("ph-pill").setAttribute("aria-expanded", "false");
   if (refocus) $("ph-pill").focus();
 }
+/* 更新鈕放不放得下(spec update-button-label-2026-11-19 A):手機先讓位(slotPaint 已經決定),還超出才退回 28 圓鈕,不截字、不換短字。
+   跟手機一樣同一拍先放開量、放不下再收,畫面不閃;最終大小沒變就不會再觸發 ResizeObserver */
+function slotUpFit(row) {
+  const up = $("up-pill"); if (!up) return;
+  up.classList.remove("is-icon");
+  if (!up.hidden && row && row.clientWidth && !slotRowFits(row)) up.classList.add("is-icon");
+}
 let SLOT_SHOW_DAY = "";
 /* 叫的地方:主行程推 relay 狀態、帳號那一格重畫(登入、語言、方案)、更新圓鈕出現或消失、列寬變了(ResizeObserver,含收合與展開)。
    先放出來量,放不下就在同一拍收回去,畫面上不會閃 */
@@ -88,13 +95,17 @@ function slotPaint() {
   pill.title = t("ph.slot"); pill.setAttribute("aria-label", t("ph.slot"));
   const base = { ph: PH, revoked: typeof authRevoked === "function" && authRevoked(), rail: document.documentElement.classList.contains("ws-sc") };
   const a = document.activeElement, had = pill.contains(a) || (slotPopOpen() && $("ph-pop").contains(a));
+  // canon 放不下的順序:手機先讓位,還超出更新才退回圓鈕。手機量的是寫字的更新鈕(設計師 0158 裁定 en 236 也照這個順序,手機讓位、更新留字)
+  if ($("up-pill")) $("up-pill").classList.remove("is-icon");
   let plan = slotPhPlan({ ...base, fits: true });
   if (plan.draw) { pill.hidden = false; plan = slotPhPlan({ ...base, fits: slotRowFits(row) }); }
   if (!plan.draw) {
     pill.hidden = true; slotPopClose(false);
+    slotUpFit(row);
     if (had) (base.rail ? $("rail-set") : $("ws-conn")).focus();   // 圖示整個收掉:焦點接到齒輪,不掉到 BODY
     return;
   }
+  slotUpFit(row);
   slotPopPaint();
   if (document.visibilityState === "visible") { const d = new Date().toDateString(); if (SLOT_SHOW_DAY !== d) { SLOT_SHOW_DAY = d; trackFeature("slot_ph_show"); } }
 }

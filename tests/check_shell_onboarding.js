@@ -243,7 +243,7 @@ function rest() {
       && /CXF\.bound \? t\("cx\.changeKey"\) : t\("cx\.connect"\)/.test(paint) && /if \(!CXF\.bound\) \{ const b = trEl\("button", "btn-quiet", t\("cx\.change"\)\)/.test(vf)
       && /if \(L\.cx\.busy \|\| CXF\.bound \|\| CXF\.paperBound \|\| CXF\.kc\) return;\n  CXF\.venue = PAPER;/.test(pg)); }
   // 純邏輯:期貨磚、建金鑰網址、權限句、被拒時帶 IP
-  { const C = { CAPITAL: "capital", BINANCE: "binance", PRES_LOCAL_ON: true, CAPL_LOCAL_ON: true, CXF: { venue: null } };
+  { const C = { CAPITAL: "capital", BINANCE: "binance", PRES_LOCAL_ON: true, CAPL_LOCAL_ON: true, SINOPAC_LOCAL_ON: false, CXF: { venue: null } };   // 永豐旗標關(0.1.58 隨附、旗標關著)
     vm.createContext(C);
     vm.runInContext([/const CX_VENUES = \{[\s\S]*?\};\n/.exec(trade)[0].replace("const CX_VENUES", "var CX_VENUES"), "var BITGET_VERIFIED_MODES = [];",
       /const cxPresListed = [^\n]*\n/.exec(trade)[0].replace("const ", "var "), /const cxCaplListed = [^\n]*\n/.exec(trade)[0].replace("const ", "var "),
@@ -270,7 +270,7 @@ function rest() {
       appendChild(c) { this.children.push(c); return c; }, append(...c) { c.forEach((x) => this.children.push(x)); }, setAttribute(k, v) { this.attrs[k] = String(v); },
       addEventListener(e, fn) { this.on[e] = fn; } }; return n; };
     const run = (o) => {
-      const log = [], C = { document: { createElement: mk }, CAPITAL: "capital", PAPER: "paper", BINANCE: "binance", PRES_LOCAL_ON: true, CAPL_LOCAL_ON: true,
+      const log = [], C = { document: { createElement: mk }, CAPITAL: "capital", PAPER: "paper", BINANCE: "binance", PRES_LOCAL_ON: true, CAPL_LOCAL_ON: true, SINOPAC_LOCAL_ON: false,
         CXF: { env: o.env || "local", venue: null, paperBound: !!o.paperBound, bound: false }, window: { blave: { platform: o.platform || "win32" } },
         t: (k) => k, trackFeature: (n) => log.push(n), cxForget() {}, cxModalPaint: () => log.push("paint"), cxIpLookup: () => log.push("ip"), cxFocusStart: () => log.push("focus"),
         cxVenuesFor: () => ["binance", "bingx", "okx"], trVenueLabel: (id) => id.toUpperCase(), $: () => null };

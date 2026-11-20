@@ -17,7 +17,7 @@ const tick = () => new Promise((r) => setImmediate(r));
 
 // ① 純函式
 const introDecide = new Function(cutFn(src, "introDecide") + "; return introDecide;")();
-const PASS = { done: false, conn: true, engine: "ok", acctKnown: true, fill: false, sent: false, running: false, modal: false, visible: true, check: { show: true } };
+const PASS = { done: false, conn: true, engine: "ok", acctKnown: true, fill: false, sent: false, running: false, modal: false, settled: true, visible: true, check: { show: true } };
 ok("全部成立 → 彈", introDecide(PASS) === "");
 const NO = [
   ["已經彈過(這次開著)", { done: true }, "done"],
@@ -35,6 +35,10 @@ const NO = [
   ["回合在跑", { running: true }, "running"],
   ["別的 modal 開著 / 工作頁藏著", { modal: true }, "modal"],
   ["視窗藏起來", { visible: false }, "hidden"],
+  // 0.1.58(spec 0158-catchup-intro §2.1):準備好那行還沒停 1.5 秒、或用戶剛動過、或輸入框有字
+  ["還沒穩(準備好那行停不到 1.5 秒／剛操作過／輸入框有字)", { settled: false }, "settle"],
+  ["還沒穩排在別的 modal 之後、視窗藏起來之前", { settled: false, modal: true }, "modal"],
+  ["還沒穩時不問主行程(穩了才輪到 ipc)", { settled: false, check: undefined }, "settle"],
 ];
 for (const [n, patch, why] of NO) ok("不彈:" + n, introDecide({ ...PASS, ...patch }) === why, introDecide({ ...PASS, ...patch }));
 
@@ -61,6 +65,41 @@ async function syncCase(reply, patch) {
   c = await syncCase({ show: true }, { sent: true });
   ok("前面有條件不成立 → 根本不問主行程", c.ask === 0 && c.show === 0, JSON.stringify(c));
 
+  // ②b 等穩(introSettleWait / introArm / introReady):從原文切出來配假的計時器跑
+  { const timers = []; let now = 10000, ta = { value: "" };
+    const INTRO = { done: false, readyAt: null, wsAt: null, lastInput: 0, timer: 0 }, synced = [];
+    const ctx = { INTRO, INTRO_SETTLE_MS: 1500, Date: { now: () => now }, $: () => ta, isFinite, Math, introSync: () => synced.push(now),
+      clearTimeout: (id) => { const x = timers.find((t2) => t2.id === id); if (x) x.dead = true; }, setTimeout: (f, ms) => { const id = timers.length + 1; timers.push({ id, f, at: now + ms }); return id; } };
+    const fns = new Function("ctx", "with (ctx) { " + cutFn(src, "introSettleWait") + cutFn(src, "introArm") + cutFn(src, "introReady") + " return { introSettleWait, introArm, introReady }; }")(ctx);
+    const live = () => timers.filter((x) => !x.dead);
+    ok("等穩:準備好那行還沒出來(readyAt null)→ 不計時(Infinity)", fns.introSettleWait(now) === Infinity);
+    INTRO.readyAt = now - 5000;
+    ok("等穩:那行早就出現、但還沒看到工作頁(wsAt null)→ 不計時(§2.1／§2.4 取較晚的起點)", fns.introSettleWait(now) === Infinity);
+    INTRO.wsAt = now - 300;
+    ok("等穩:引擎早就好了、工作頁 300ms 前才出現 → 從工作頁出現再算 1500(還要 1200)", fns.introSettleWait(now) === 1200);
+    INTRO.readyAt = null; INTRO.wsAt = now;
+    fns.introReady();
+    ok("等穩:那行出現 → 重判一次、還要等 1500ms", synced.length === 1 && fns.introSettleWait(now) === 1500);
+    fns.introArm(fns.introSettleWait(now)); fns.introArm(fns.introSettleWait(now));
+    ok("等穩:計時器排在 1500ms 後", live().length === 1 && live()[0].at === now + 1500);
+    ok("等穩:一次只排一個計時器", live().length === 1, live().length);
+    now += 1000; INTRO.lastInput = now;
+    ok("等穩:1.5 秒內有操作 → 從最後一次操作再算 1500", fns.introSettleWait(now) === 1500);
+    ta.value = "我想做";
+    ok("等穩:輸入框有字 → 不計時;introArm(Infinity) 清掉計時器", fns.introSettleWait(now) === Infinity && (fns.introArm(Infinity), live().length === 0));
+    ta.value = ""; now += 1500;
+    ok("等穩:字清空、準備好過了 1.5 秒、1.5 秒沒操作 → 0(穩了)", fns.introSettleWait(now) === 0);
+    fns.introArm(200); now += 200; live()[0].f();
+    ok("等穩:計時器到了就重判", synced.length === 2 && synced[1] === now); }
+  ok("introInputs 的 settled 由 introSettleWait 算;等穩時 introSync 排計時器;engine.js 那行插進聊天欄時叫 introReady",
+    /settled: introSettleWait\(Date\.now\(\)\) === 0/.test(cutFn(src, "introInputs")) && /why === "settle" && typeof introArm === "function"\) introArm\(introSettleWait\(Date\.now\(\)\)\)/.test(cutFn(src, "introSync"))
+    && /if \(typeof introReady === "function"\) introReady\(\);/.test(cutFn(read(path.join(R, "engine.js")), "engDone")) && /^const INTRO_SETTLE_MS = 1500;$/m.test(src));
+  ok("輸入事件:keydown／pointerdown／wheel(passive)與 input(清空輸入框要重新計時,稽核 0158 I1)掛在視窗;彈出時拆(introShow 叫 introUnwatch)",
+    /const INTRO_INPUTS = \["keydown", "pointerdown", "wheel", "input"\];/.test(src) && /window\.addEventListener\(k, introOnInput, \{ capture: true, passive: true \}\)/.test(src) && /introUnwatch\(\);/.test(cutFn(src, "introShow")));
+  ok("影片等框到位才播:introShow 不在同一幀 introPlay;transitionend(transform)與 motionBaseMs()+30 兜底、只播一次;減少動態不播",
+    /if \(!still\) \{/.test(cutFn(src, "introShow")) && /e\.propertyName === "transform"/.test(cutFn(src, "introShow")) && /setTimeout\(go, motionBaseMs\(\) \+ 30\)/.test(cutFn(src, "introShow"))
+    && /if \(played\) return; played = true;/.test(cutFn(src, "introShow")) && !/\n  if \(!still\) introPlay\(\);/.test(cutFn(src, "introShow")));
+
   // ③ 引擎
   async function engCase({ snap, ensure, failEvent }) {
     const INTRO = { engine: "wait" }, calls = { ensure: 0, sync: 0 }; let onState = null;
@@ -81,6 +120,15 @@ async function syncCase(reply, patch) {
   ok("這次失敗過(事件)、之後重試成功 resolve → 仍是失敗、不重判", e.engine === "fail" && e.sync === 0, JSON.stringify(e));
   e = await engCase({ snap: () => Promise.reject(new Error("x")) });
   ok("讀不到快照 → 照常等 ensureEngine", e.ensure === 1 && e.engine === "ok", JSON.stringify(e));
+  { const INTRO = { engine: "wait", readyAt: null }, ctx = { INTRO, introSync: () => {}, ENG: { card: {} }, Date,
+      window: { blave: { onEngineState: () => {}, engineState: () => ({ phase: "run" }), ensureEngine: () => Promise.resolve() } } };
+    await new Function("ctx", "with (ctx) { return " + cutFn(src, "introEngineWatch") + "; }")(ctx)(); await tick();
+    const withCard = INTRO.readyAt; INTRO.readyAt = null; INTRO.engine = "wait"; ctx.ENG = { card: null };
+    await new Function("ctx", "with (ctx) { return " + cutFn(src, "introEngineWatch") + "; }")(ctx)(); await tick();
+    ok("等穩的起點:這次有安裝卡 → 引擎可用時不記(等 engDone 那行);沒出卡 → 引擎可用那一刻", withCard === null && typeof INTRO.readyAt === "number");
+    ok("有安裝卡卻等不到 engDone:INTRO_READY_CAP_MS(10 秒)後照樣當作那行出現(不會這次永遠不彈,稽核 0158 I3)", /^const INTRO_READY_CAP_MS = 10000;$/m.test(src)
+      && /else if \(INTRO\.readyAt == null\) setTimeout\(\(\) => \{ if \(INTRO\.readyAt == null && !INTRO\.done && typeof introReady === "function"\) introReady\(\); \}/.test(cutFn(src, "introEngineWatch"))); }
+  ok("第一次看到工作頁的時間(wsAt)在 introInputs 記,只記一次", /if \(conn && INTRO\.wsAt == null\) INTRO\.wsAt = Date\.now\(\);/.test(cutFn(src, "introInputs")));
 
   // ④ main.js introCheck
   const body = cutFn(mainSrc, "introCheck");

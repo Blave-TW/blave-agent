@@ -294,6 +294,21 @@ def _norm_holdings(raw):
     return out[:50]
 
 
+def _waiting(mod, entry):
+    """Optional lib hook (永豐 waiting_info): a failed read that is a login retry, not an outage —
+    `waiting` ("login_retry") and `retry_at` (epoch s) on the entry. Best-effort."""
+    if not hasattr(mod, "waiting_info"):
+        return
+    try:
+        w = mod.waiting_info()
+    except Exception:
+        return
+    if isinstance(w, dict) and isinstance(w.get("waiting"), str):
+        entry["waiting"] = w["waiting"][:32]
+        r = w.get("retry_at")
+        entry["retry_at"] = _finite(r) if isinstance(r, (int, float)) else None
+
+
 def read_venue(vid, env, flow_state=None):
     """One venue → {ok, equity, currency, accounts, positions, holdings,
     flows, error}. Never raises. `flows` absent when the lib has no get_flows
@@ -328,7 +343,13 @@ def read_venue(vid, env, flow_state=None):
                 entry[k] = _finite(eq[k])
     except Exception as e:
         entry["error"] = _err("get_equity", e)
+        _waiting(mod, entry)
         return entry
+    if hasattr(mod, "get_account_masked"):  # optional (永豐): the connect done page's account line
+        try:
+            entry["account_masked"] = str(mod.get_account_masked(env) or "")[:16] or None
+        except Exception:
+            pass
     try:
         entry["positions"] = _norm_positions(mod.get_positions(env))
     except Exception as e:

@@ -644,6 +644,7 @@ REVIEWED = {
     ("local_daemon.py", "_spawn_locked"): "reconciler.log rotation: renames the log, writes nothing",
     ("president_connect.py", "_spawn"): "president_worker.log rotation (desktop): renames the log, writes nothing",
     ("capital_local.py", "_spawn"): "capital_worker.log rotation (desktop): renames the log, writes nothing",
+    ("sinopac_local.py", "_spawn"): "sinopac_worker.log rotation (desktop): renames the log, writes nothing",
     ("web_bridge.py", "_load_queue"): "moves a corrupt queue aside, writes nothing",
     ("skill_sync.py", "main"): "directory swap of the skill clone",
     ("command_listener.py", "_transfer_write"): "strategy_import: <f>.handoff created O_EXCL in a folder this call os.mkdir'd, read back and hash-checked, then renamed",

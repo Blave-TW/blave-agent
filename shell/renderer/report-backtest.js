@@ -645,10 +645,50 @@
     if (a < 0.06) return "var(--surface-muted)"; // 接近 0:中性,不硬分紅綠;留成變數,換主題時格子自己跟著換
     return rgbaToken(v >= 0 ? "--color-green" : "--color-red", +(0.1 + a * 0.45).toFixed(2));
   }
-  // 格子只有 ~40px 寬,印整數;要兩位小數的人看 title
+  // 格子窄,印帶號整數、不帶「%」——單位寫在標題「月報酬（%）」一次(Wei 11-20:省下的字寬留給內距,1280 整年放得下又不貼邊);
+  // 要兩位小數與 % 的人看 title
   function fmtHeat(v) {
     const r = Math.round(Math.abs(v));
-    return (r === 0 ? "" : v > 0 ? "+" : MINUS) + r + "%";
+    return (r === 0 ? "" : v > 0 ? "+" : MINUS) + r;
+  }
+
+  /* 熱圖幾何(0.1.57 驗收 S5／0.1.58 驗收):每一欄照實際量到的最長格字給寬,不估 ch——估寬會在預設 1280 寬也逼出橫捲。
+   * 量法:canvas measureText,字級 12px(canon 表格數值下限)、字體取 body 的;數字一律換成「0」量(格子用 tabular-nums,
+   * 每個數字寬同「0」),各欄用原值、整張表的寬最後才取一次整(各欄各自進位,12 欄最多多算 11px,1280 量到多 1px 就要捲,設計稽核 0158 M5);
+   * 月格與年度格的欄寬含左右內距(HEAT_CELL_PAD),兩位數的月報酬在預設 1280 寬的中欄(內容寬約 510)放得下、字不貼邊;
+   * 次像素的誤差由 CSS 的 overflow: visible 吸收,不截字。月格 400、年度格 700、表頭 500(同 CSS)。
+   * 量不到(沒有 canvas)退回估寬:每字 0.75em。measure(s, weight) 給測試換量法。
+   * 回 { col, yr, head, table }(px):月欄、年度欄、列標欄的內容寬(右內距 4 另加)、整張表的最小寬(含 15 道 2px 格距) */
+  // HEAT_CELL_PAD:月格與年度格左右各留的內距(同 CSS .bt-heat td 的 --space-2),算進欄寬——字永遠不貼色塊邊
+  const HEAT_FONT_PX = 12, HEAT_GAP = 2, HEAT_HEAD_PAD = 4, HEAT_CELL_PAD = 2;
+  function heatGeom(monthLabels, yearLabels, years, measure) {
+    let ctx = null;
+    if (!measure) { try { ctx = document.createElement("canvas").getContext("2d"); } catch (_) { ctx = null; } }
+    const fam = measure ? "" : (getComputedStyle(document.body || document.documentElement).fontFamily) || "sans-serif";
+    const w = function (s, weight) {
+      const z = String(s).replace(/[0-9]/g, "0");
+      if (measure) return measure(z, weight);
+      if (!ctx || typeof ctx.measureText !== "function") return z.length * HEAT_FONT_PX * 0.75;
+      ctx.font = weight + " " + HEAT_FONT_PX + "px " + fam;
+      return ctx.measureText(z).width;
+    };
+    const max = function (list, weight) { return list.reduce(function (m, s) { return Math.max(m, w(s, weight)); }, 0); };
+    const col = Math.max(max(monthLabels, 400), w("00", 500)) + 2 * HEAT_CELL_PAD;
+    const yr = Math.max(max(yearLabels, 700), w(t("bt.year"), 500)) + 2 * HEAT_CELL_PAD;
+    const head = max(years, 500);
+    return { col: col, yr: yr, head: head, table: Math.ceil(head + HEAT_HEAD_PAD + 12 * col + yr + 15 * HEAT_GAP) };
+  }
+
+  /* 表比 frame 寬多少才捲(設計稽核 0158 S7):差 HEAT_SNAP_PX 以內就把表的最小寬降 HEAT_SNAP_PX(heatSnapMin)、收進 frame——12 欄各縮不到 1px,
+   * 只吃掉一點格內距,字不截(overflow visible);不收的話 Windows 常駐捲軸會冒出一條只捲 1–幾 px 的捲軸(en 1024 量到差 1px,
+   * Windows 字寬再寬一點也落在這裡)。超過才真的捲,而且一開始捲到最右,最新月份貼在全年欄左邊。回 "none" | "fit" | "scroll" */
+  const HEAT_SNAP_PX = 8;
+  // 收回時的最小寬:量到的寬減 HEAT_SNAP_PX 的固定像素,不是 100%——中欄之後再拖窄,表仍有下限、照樣出捲軸,
+  // 數字不會擠在一起、12 月也不會鑽到全年欄底下(稽核 0158)
+  function heatSnapMin(tableW) { return Math.max(0, tableW - HEAT_SNAP_PX); }
+  function heatFit(scrollW, clientW) {
+    const d = scrollW - clientW;
+    return !(d > 0) ? "none" : d <= HEAT_SNAP_PX ? "fit" : "scroll";
   }
 
   function buildHeatmap(stats) {
@@ -659,15 +699,19 @@
     let cap = 0, ycap = 0;
     Object.keys(monthly).forEach(function (k) { cap = Math.max(cap, Math.abs(monthly[k])); });
     years.forEach(function (y) { ycap = Math.max(ycap, Math.abs(yearly[y])); });
+    const g = heatGeom(Object.keys(monthly).map(function (k) { return fmtHeat(monthly[k]); }), years.map(function (y) { return fmtHeat(yearly[y]); }), years);
 
     const wrap = el("div", "bt-block");
     wrap.appendChild(el("div", "bt-label", t("bt.monthly")));
     const frame = el("div", "bt-frame bt-heat-frame");
     const table = el("table", "bt-heat");
+    // 欄寬照實際量到的最長格字(heatGeom):不夠寬就 frame 橫捲,一個數字都不截;夠寬(預設 1280 的中欄)整年放得下、不捲
+    table.style.minWidth = g.table + "px";
     const thead = el("thead");
     const hr = el("tr");
     const corner = el("th");
     corner.scope = "col";
+    corner.style.width = g.head + "px";
     hr.appendChild(corner);
     for (let m = 1; m <= 12; m++) {
       const th = el("th", "", (m < 10 ? "0" : "") + m);
@@ -676,6 +720,7 @@
     }
     const yth = el("th", "yr", t("bt.year"));
     yth.scope = "col";
+    yth.style.width = g.yr + "px";
     hr.appendChild(yth);
     thead.appendChild(hr);
     table.appendChild(thead);
@@ -684,7 +729,9 @@
     function heatCell(v, c, cls) {
       const td = el("td", cls || "");
       if (isNum(v)) {
-        td.style.background = heatBg(v, c);
+        const bg = heatBg(v, c);
+        // 年度欄是釘住的:半透明的熱色要疊在不透明的底上,底下捲過去的月份才不會透出來
+        td.style.background = cls === "yr" ? "linear-gradient(" + bg + ", " + bg + "), var(--bg-body)" : bg;
         td.textContent = fmtHeat(v);
         td.title = fmtSignedPct(v);
       }
@@ -702,6 +749,13 @@
     table.appendChild(tbody);
     frame.appendChild(table);
     wrap.appendChild(frame);
+    // 要橫捲時一開始就捲到最右:最新的月份緊貼在釘住的年度欄左邊,不在它底下(0.1.58 驗收:11 月被年度欄壓住、12 月看不到)。
+    // 年度欄是最後一欄,捲到底時它就在原位,任何月份都不會被它蓋住
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(function () {
+      const how = heatFit(frame.scrollWidth, frame.clientWidth);
+      if (how === "fit") table.style.minWidth = heatSnapMin(g.table) + "px";
+      else if (how === "scroll") frame.scrollLeft = frame.scrollWidth;
+    });
     return wrap;
   }
 
@@ -917,6 +971,7 @@
   window.BlaveReport.fmtFixed = fmtFixed;   // 結果卡的 Sharpe(不帶 %、不帶正號)
   // 純計算函式掛出來給一次性的核對腳本用;畫面不靠這個
   window.BlaveReport._bt = {
+    heatGeom: heatGeom, fmtHeat: fmtHeat, heatFit: heatFit, heatSnapMin: heatSnapMin,
     buildSeries: buildSeries, buildMonthly: buildMonthly, buildYearly: buildYearly,
     readMcpt: readMcpt, fmtSignedPct: fmtSignedPct,
     readMcptDist: readMcptDist, readBand: readBand, readBh: readBh, annualReturn: annualReturn, annualVol: annualVol, dailyWinRate: dailyWinRate,

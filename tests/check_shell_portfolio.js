@@ -151,7 +151,7 @@ ok("必改 3:存金額框的策略列用 trCloseTag / trCtCloseTag(「平倉」�
   vm.runInContext(pure.replace(/^const /gm, "var ") + "\nvar trTipSeq = 0;\n" + ["trEl", "trSec", "trTipLabel", "poHelpGroup", "poCfgSec", "trHead", "trFmt", "trFmt2", "trFmtPrice", "trMoneyInto", "trReport", "trContracts", "trStored", "trBase", "trNamesOf", "trNames",
     "trListNames", "trDisplay", "trPickOff", "trPickBtn", "trVenueId", "trVenueLabel", "trVenueKind", "trTwBroker", "trStratName", "trTwNamesWant", "trTwName", "trTwNameEl", "trTwLotsText", "trTxfWant", "trRowTxf", "trRowTxfNew", "trCtPend", "trCtStored", "trCt", "trCtGate", "trCtDirty", "trCtRollTag",
     "trRowMoneyStored", "trCtPayload", "trRowIsLot", "trRowMoney", "trLotsFmt", "trLotsTgtFmt", "trLotsInto", "trQuoteMap", "trNoSignalYet", "trZoneOf", "trZoneLabel", "trZoneUnit", "trFxView", "trZoneSum", "trTotalText",
-    "trPaintPosCell", "trAmountTable", "trNoVenueYet", "trGoStartKey", "trTradableFunded", "trUnrouted", "trRouteDirty", "trCloseTag", "trStratHeld", "trPaperTwOk", "trPaperTw", "trCtCloseTag", "trCfOpen", "trCfBookBad", "trCfStates", "trCfHolds", "trMarks", "trCfQty", "trCfRows", "trCfTick", "trPvRequest", "trLivePositions", "trBook", "trTwClosedKeys", "trGatedKeys", "trAwaitKeys", "poPartStates", "poSigTable", "trPosDetail", "trManualPart", "trPlanTotal", "trTxfPrice", "trNetRows", "trWithUnit", "trCatchWill", "trWaitStranded", "trGateSide", "trTradesSym", "trAppRestartQuiet", "trPaperCapOf", "trPaperAvailEl", "cxMonoNums"].map((n) => cutF(src, n)).join("\n"), ctx);
+    "trPaintPosCell", "trAmountTable", "trNoVenueYet", "trGoStartKey", "trTradableFunded", "trUnrouted", "trRouteDirty", "trCloseTag", "trStratHeld", "trPaperTwOk", "trPaperTw", "trCtCloseTag", "trCfOpen", "trCfBookBad", "trCfStates", "trCfHolds", "trMarks", "trCfQty", "trCfRows", "trCfTick", "trPvRequest", "trLivePositions", "trBook", "trTwClosedKeys", "trGatedKeys", "trAwaitKeys", "poPartStates", "poSigTable", "trPosDetail", "trManualPart", "trPlanTotal", "trTxfPrice", "trNetRows", "trWithUnit", "trCatchWill", "trCatchPlan", "trCatchSame", "trBookFresh", "trWaitStranded", "trGateSide", "trTradesSym", "trAppRestartQuiet", "trPaperCapOf", "trPaperAvailEl", "cxMonoNums"].map((n) => cutF(src, n)).join("\n"), ctx);
   const V = { credentials: true, pair: true, order: true, account: true };
   const bag = (venues, extra) => ({ env: "local", listLoaded: true, picked: null, sent: null, save: null, edits: { btc: 600 }, bad: {}, raw: {}, sig: {}, ct: { edits: {}, basis: {}, sent: null }, just: null,
     list: [{ name: "btc", displayName: "BTC", hasBacktest: true, symbol: "BTCUSDT" }, { name: "tw", displayName: "TW", hasBacktest: true, symbol: "2330" }],
@@ -472,6 +472,25 @@ ok("必改 3:存金額框的策略列用 trCloseTag / trCtCloseTag(「平倉」�
     ok("補齊說明:BTC 目標 500、帳上 400 → 「會買進 BTCUSDT 100 USDT」;台股(交易所不交易)不列", /tr\.opt\.catchWill \{"side":"tr\.opt\.buy","sym":" BTCUSDT","n":"100 USDT"\}/.test(w) && !/2330/.test(w), w);
     ctx.TR.st.report.config.amounts.btc = 400;   // 目標 = 帳上:差額 0 → 不講會送什麼單(沒有單)
     ok("補齊說明:差額為 0(目標 400、帳上 400)→ 不出「會買進…」;有差額時才出", vm.runInContext("trCatchWill(TR.st.report)", ctx) === null);
+    { const none = vm.runInContext("JSON.stringify(trCatchPlan(TR.st.report))", ctx); ctx.TR.st.report.config.amounts.btc = 500;
+      const one = vm.runInContext("trCatchPlan(TR.st.report)", ctx); ctx.TR.st.report.config.amounts.btc = 400;
+      const unknown = vm.runInContext("trCatchPlan(Object.assign({}, TR.st.report, { venues: {} }))", ctx);
+      // spec 0158-catchup-intro §1.3:預選補齊要分得出「沒有單」和「不知道」
+      ok("trCatchPlan:讀過帳沒有單 → { text: null, n: 0, key: \"\" };有一筆 → n = 1、key 是「方向標的 數量」(不含股名,同網頁);沒連交易所(不知道)→ null",
+        none === '{"text":null,"n":0,"key":"","items":[]}' && JSON.stringify(one.items) === '[{"k":"+BTCUSDT","q":100,"exact":false}]' && !!one && one.n === 1 && /tr\.opt\.catchWill/.test(one.text) && one.key === "+BTCUSDT 100 USDT" && unknown === null, [none, one, unknown]); }
+    { const S = vm.runInContext("trCatchSame", ctx), I = (...xs) => ({ items: xs.map(([k, q, exact]) => ({ k, q, exact: !!exact })) });
+      // 稽核 0158 B3(收窄):只放過捨入雜訊,畫面上的數字(口數、股數、金額取整)不同就算變了
+      ok("trCatchSame:兩邊不知道 = 同;一邊不知道 = 變;1,200.3 對 1,199.8(都寫 1,200)= 同;1,200 → 1,212(1%)、→ 1,248(4%)、→ 1,201 都算變;口數 2 → 3 變;多一筆、翻向、口數與金額混用都算變",
+        S(null, null) && !S(null, I()) && !S(I(), null) && S(I(), I()) && S(I(["+BTCUSDT", 1200.3]), I(["+BTCUSDT", 1199.8]))
+        && !S(I(["+BTCUSDT", 1200]), I(["+BTCUSDT", 1212])) && !S(I(["+BTCUSDT", 1200]), I(["+BTCUSDT", 1248])) && !S(I(["+BTCUSDT", 1200]), I(["+BTCUSDT", 1201]))
+        && !S(I(["+TXF", 2, true]), I(["+TXF", 3, true])) && S(I(["+TXF", 2, true]), I(["+TXF", 2, true]))
+        && !S(I(["+BTCUSDT", 1200]), I(["+BTCUSDT", 1200], ["-ETHUSDT", 300])) && !S(I(["+BTCUSDT", 1200]), I(["-BTCUSDT", 1200])) && !S(I(["+TXF", 2, true]), I(["+TXF", 2]))
+        && S(I(["-ETHUSDT", 300], ["+BTCUSDT", 1200]), I(["+BTCUSDT", 1200], ["-ETHUSDT", 300]))); }
+    { const F = (r, now) => vm.runInContext("trBookFresh", ctx)(r, now), n = Date.now(), s = (ms) => (n - ms) / 1000;
+      ok("trBookFresh:對帳快照與帳戶讀取取較新的那個,不超過 10 分鐘才算新;都沒有 = 不新",
+        F({ last_reconcile: { ts: s(60e3) } }, n) && F({ account: { read_at: s(9 * 60e3) } }, n) && !F({ account: { read_at: s(11 * 60e3) } }, n)
+        && F({ last_reconcile: { ts: s(30 * 60e3) }, account: { read_at: s(60e3) } }, n) && !F({ last_reconcile: { ts: s(30 * 60e3) }, account: { read_at: s(20 * 60e3) } }, n)
+        && !F({}, n) && !F({ last_reconcile: { ts: "壞" } }, n)); }
     // 0.1.27 模擬交易台股(can_paper_twstock):差額是台幣,照標的寫 TWD,BTC 那筆照舊帳戶幣
     { const PV = { paper: V }; ctx.TR = bag(PV, { can_paper_twstock: true });
       ctx.TR.st.report.account.venues = { paper: { ok: true, equity: 10000, currency: "USDT", positions: {} } };
@@ -489,6 +508,10 @@ ok("必改 3:存金額框的策略列用 trCloseTag / trCtCloseTag(「平倉」�
       ok("補齊說明(模擬交易台股):「買進 2330 台積電 97 股」(100,000 ÷ 1,030 捨去,同部位表);週六與 14:00 補休市句,週一 10:00 不補",
         sat.includes(J({ side: "tr.opt.buy", sym: " 2330 台積電", n: "po.twShares " + J({ n: "97" }) })) && /"sym":" BTCUSDT","n":"500 USDT"/.test(sat)
         && /tr\.opt\.catchTwClosed$/.test(sat) && /tr\.opt\.catchTwClosed$/.test(monLate) && !/catchTwClosed/.test(mon), J([sat, mon, monLate]));
+      // 設計稽核 0158 S2／S3:「會」只寫第一筆(其餘 catchWillMore);zh 句號後接休市句不墊空格,en 才墊
+      { const lang = vm.runInContext("LANG", ctx), parts = sat.split(lang === "zh" ? "、" : "; ");
+        ok("補齊說明:第一筆 catchWill、其餘 catchWillMore;休市句前的分隔依語言(zh 不墊空格)", parts.length === 2 && /^tr\.opt\.catchWill /.test(parts[0]) && /^tr\.opt\.catchWillMore /.test(parts[1])
+          && (lang === "zh" ? /。tr\.opt\.catchTwClosed$/.test(sat) : /\. tr\.opt\.catchTwClosed$/.test(sat)), [lang, sat]); }
       // F8:休市時前三筆先列現在就會成交的(BTCUSDT),等開盤的台股排最後;開盤中照代號排
       rp.states.tw = { type: "portfolio", market: "spot", weights: { 1101: 0.25, 2317: 0.25, 2330: 0.25, 2454: 0.25 },
         raw_closes: { 1101: 30, 2317: 200, 2330: 1030, 2454: 1200 }, raw_close_dates: { 1101: "2026-10-16", 2317: "2026-10-16", 2330: "2026-10-16", 2454: "2026-10-16" } };
@@ -518,9 +541,29 @@ ok("必改 3:存金額框的策略列用 trCloseTag / trCtCloseTag(「平倉」�
         us("us_stock", "trWaitStranded", 0, 400) === 0 && us("mixed", "trWaitStranded", 0, 400) === 1
         && us("us_stock", "trCatchWill", 1, 100) === null && /AMZN/.test(us("mixed", "trCatchWill", 1, 100) || ""),
         J([us("us_stock", "trWaitStranded", 0, 400), us("mixed", "trWaitStranded", 0, 400), us("us_stock", "trCatchWill", 1, 100), us("mixed", "trCatchWill", 1, 100)])); }
+    // 0.1.58 Wei 實機(模擬帳戶、第一次啟動前):對帳器從沒跑過(last_reconcile null)、模擬帳本空的、策略 state.json 已有 position 1。
+    // 補齊的單只靠 states × 金額對讀到的帳算,不靠對帳快照:要列出「買進 BTCUSDT 1,000 USDT」。states 還沒有這支(報告在策略第一次寫 state.json 之前)才是 null
+    { const b = bag({ paper: V }), r = b.st.report;
+      b.list = [{ name: "btc_always_long_1m", displayName: "x", hasBacktest: true, symbol: "BTCUSDT" }]; b.edits = {};
+      r.config = { self_ledger: true, amounts: { btc_always_long_1m: 1000 }, exchanges: { btc_always_long_1m: "paper" } }; r.self_ledger = true; r.last_reconcile = null;
+      r.quote_ccy = { btc_always_long_1m: "USDT" }; r.states = { btc_always_long_1m: { symbol: "BTCUSDT", position: 1, market: "swap", updated_at: Math.floor(Date.now() / 1000) } };
+      r.account = { read_at: Math.floor(Date.now() / 1000), venues: { paper: { ok: true, equity: 100000, currency: "USDT", positions: {} } } };
+      ctx.TR = b;
+      const p1 = vm.runInContext("TR = this.TR; trCatchPlan(TR.st.report)", ctx);
+      ok("第一次啟動前(沒有對帳快照、模擬帳本空的、訊號 +1):補齊列得出「買進 BTCUSDT 1,000 USDT」,不靠對帳器", !!p1 && p1.n === 1 && JSON.stringify(p1.items) === '[{"k":"+BTCUSDT","q":1000,"exact":false}]', J(p1));
+      delete r.states.btc_always_long_1m;
+      const p0 = vm.runInContext("trCatchPlan(TR.st.report)", ctx);
+      r.states.btc_always_long_1m = { symbol: "BTCUSDT", position: 1, market: "swap" };
+      const p2 = vm.runInContext("trCatchPlan(TR.st.report)", ctx);
+      ok("…報告的 states 還沒有這支(策略第一次寫 state.json 之前):null(框講「策略算完訊號後才能補齊」);states 一到就列得出單", p0 === null && !!p2 && p2.n === 1, J([p0, p2])); }
+    // 稽核 0158 B1:唯一一支策略的訊號還沒算出來 → 不知道會下什麼(null),不是「沒有要補的單」
+    ok("trCatchPlan:訊號還沒算出來(states 沒有這支)而且沒有別的單 → null(不講沒有要補的單)", (() => { ctx.TR = bag({ binance: V }); const r = ctx.TR.st.report; delete r.states.btc; delete r.states.tw;
+      return vm.runInContext("TR = this.TR; trCatchPlan(TR.st.report)", ctx); })() === null);
     ok("等新訊號提醒:還沒算出訊號(states 沒有這支)→ 不算", (() => { ctx.TR = bag({ binance: V }); const r = ctx.TR.st.report; delete r.states.btc; return vm.runInContext("TR = this.TR; trWaitStranded(TR.st.report)", ctx); })() === 0);
     ok("等新訊號提醒掛在 wait 選項的 warn,只在 > 0 時", /warn: stranded \? t\("tr\.opt\.waitStranded", \{ n: stranded \}\) : null/.test(src) && /const stranded = trWaitStranded\(r\);/.test(src));
-    ok("補齊說明接在 catch 選項的 desc 後面;舊 lib 單一鈕那條接在 lines 最後", /desc: t\("tr\.opt\.catchDesc", \{ how: trCatchHow\(r\) \}\) \+ \(will \? " " \+ will : ""\)/.test(src) && /\.concat\(\[t\("tr\.startWarn1"\)\]\)\.concat\(will \? \[will\] : \[\]\)/.test(src)); }
+    // 0.1.58(spec 0158-catchup-intro §1.2):會下的單從說明句後面搬到選項的 list(另起一行),資料夠新才出;行為在 check_shell_start_box.js 跑
+    // 稽核 0158 M2:資料舊也照列(同網頁),手動選補齊送出的就是畫面上那幾筆;新鮮度只管預選
+    ok("補齊的單掛在 catch 選項的 list(另起一行、讀過帳就列);舊 lib 單一鈕那條接在 lines 最後", /list: will \|\| null,/.test(src) && /\.concat\(\[t\("tr\.startWarn1"\)\]\)\.concat\(will \? \[will\] : \[\]\)/.test(src)); }
   // runtime 10-14:解除綁定保留成員與金額、只清路由。解除 → 重新綁定 → 頁面是 Z(路由空的)→ 存一次 → 可以啟動
   { const rep = (venues, ex) => ({ venues, config: { amounts: { btc: 500, tw: 0 }, exchanges: ex }, states: { btc: { symbol: "BTCUSDT", position: 1 } }, account: { read_at: Math.floor(Date.now() / 1000), venues: {} } });
     const P = { paper: V };

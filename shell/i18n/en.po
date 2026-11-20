@@ -13,14 +13,14 @@ msgid "cn.h.free"
 msgstr "Start with Blave AI"
 
 msgid "cn.blave.descFree"
-msgstr "Sign in for {q} TWD of credit, add a card when it runs out"
+msgstr "Sign in for AI credit, add a card when it runs out"
 
 msgid "cn.blave.descFreeNoNum"
 msgstr "Sign in to start, add a card when credit runs out"
 
 # 設定 › 模型接入 的 Blave AI 那一列,固定一行(12px;右欄是「登入並切換」那顆鈕時 zh ≤ 316px、en ≤ 274px),句尾不加句號。沒登入且拿得到贈額數字時用這句
 msgid "cn.blave.descSet"
-msgstr "{q} TWD of credit, card only when it runs out"
+msgstr "AI credit on sign-in, card only when it runs out"
 
 # 已登入、或拿不到贈額數字時(離線、api 沒回):只講怎麼收錢
 msgid "cn.blave.descSetNoNum"
@@ -697,7 +697,7 @@ msgid "bt.tip.bandNarrow"
 msgstr "The random portfolios’ range is too narrow to show, so only the median is drawn."
 
 msgid "bt.monthly"
-msgstr "Monthly returns"
+msgstr "Monthly returns (%)"
 
 msgid "bt.year"
 msgstr "Year"
@@ -1119,7 +1119,7 @@ msgid "lai.install"
 msgstr "How to install"
 
 msgid "acct.sub"
-msgstr "A first-time card gets {q} TWD of AI credit and Blave data in the desktop app, both for {t} days."
+msgstr "A first-time card gets AI credit and Blave data in the desktop app, both for {t} days."
 
 msgid "acct.ready"
 msgstr "Ready to go."
@@ -1295,7 +1295,7 @@ msgid "pv.offer.li.server"
 msgstr "A cloud machine: strategies run on schedule around the clock and place orders, even with your computer off"
 
 msgid "pv.offer.li.ai"
-msgstr "Plus {q} TWD of Blave AI credit"
+msgstr "Plus Blave AI credit"
 
 msgid "pv.h.plan"
 msgstr "A cloud machine where strategies go live, Blave data included"
@@ -1319,7 +1319,7 @@ msgid "pv.d.offer.cli"
 msgstr "AI stays on your {name}. When a strategy has to run around the clock, the cloud machine has no machine fee for those {t} days."
 
 msgid "pv.d.offer.blave"
-msgstr "Plus {q} TWD of AI credit. When a strategy has to run around the clock, the cloud machine has no machine fee for those {t} days."
+msgstr "Plus AI credit. When a strategy has to run around the clock, the cloud machine has no machine fee for those {t} days."
 
 msgid "pv.d.noTrial"
 msgstr "This account has no first-card trial. Add a card and top up to get data, billed per clock hour of use, with no machine needed."
@@ -11393,10 +11393,10 @@ msgid "p3.tick.ai"
 msgstr "AI credit"
 
 msgid "p3.tick.aiPeriod"
-msgstr "{n} TWD per period"
+msgstr "Included every period"
 
 msgid "p3.tick.aiTrial"
-msgstr "{q} TWD in the trial, then {n} TWD per period"
+msgstr "Included in the trial and every period"
 
 msgid "p3.tick.pro"
 msgstr "Data Studio Pro"
@@ -11655,14 +11655,8 @@ msgstr "Most recent: {name}"
 msgid "p3.c.see"
 msgstr "See My Strategy"
 
-msgid "p3.c.trialH"
-msgstr "{q} TWD of AI credit, plus Blave data"
-
 msgid "p3.c.trialHNoNum"
 msgstr "AI credit, plus Blave data"
-
-msgid "p3.c.planH"
-msgstr "{n} TWD of AI credit each period, plus Blave data"
 
 msgid "p3.c.planHNoNum"
 msgstr "AI credit each period, plus Blave data"
@@ -11674,7 +11668,7 @@ msgid "p3.c.running"
 msgstr "Your strategies keep running."
 
 msgid "p3.low"
-msgstr "Under {n} TWD of AI credit left."
+msgstr "AI credit is running low."
 
 msgid "p3.low.then"
 msgstr "Once it runs out, your balance pays, topped up with {a} TWD below {lo} TWD."
@@ -11686,7 +11680,7 @@ msgid "p3.up"
 msgstr "AI credit is used up, so this turn came from your balance."
 
 msgid "p3.up.next"
-msgstr "{n} TWD more on {at}."
+msgstr "Resets {at}."
 
 msgid "p3.topped"
 msgstr "Auto top-up added {a} TWD (card ending {l})."
@@ -11696,9 +11690,6 @@ msgstr "Auto top-up added {a} TWD."
 
 msgid "p3.set.ai"
 msgstr "AI credit"
-
-msgid "p3.set.aiV"
-msgstr "{n} TWD / {g}"
 
 msgid "p3.set.over"
 msgstr "{o} TWD over this period, paid from your balance."
@@ -11716,7 +11707,7 @@ msgid "p3.s.hostYear"
 msgstr "{tier} machine, paid to the end of the year ({n} days left)"
 
 msgid "p3.lowReset"
-msgstr "Under {n} TWD of AI credit left, resets {at}."
+msgstr "AI credit is running low, resets {at}."
 
 msgid "p3.w.reopenOk"
 msgstr "Open a New Page, {p} TWD"
@@ -11790,6 +11781,21 @@ msgstr "Charged today to your card on file."
 msgid "p3.w.walletNoNum"
 msgstr "Your card was charged but the plan didn't start. The money is in your balance."
 
+msgid "p3.w.trialCardUsed"
+msgstr "This card was already used for a trial, so no trial started. {v} TWD is in your balance."
+
+msgid "p3.w.trialCardUsedNoNum"
+msgstr "This card was already used for a trial, so no trial started. The card check is in your balance."
+
+msgid "p3.w.trialNoElig"
+msgstr "This account isn't eligible for a trial. {v} TWD is in your balance."
+
+msgid "p3.w.trialNoEligNoNum"
+msgstr "This account isn't eligible for a trial. The card check is in your balance."
+
+msgid "p3.a.oncePerCard"
+msgstr "One trial per card."
+
 msgid "pv.f.noTrial.v3"
 msgstr "Adding a card pays the first period, {p} TWD, then renews every {pd} days."
 
@@ -11804,3 +11810,271 @@ msgstr "Starting a cloud machine ends the trial and pays the first period today:
 
 msgid "p3.f.trialConvertNoNum"
 msgstr "Starting a cloud machine ends the trial and pays the first period that day."
+
+# 永豐期貨連接框(renderer/sinopac.js;spec sinopac-connect-2026-11-17 §5,0.1.58 隨附、旗標關著)
+msgid "sp.venue"
+msgstr "SinoPac Futures"
+
+msgid "sp.title"
+msgstr "Connect SinoPac Futures"
+
+msgid "sp.keyPage"
+msgstr "Create a Key on SinoPac"
+
+msgid "sp.perm"
+msgstr "Tick the futures account and all four permissions. No IP limit."
+
+msgid "sp.pfx"
+msgstr "Certificate file"
+
+msgid "sp.pfxPick"
+msgstr "Choose File"
+
+msgid "sp.pfxHint"
+msgstr "The .pfx from the API key page."
+
+msgid "sp.pfxPicked"
+msgstr ".pfx file chosen"
+
+msgid "sp.pfxOther"
+msgstr "Change File"
+
+msgid "sp.id"
+msgstr "National ID number"
+
+msgid "sp.idHint"
+msgstr "Also used as the certificate password."
+
+msgid "sp.pwOther"
+msgstr "My certificate password is different"
+
+msgid "sp.caPw"
+msgstr "Certificate password"
+
+msgid "sp.caPwHint"
+msgstr "Only if you changed it."
+
+msgid "sp.store"
+msgstr "All of this stays on this computer."
+
+msgid "sp.storeTip"
+msgstr "Encrypted, and kept out of the agent’s config file."
+
+msgid "sp.err.idFmt"
+msgstr "That national ID number doesn’t look right."
+
+msgid "sp.err.pfxFile"
+msgstr "This isn’t a certificate file. Choose the one ending in .pfx."
+
+msgid "sp.err.pfxOpen"
+msgstr "This ID number doesn’t open the certificate."
+
+msgid "sp.err.caPw"
+msgstr "Wrong certificate password."
+
+msgid "sp.err.pfxExp"
+msgstr "This certificate expired on {date}. Download a new one from SinoPac."
+
+msgid "sp.err.noSeal"
+msgstr "This computer’s secure storage isn’t available. Restart Blave and try again."
+
+msgid "sp.err.rebound"
+msgstr "The SinoPac details saved on this computer don’t match. Fill them in again and press Connect Account."
+
+msgid "sp.s.setup"
+msgstr "Install SinoPac component"
+
+msgid "sp.s.setupRun"
+msgstr "Installing…"
+
+msgid "sp.s.setupFail"
+msgstr "SinoPac’s component didn’t install."
+
+msgid "sp.s.login"
+msgstr "Sign in to SinoPac"
+
+msgid "sp.s.loginRun"
+msgstr "Signing in…"
+
+msgid "sp.s.loginDone"
+msgstr "Futures account"
+
+msgid "sp.s.sim"
+msgstr "Simulation test"
+
+msgid "sp.s.simRun"
+msgstr "Sending…"
+
+msgid "sp.s.simWait"
+msgstr "In review…"
+
+msgid "sp.s.simDone"
+msgstr "Passed"
+
+msgid "sp.s.worker"
+msgstr "Connect to SinoPac"
+
+msgid "sp.s.workerRun"
+msgstr "Connecting…"
+
+msgid "sp.s.workerFail"
+msgstr "Couldn’t read the SinoPac account. Try again."
+
+msgid "sp.confirm"
+msgstr "Confirm Sign-in"
+
+msgid "sp.err.key"
+msgstr "SinoPac says the key is wrong."
+
+msgid "sp.fixKey"
+msgstr "Change Key"
+
+msgid "sp.err.noFut"
+msgstr "This key doesn’t include the futures account."
+
+msgid "sp.err.cert"
+msgstr "SinoPac didn’t accept this certificate. It may belong to another account."
+
+msgid "sp.fixCert"
+msgstr "Change Certificate"
+
+msgid "sp.err.full"
+msgstr "SinoPac’s connection limit is full. Try again after {time}."
+
+msgid "sp.err.fullHint"
+msgstr "Close other programs using SinoPac’s API first."
+
+msgid "sp.err.net"
+msgstr "Couldn’t reach SinoPac, or it’s under maintenance."
+
+msgid "sp.err.clock"
+msgstr "This computer’s clock is off, so SinoPac refused."
+
+msgid "sp.err.clockHint"
+msgstr "Turn on automatic time in system settings."
+
+msgid "sp.err.unknown"
+msgstr "SinoPac refused the sign-in without a reason."
+
+msgid "sp.err.notSigned"
+msgstr "SinoPac says the account isn’t signed yet or is in review."
+
+msgid "sp.err.version"
+msgstr "The SinoPac component version is wrong."
+
+msgid "sp.sim.do"
+msgstr "SinoPac requires the futures API agreement first, then one simulated order for review."
+
+msgid "sp.sim.hint"
+msgstr "No real money. Review takes about 5 min."
+
+msgid "sp.signPage"
+msgstr "Sign on SinoPac"
+
+msgid "sp.sim.go"
+msgstr "Signed, Send Test Order"
+
+msgid "sp.sim.closed"
+msgstr "SinoPac takes test orders Mon–Fri 08:00–20:00. Next: {when}."
+
+msgid "sp.sim.wait"
+msgstr "Review takes about 5 min and continues if you close this."
+
+msgid "sp.sim.notYet"
+msgstr "SinoPac hasn’t approved it yet."
+
+msgid "sp.sim.notYetHint"
+msgstr "Usually the agreement isn’t signed, or was signed after the test."
+
+msgid "sp.sim.rej"
+msgstr "SinoPac rejected the test order."
+
+msgid "sp.sim.again"
+msgstr "Send Again"
+
+msgid "sp.sim.twIp"
+msgstr "At this hour SinoPac takes Taiwan networks only. Try Mon–Fri before 18:00."
+
+msgid "sp.done.lead"
+msgstr "Connected to SinoPac Futures"
+
+msgid "sp.done.n1"
+msgstr "Quit Blave or shut down and orders stop. Positions stay at SinoPac and aren’t closed."
+
+msgid "sp.st.stopped"
+msgstr "Login stopped"
+
+msgid "sp.st.retry"
+msgstr "Retrying login"
+
+msgid "sp.relogin"
+msgstr "Sign In Again"
+
+msgid "sp.head.stopped"
+msgstr "SinoPac login stopped. New orders and closes can’t go out."
+
+msgid "sp.head.retry"
+msgstr "Can’t reach SinoPac. Retrying at {time}. New orders and closes wait."
+
+msgid "sp.ub.x0"
+msgstr "The SinoPac key, certificate file and national ID number are deleted too."
+
+msgid "sp.ev.stopped"
+msgstr "SinoPac login stopped"
+
+msgid "sp.ev.stoppedNote"
+msgstr "{reason}. New orders and closes can’t go out. Press Sign In Again on the auto-trading page."
+
+msgid "sp.ev.unreachMin"
+msgstr "Can’t reach SinoPac for {n} min"
+
+msgid "sp.ev.unreachHour"
+msgstr "Can’t reach SinoPac for {n} h"
+
+msgid "sp.ev.unreachNote"
+msgstr "SinoPac strategies place no orders and no closes meanwhile. Blave keeps retrying."
+
+msgid "sp.ev.recovered"
+msgstr "SinoPac login restored"
+
+msgid "sp.permCloud"
+msgstr "Tick the futures account and all four permissions."
+
+msgid "sp.storeCloud"
+msgstr "All of this stays on your cloud machine."
+
+msgid "sp.storeTipCloud"
+msgstr "Encrypted here before it’s sent. Kept out of the agent’s config file."
+
+msgid "sp.sim.closedCloud"
+msgstr "The cloud machine can send test orders Mon–Fri 08:00–18:00. Next: {when}."
+
+msgid "sp.head.stoppedHalted"
+msgstr "SinoPac login stopped. New orders and closes can’t go out until you sign in again."
+
+msgid "sp.ev.unreachNoteLong"
+msgstr "SinoPac strategies place no orders and no closes meanwhile. To manage positions, trade at SinoPac directly."
+
+msgid "up.btn"
+msgstr "Update"
+
+msgid "tr.opt.catchNone"
+msgstr "Nothing to catch up right now."
+
+msgid "tr.opt.catchChanged"
+msgstr "The orders changed. Check them and press again."
+
+msgid "tr.opt.catchWillMore"
+msgstr "{side} {sym} {n}"
+
+msgid "tr.opt.catchNeedRead"
+msgstr "Catch-up is available after the account is read."
+
+msgid "tr.opt.catchNeedSignal"
+msgstr "Catch-up is available after the strategies compute their signals."
+
+msgid "p3.set.used"
+msgstr "{p}% used"
+
+msgid "p3.set.reset"
+msgstr "Resets {at}."

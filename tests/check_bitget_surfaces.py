@@ -175,7 +175,7 @@ code = ast.get_source_segment(src, stmt)
 
 def open_list(modes):
     stub = types.SimpleNamespace(LOCAL_OPEN_VENUES=frozenset({"PAPER"}),
-                                 venue_traits=types.SimpleNamespace(verified_modes=lambda v: tuple(modes) if v == "bitget" else ()))
+                                 venue_traits=types.SimpleNamespace(SINOPAC="sinopac", verified_modes=lambda v: tuple(modes) if v == "bitget" else ()))
     ns = {"cl": stub}
     exec(code, ns)
     return stub.LOCAL_OPEN_VENUES

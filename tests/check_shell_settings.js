@@ -431,10 +431,10 @@ let M = mdlOptions(D, "claude", true);
   ok("② 模型選單底部:引擎是 Blave AI 才出(連同分隔線);讀不到餘額只出規則那半句;打開選單與回合結束重讀", /const on = cur === "blave", n = on \? balNow\(\) : null;\s*\$\("mp-bill-div"\)\.hidden = !on; \$\("mp-bill"\)\.hidden = !on;/.test(src) && /\$\("mp-bill-sep"\)\.hidden = !n; \$\("mp-bill-bal"\)\.hidden = !n;/.test(src)
     && /<p class="mp-note" id="mp-note" aria-live="polite"><\/p>\s*<!--[^>]*-->\s*<div class="mp-div" id="mp-bill-div" hidden><\/div>\s*<p class="mp-note mp-bill" id="mp-bill" hidden>/.test(html)
     && /if \(cur === "blave" && hasToken\) balLoad\(\);/.test(cut("mpOpen")) && /\n  if \(cur === "blave" && hasToken\) balLoad\(\);/.test(src) && /\.mp-bill \.b \{ white-space: nowrap;/.test(css));
-  ok("③ 模型接入:Blave AI 那一列登入後只講怎麼收錢(descSetNoNum)、沒登入講首次綁卡的贈額(descSet,帶 {q});連結畫面那張卡是另一組字(cn.blave.desc 只給本機已登入 CLI 的人,預設掛 descFreeNoNum)", M[0].desc === "cn.blave.descSetNoNum" && mdlOptions(D, "claude", false)[0].desc === "cn.blave.descSet" && mdlOptions(D, null, false, { oauth: true })[0].desc === "cn.blave.descSet"
+  ok("③ 模型接入:Blave AI 那一列登入後只講怎麼收錢(descSetNoNum)、沒登入講登入就送額度(descSet,不寫數字);連結畫面那張卡是另一組字(cn.blave.desc 只給本機已登入 CLI 的人,預設掛 descFreeNoNum)", M[0].desc === "cn.blave.descSetNoNum" && mdlOptions(D, "claude", false)[0].desc === "cn.blave.descSet" && mdlOptions(D, null, false, { oauth: true })[0].desc === "cn.blave.descSet"
     && /data-i18n="cn\.blave\.descFreeNoNum"/.test(html) && /msgid "cn\.blave\.desc"\nmsgstr "登入就能用，按用量計費"/.test(PO2[0]) && /msgid "mp\.billBal"\nmsgstr "Balance \{n\} TWD"/.test(PO2[1]));
-  ok("③ 兩句各一行、句尾不加句號(寬度預算:zh ≤ 346px、en ≤ 302px,設計師量的)", /msgid "cn\.blave\.descSet"\nmsgstr "登入就有 \{q\} TWD 額度，用完才綁卡"\n/.test(PO2[0]) && /msgid "cn\.blave\.descSetNoNum"\nmsgstr "按用量扣餘額"\n/.test(PO2[0])
-    && /msgid "cn\.blave\.descSet"\nmsgstr "\{q\} TWD of credit, card only when it runs out"\n/.test(PO2[1]) && /msgid "cn\.blave\.descSetNoNum"\nmsgstr "Pay per use from balance"\n/.test(PO2[1])
+  ok("③ 兩句各一行、句尾不加句號(寬度預算:zh ≤ 346px、en ≤ 302px,設計師量的)", /msgid "cn\.blave\.descSet"\nmsgstr "登入就送 AI 額度，用完才綁卡"\n/.test(PO2[0]) && /msgid "cn\.blave\.descSetNoNum"\nmsgstr "按用量扣餘額"\n/.test(PO2[0])
+    && /msgid "cn\.blave\.descSet"\nmsgstr "AI credit on sign-in, card only when it runs out"\n/.test(PO2[1]) && /msgid "cn\.blave\.descSetNoNum"\nmsgstr "Pay per use from balance"\n/.test(PO2[1])
     && /\.mdl-row \.m\{[^}]*white-space:nowrap;overflow:hidden;text-overflow:ellipsis\}/.test(css)); }
   ok("③ 模型接入減字(spec settings-model-access §5):組標副句「Blave 不收費」、Codex 下載兩句不再講「Codex 引擎」、已存金鑰列副行「API 金鑰」(zh / en)",
     [["cn.local.desc", "Blave 不收費", "No Blave charge"], ["cn.pkgSize", "需下載約 {size} MB", "Downloads about {size} MB"], ["cn.pkgDl", "下載中 {a} / {b} MB", "Downloading {a} / {b} MB"], ["ak.yours", "API 金鑰", "API key"]]
@@ -555,9 +555,9 @@ ok("「重新偵測」只在本機有一個不能用時出:兩個都就緒不出
   oauthPending = false; loginPending = "codex"; mdlPaint(); const waitLogin = rows();
   loginPending = null; hasToken = true; mdlPaint(); const inIdle = blave();
   cur = "blave"; mdlPaint(); const inCur = blave();
-  ok("Blave AI 的說明:沒登入 + 有數字 → 贈額句(數字來自 cnFreeQ = public_tiers.free_ai_credit,不是綁卡試用那池 planVars().q);沒登入 + 拿不到數字 → 扣款句;已登入(不管用不用)→ 扣款句", outNum.desc === 'cn.blave.descSet{"q":"30"}' && outNoNum.desc === "cn.blave.descSetNoNum" && inIdle.desc === "cn.blave.descSetNoNum" && inCur.desc === "cn.blave.descSetNoNum");
+  ok("Blave AI 的說明:沒登入 + api 有贈額 → 贈額句(有沒有看 cnFreeQ = public_tiers.free_ai_credit,不是綁卡試用那池 planVars().q;Wei 11-20 起字不寫數字);沒登入 + 拿不到數字 → 扣款句;已登入(不管用不用)→ 扣款句", outNum.desc === "cn.blave.descSet" && outNoNum.desc === "cn.blave.descSetNoNum" && inIdle.desc === "cn.blave.descSetNoNum" && inCur.desc === "cn.blave.descSetNoNum");
   ok("Blave AI:沒登入 = radio 停用＋右欄一顆鈕;等待登入中 = 只有「取消等待」;已登入沒在用 = radio 可按、右欄空;使用中 = radio 選中、右欄空",
-    outNum.off && outNum.tail.join() === "pf-act mdl-slot:cn.blave.signinSwitch" && waitOauth.tail.join() === "pf-act mdl-slot:oauth.cancel" && !waitOauth.tailDis[0] && waitOauth.desc === 'cn.blave.descSet{"q":"30"}'
+    outNum.off && outNum.tail.join() === "pf-act mdl-slot:cn.blave.signinSwitch" && waitOauth.tail.join() === "pf-act mdl-slot:oauth.cancel" && !waitOauth.tailDis[0] && waitOauth.desc === "cn.blave.descSet"
     && !inIdle.off && !inIdle.on && inIdle.tail.length === 0 && inCur.on && inCur.tail.length === 0, J([outNum, waitOauth, inIdle, inCur]));
   ok("等待 OAuth 中:別列的 radio 全停用(選中的那顆照樣選中)、別列的鈕鎖住", lockedWhileWait[0].on && lockedWhileWait.every((r) => r.off) && lockedWhileWait[1].tail.join() === "pf-act mdl-slot:cn.signIn" && lockedWhileWait[1].tailDis[0] === true, J(lockedWhileWait));
   ok("本機登入等待中:那一列只有「取消等待」;每一列右欄最多一樣", waitLogin[2].tail.join() === "pf-act mdl-slot:login.cancel" && waitLogin.every((r) => r.tail.length <= 1));
@@ -775,8 +775,9 @@ ok("隱私:五十四個事件逐項對得上契約的白名單(0.1.57 改價 v3 
   && /whether local auto-trading runs/.test(POS(1, "priv.c.step.2")) && /type \(A\/B\/C\) and market category/.test(POS(1, "priv.c.strat.2")) && /^Never its name or symbol$/.test(POS(1, "priv.c.strat.3"))
   && /whether it needs Blave data/.test(POS(1, "priv.c.feat.3")) && /which entry point/.test(POS(1, "priv.c.feat.4")) && /which sort you picked/.test(POS(1, "priv.c.feat.5")) && /which step it reached and the result type/.test(POS(1, "priv.c.feat.6")) && /^Never the chat title or text$/.test(POS(1, "priv.c.feat.8")) && /^Picking a main market: which one you picked$/.test(POS(1, "priv.c.feat.9"))
   && /^Categories only, never the content$/.test(POS(1, "priv.c.stuck.9")) && /^Never the code$/.test(POS(1, "priv.c.auth.5")) && /kept 90 days/.test(POS(1, "priv.c.acct.2")));
-ok("acct.sub 開通試用那句兼講期限(Wei 核准 0.1.10):zh / en 逐字", /msgid "acct\.sub"\nmsgstr "首次綁卡，\{t\} 天內有 \{q\} TWD 的 AI 額度，電腦版也拿得到 Blave 的資料。"/.test(PO[0])
-  && /msgid "acct\.sub"\nmsgstr "A first-time card gets \{q\} TWD of AI credit and Blave data in the desktop app, both for \{t\} days\."/.test(PO[1]));
+// Wei 11-20:對外不寫 AI 額度的 TWD 數字(spec agent-888-vague-ai-credit),兩語逐字、不帶 {q}
+ok("acct.sub 開通試用那句兼講期限(Wei 核准 0.1.10;11-20 拿掉額度數字):zh / en 逐字", /msgid "acct\.sub"\nmsgstr "首次綁卡，\{t\} 天內有 AI 額度，電腦版也拿得到 Blave 的資料。"/.test(PO[0])
+  && /msgid "acct\.sub"\nmsgstr "A first-time card gets AI credit and Blave data in the desktop app, both for \{t\} days\."/.test(PO[1]));
 // 例外只有報告分享的掛名二選一(shr.anon):那是公開頁上作者欄真的不出名字,不是在講追蹤資料匿名
 ok("隱私 0.1.13(Wei 核准草稿 §B):priv.never.2 收窄成「你自己的策略」", /msgid "priv\.never\.2"\nmsgstr "你自己的策略：程式碼與名稱"/.test(PO[0]) && /msgid "priv\.never\.2"\nmsgstr "Your own strategies' code and names"/.test(PO[1]));
 ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選項 shr.anon 除外);首次告知的 priv.notice* 沒有建", PO.every((x) => !/匿名|anonym/i.test(x.replace(/^#.*$/gm, "").replace(/msgid "shr\.anon"\nmsgstr "[^"]*"/, ""))) && PO.every((x) => !/priv\.notice/.test(x)) && !/telemetryNoticed/.test(src));
@@ -1166,10 +1167,10 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
         && ["pv.d.trial", "pv.d.trial.old", "pv.f.offer", "pv.f.offer.old", "pv.d.billed", "data.readyBilled", "lib.note.billed", "wd.note.billed"].every((k) => !!str(zh, k) && !!str(enp, k)));
       // D 版(設計師 desktop-signedout-plan 2026-10-10):未登入底列只留價格事實 +「自動」(扣第一期／取消留給綁卡那步的 pv.f.offer.m);標題「免費試用」不用「送」,
       // en 的 {t}‑day 用 U+2011(h5 的 text-wrap: balance 會把一般連字號折在「14-」後);三條各講結果、不碰績效、不講 AI 判斷;聊天卡 pv.e.out / pv.e.card* 同口徑
-      ok("D 版的字:pv.f.out.m 只講「試用結束後自動開始計費,每 {pd} 天 {p} TWD」;pv.h.offer.m「首次綁卡,免費試用 {t} 天」(en 連字號 U+2011);三條列式兩語都在、AI 那條帶 {q};聊天卡不再「送 {t} 天」",
+      ok("D 版的字:pv.f.out.m 只講「試用結束後自動開始計費,每 {pd} 天 {p} TWD」;pv.h.offer.m「首次綁卡,免費試用 {t} 天」(en 連字號 U+2011);三條列式兩語都在、AI 那條不寫額度數字(Wei 11-20);聊天卡不再「送 {t} 天」",
         str(zh, "pv.f.out.m") === "試用結束後自動開始計費，每 {pd} 天 {p} TWD。" && str(enp, "pv.f.out.m") === "After the trial, billing starts automatically at {p} TWD every {pd} days."
         && str(zh, "pv.h.offer.m") === "首次綁卡免費試用 {t} 天" && str(enp, "pv.h.offer.m") === "Your first card starts a {t}\u2011day free trial" && str(zh, "pv.h.offerNoNum.m") === "首次綁卡免費試用一段時間" && !!str(enp, "pv.h.offerNoNum.m")
-        && ["pv.offer.li.data", "pv.offer.li.server", "pv.offer.li.ai"].every((k) => !!str(zh, k) && !!str(enp, k)) && /\{q\} TWD/.test(str(zh, "pv.offer.li.ai")) && /\{q\} TWD/.test(str(enp, "pv.offer.li.ai")) && /排程/.test(str(zh, "pv.offer.li.server")) && /on schedule/.test(str(enp, "pv.offer.li.server"))
+        && ["pv.offer.li.data", "pv.offer.li.server", "pv.offer.li.ai"].every((k) => !!str(zh, k) && !!str(enp, k)) && str(zh, "pv.offer.li.ai") === "加送 Blave AI 額度" && str(enp, "pv.offer.li.ai") === "Plus Blave AI credit" && /排程/.test(str(zh, "pv.offer.li.server")) && /on schedule/.test(str(enp, "pv.offer.li.server"))
         && ["pv.e.out", "pv.e.card", "pv.e.card.cli"].every((k) => /免費試用 \{t\} 天/.test(str(zh, k)) && !/送 \{t\}/.test(str(zh, k)) && /\{t\}\u2011day free trial/.test(str(enp, k))) && /免費試用一段時間/.test(str(zh, "pv.e.outNoNum")) && /free trial/.test(str(enp, "pv.e.outNoNum"))); }
     PV_P = ""; PV_PR = null; acct = { plan: { state: "running" } }; }
   // 內文講切換器、標題不動。哪些事歸給網頁工作頁、哪些不可以再歸給它——那條規則由 check_shell_strings.js 守,這裡只守「內文確實在講切換器」。

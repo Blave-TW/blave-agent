@@ -1461,10 +1461,15 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     // Wei 0928 第 3 點:兩顆鈕變成兩個選項——重算中「補齊部位」那個選項停用、原因句掛在它裡面;行為測試在 check_shell_start_box.js
     ok("recomputed 啟動框:「補齊部位」選項停用＋原因句;「等新訊號」照常;按下去再查一次;只有一種啟動方式的舊機照舊 okDisabled",
       /const recomputing = trRecomputing\(r\), rkS = trRestartKind\(r\);/.test(start)
-      && /disabled: recomputing, why: t\("tr\.cloud\.recomputing"\), ok: t\("tr\.startCatchUp"\), onOk: catchUp \},/.test(start)
-      && /const catchUp = \(\) => \{ if \(!trRecomputing\(trReport\(\)\)\) go\("resume"\); \};/.test(start)
-      && /desc: t\("tr\.opt\.waitDesc"\), warn: stranded \? t\("tr\.opt\.waitStranded", \{ n: stranded \}\) : null,\n\s*ok: t\("tr\.startWait"\), onOk: \(\) => go\("resume_wait"\) \},/.test(start)
-      && /ok: t\("tr\.startCatchUp"\), okDisabled: recomputing, okWhy: recomputing \? t\("tr\.cloud\.recomputing"\) : null, onOk: catchUp,/.test(start));
+      // 0.1.58 R1:停用條件多了「還沒讀到帳」,原因句重算中優先
+      && /const catchOff = recomputing \|\| !plan0;/.test(start)
+      && /const catchWhy = recomputing \? t\("tr\.cloud\.recomputing"\) : !read \? t\("tr\.opt\.catchNeedRead"\) : t\("tr\.opt\.catchNeedSignal"\);/.test(start)
+      && /disabled: catchOff, why: catchWhy, ok: t\("tr\.startCatchUp"\), onOk: \(\) => catchUp\("catch"\) \},/.test(start)
+      // 0.1.58:按下去再查一次,重算中或單變了就不送、框留著重畫(行為在 check_shell_start_box.js)
+      && /if \(trRecomputing\(r2\) \|\| !p2 \|\| !trCatchSame\(p2, plan0\)\) \{ trackFeature\("start_catch_chg"\); trAskStart\(opener, true, true, pre\); return; \}/.test(start)
+      && /desc: t\("tr\.opt\.waitDesc"\), warn: stranded \? t\("tr\.opt\.waitStranded", \{ n: stranded \}\) : null,\n\s*ok: t\("tr\.startWait"\), onOk: \(\) => \{ shut\(\); go\("resume_wait", "start:wait:" \+ pre\); \} \},/.test(start)
+      && /\.concat\(catchOff \? \[catchWhy\] : \[\]\)\.concat\(\[t\("tr\.startWarn1"\)\]\)/.test(start)
+      && /ok: t\("tr\.startCatchUp"\), okDisabled: catchOff, okWhy: catchOff \? catchWhy : null, onOk: \(\) => catchUp\("single"\),/.test(start));
     const po = (l) => fs.readFileSync(path.join(__dirname, "..", "shell", "i18n", l + ".po"), "utf8");
     ok("recomputed 文字(zh / en)", /msgid "tr\.cloud\.recomputing"\nmsgstr "策略正在用開機後的資料重算，算完才能補齊部位。算完後關掉這個框再開一次。"/.test(po("zh"))
       && /msgid "tr\.cloud\.recomputing"\nmsgstr "Strategies are recomputing on post-restart data\. Catch up becomes available when they finish; close this box and open it again then\."/.test(po("en"))); }
@@ -1509,7 +1514,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     // 淨值快照(確認框倍數跟表上一致)隨確認框不再列合計與淨值倍數退場(0.1.27,canon 確認 modal):倍數在自動下單 › 部位的合計列
     ok("確認框不再算淨值倍數:trShownEquity／TR.eqShown 退場", !/trShownEquity|eqShown/.test(src) && /const zt = trZoneSum\(am, eq\)/.test(src)); }
   { // 0.0.3 實機:按下啟動之後,啟動前的失敗不再講成現在式
-    ok("按下啟動記時間(表底紅字只給這之後的失敗)", /const go = \(cmd\) => \{ TR\.startAt = Date\.now\(\); return trRunStart\(cmd\); \};/.test(fnS("trAskStart")));
+    ok("按下啟動記時間(表底紅字只給這之後的失敗)", /const go = \(cmd, how\) => \{ TR\.startAt = Date\.now\(\); return trRunStart\(cmd, how\); \};/.test(fnS("trAskStart")));
     const po = (l) => fs.readFileSync(path.join(__dirname, "..", "shell", "i18n", l + ".po"), "utf8");
     ok("本機重開的啟動框那一句(zh / en):講 Blave 關著時訊號沒有更新,不講「暫停期間照常更新」", /msgid "tr\.opt\.catchStale"\nmsgstr "Blave 關著時訊號沒更新，/.test(po("zh")) && /msgid "tr\.opt\.catchStale"\nmsgstr "Signals didn’t update while Blave was closed/.test(po("en"))
       && /msgid "po\.orderFailedLast"\nmsgstr "上次下單失敗：\{err\}"/.test(po("zh")) && !/msgid "tr\.orderFailedLastWhy"/.test(po("zh"))); }   // 0.1.24:列下面那句不帶標的(同網頁)
@@ -1645,7 +1650,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
         && !relAuto({ halted: true, freeze: false, holds_all: false, source: "web" })); }
     ok("§8 接線:主鈕 disabled 帶 zv.off、aria-describedby 指原因行、title 不讓「連不上」蓋掉原因;原因行與解除暫停鈕每次畫", /b\.disabled = flying \|\| zv\.off \|\| \(!busy && !usable\);/.test(head)
       && /if \(zv\.off \|\| zv\.book\) b\.setAttribute\("aria-describedby", zg\.desc\);/.test(head) && /b\.title = zv\.off \? "" :/.test(head) && /else trPaintNoAmt\(pend \|\| zv\.reason, zv\.book \? \{ n: trBookQty\(zv\.book\) \} : null\);\n\s*trPaintGoRel\(zv\.release, zv\.noStart, zv\.close\);/.test(head)
-      && /if \(trZView\(envHeadState\(TR\.st, Date\.now\(\)\), r\)\.off\) return;/.test(fnS("trAskStart")));
+      && /const zv0 = trZView\(envHeadState\(TR\.st, Date\.now\(\)\), r\);\n\s*if \(zv0\.off\) \{/.test(fnS("trAskStart")) && /\n    return;\n  \}/.test(fnS("trAskStart")));
     ok("§8 / §13-1 解除暫停鈕:B0 實心、其餘描邊;插在主鈕左邊(主鈕守住最右);在途「解除中…」停用、通道不通也停用;停用時焦點先交給標題、放開再還回來;原因行的「部位」是切分頁的連結",
       /u\.classList\.toggle\("btn-fill", !!solid\); u\.classList\.toggle\("btn-out", !solid\);/.test(gorel) && /\$\("tr-act"\)\.insertBefore\(u, \$\("tr-go"\)\)/.test(gorel)
       && /u\.textContent = rel \? t\("tr\.releasing"\) : close \? t\("tr\.releaseClose"\) : t\("tr\.release"\);/.test(gorel) && /const off = !!TR\.pending \|\| !up;/.test(gorel)
@@ -1830,6 +1835,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       // 群益開通清單右側的短結果(renderer/capital.js capRow 的 .cap-r):列的狀態,不掛在任何控件上
       const STATUS_ONLY = ["tr.loading", "cn.detecting", "cx.ip.loading", "tr.cloud.hdConnecting", "cap.s.setupRun", "cap.pfx.importing", "cap.s.readRun", "cap.s.querying",
         "pres.s.setupRun", "pres.s.orderRun", "pres.s.probeRun", "pres.s.workerRun",   // 統一清單列右側(renderer/president.js 同 capRow)
+        "sp.s.setupRun", "sp.s.loginRun", "sp.s.simRun", "sp.s.simWait", "sp.s.workerRun",   // 永豐清單列右側(renderer/sinopac.js 同 capRow)
         "tr.presBooting",    // 標題下狀態行:統一下單程式剛起、第一筆帳戶回報還沒回來(trPresBooting),不掛在任何控件上
         "tr.typecPending"];  // 投資組合還沒有權重時表格格子裡的字(機器在算第一輪,Wei 10-15 改「計算中…」),不掛在任何控件上
       const prog = Object.keys(S2.zh).filter((k) => /中…$/.test(S2.zh[k]) && STATUS_ONLY.indexOf(k) < 0);
@@ -2499,8 +2505,8 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
           ctx.document.createElement = mk0; }
         ctx.trEquity = () => null; }
     }
-    ok("接線:連接框「台灣期貨」那組磚雲端只列群益、這台電腦(Windows)列群益本機(CAPL_LOCAL_ON)與統一(PRES_LOCAL_ON);cx.cap.local* 已刪;交易所磚不預選、點了就進那一家;框頂沒有事實列(權限句在步驟 1、金鑰去向是欄位下那句提示泡;「不經過 AI」那行 Wei 10-21 拿掉)",
-      /if \(env !== "local"\) return \[\[CAPITAL, "cap\.venue"\]\];/.test(src) && /group\("tw", "cap\.group\.tw", tw\.map\(/.test(src) && !/go\.hidden = !cloud && CXF\.venue === CAPITAL;/.test(src)
+    ok("接線:連接框「台灣期貨」那組磚雲端列群益(永豐旗標開才多列永豐;0.1.58 隨附、旗標關著)、這台電腦(Windows)列群益本機(CAPL_LOCAL_ON)與統一(PRES_LOCAL_ON);cx.cap.local* 已刪;交易所磚不預選、點了就進那一家;框頂沒有事實列(權限句在步驟 1、金鑰去向是欄位下那句提示泡;「不經過 AI」那行 Wei 10-21 拿掉)",
+      /if \(env !== "local"\) return \[\[CAPITAL, "cap\.venue"\], sp\]\.filter\(Boolean\);/.test(src) && /const sp = SINOPAC_LOCAL_ON \? \["sinopac", "sp\.venue"\] : null;/.test(src) && /group\("tw", "cap\.group\.tw", tw\.map\(/.test(src) && !/go\.hidden = !cloud && CXF\.venue === CAPITAL;/.test(src)
       && !/cx\.cap\.local/.test(src) && !/cx\.cap\.local/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8"))
       && /b\.addEventListener\("click", \(\) => cxPick\(L, id\)\);/.test(src)
       && !/cx\.acct\.meta/.test(src + fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8"))

@@ -176,15 +176,19 @@ const PV = { agent: { monthly_twd: 888, annual_twd: 8880, period_days: 30, ai_cr
     ok("② 30 TWD 卡:沒有回測 → 綁卡試用＋改用本機 AI", c({ hasBt: false }).main === "trial" && c({ hasBt: false }).second === "local");
     ok("② 30 TWD 卡:沒資格、策略不要資料 → 看我的策略＋開通方案", J(c({ eligible: false, need: false })) === J({ paper: true, head: "paper", main: "see", second: "plan" }));
     ok("② 30 TWD 卡:沒資格、策略要資料或判不出(None 當要) → 主鈕開通方案", c({ eligible: false, need: true }).main === "plan" && c({ eligible: false, need: null }).main === "plan" && c({ eligible: false, need: null }).head === "plan"); }
-  { const said = new Set(), base = { said, hasCard: true, last4: "4242", per: 300, low: 20, lo: 50, amt: 300, blocked: false };
+  // Wei 11-20(spec agent-888-vague-ai-credit §2):不再傳每期額度 per;下一格日期不靠它也要出
+  { const said = new Set(), base = { said, hasCard: true, last4: "4242", low: 20, lo: 50, amt: 300, blocked: false };
     const up = P.p3TurnLines(Object.assign({}, base, { ai: { state: "used_up", kind: "period", slot_start: "S1", next_grant_at: "2026-12-04T00:00:00Z" }, topNew: { amount: 300 } }));
     ok("② 用完那一輪觸發了自動儲值:一行講改從錢包扣＋已自動儲值(過去式、卡號末四碼),附改用本機 AI", up.length === 1 && up[0].keys[1][0] === "p3.topped" && up[0].keys[1][1].l === "4242" && up[0].local === true);
     const up2 = P.p3TurnLines(Object.assign({}, base, { ai: { state: "used_up", kind: "period", slot_start: "S1", next_grant_at: "2026-12-04T00:00:00Z" }, topNew: null }));
-    ok("② 用完、錢包還夠:第二句講下一格哪天給(試用格不講)", up2[0].keys[1][0] === "p3.up.next" && P.p3TurnLines(Object.assign({}, base, { ai: { state: "used_up", kind: "trial", slot_start: "T", next_grant_at: null }, topNew: null }))[0].keys.length === 1);
+    ok("② 用完、錢包還夠:第二句講下一格哪天重置(只帶 at、不帶每期額度;試用格不講)", up2[0].keys[1][0] === "p3.up.next" && JSON.stringify(Object.keys(up2[0].keys[1][1])) === '["at"]'
+      && !/\d|TWD|\{n\}/.test(STR.zh["p3.up.next"].replace("{at}", "")) && !/\d|TWD|\{n\}/.test(STR.en["p3.up.next"].replace("{at}", "")) && P.p3TurnLines(Object.assign({}, base, { ai: { state: "used_up", kind: "trial", slot_start: "T", next_grant_at: null }, topNew: null }))[0].keys.length === 1);
     ok("② 同一格只講一次用完", P.p3TurnLines(Object.assign({}, base, { said: new Set(["up:S1"]), ai: { state: "used_up", kind: "period", slot_start: "S1" }, topNew: null })).length === 0);
     ok("② 用完講過了、之後又自動儲值:只講已自動儲值;沒有末四碼用沒卡號那句", (() => { const l = P.p3TurnLines(Object.assign({}, base, { said: new Set(["up:S1"]), last4: null, ai: { state: "used_up", kind: "period", slot_start: "S1" }, topNew: { amount: 300 } })); return l.length === 1 && l[0].keys[0][0] === "p3.toppedNoCard"; })());
     const low = P.p3TurnLines(Object.assign({}, base, { ai: { state: "low", kind: "period", slot_start: "S1" }, topNew: null }));
-    ok("② 快用完(門檻讀 api 20):有卡講低於 50 自動儲值 300;方案戶的下一格日期併進第一句(只寫日期、不寫第二個 300、整段兩句,設計稽核 M5);沒卡只講從錢包扣;沒有關閉鈕", low[0].keys[0][1].n === 20 && low[0].keys[1][0] === "p3.low.then" && !low[0].local && !low[0].cta
+    ok("② 快用完(門檻讀 api 20):有卡講低於 50 自動儲值 300;方案戶的下一格日期併進第一句(只寫日期、不寫第二個 300、整段兩句,設計稽核 M5);沒卡只講從錢包扣;沒有關閉鈕", low[0].keys[0][0] === "p3.low" && low[0].keys[0][1] == null && ["p3.low", "p3.lowReset"].every((k) => !/\d|TWD|\{n\}/.test(STR.zh[k].replace("{at}", "")) && !/\d|TWD|\{n\}/.test(STR.en[k].replace("{at}", "")))
+      && P.p3TurnLines(Object.assign({}, base, { low: null, ai: { state: "low", kind: "period", slot_start: "S9" }, topNew: null })).length === 0   // 門檻照舊由 api 給的 low 判:沒有門檻不講
+      && low[0].keys[1][0] === "p3.low.then" && !low[0].local && !low[0].cta
       && (() => { const k = P.p3TurnLines(Object.assign({}, base, { ai: { state: "low", kind: "period", slot_start: "S2", next_grant_at: "2026-12-04T00:00:00Z" }, topNew: null }))[0].keys; return k.length === 2 && k[0][0] === "p3.lowReset" && !("n" in (k[1][1] || {})) && !/300/.test(STR.zh["p3.lowReset"]); })()
       && P.p3TurnLines(Object.assign({}, base, { ai: { state: "low", kind: "trial", slot_start: "T2", next_grant_at: null }, topNew: null }))[0].keys.length === 2
       && P.p3TurnLines(Object.assign({}, base, { hasCard: false, ai: { state: "low", kind: "trial", slot_start: "T" }, topNew: null }))[0].keys[1][0] === "p3.low.thenNoCard");
@@ -276,7 +280,7 @@ const PV = { agent: { monthly_twd: 888, annual_twd: 8880, period_days: 30, ai_cr
 
   // ── ④ 流程(整支 planv3.js 跑在假的 DOM／IPC 上):連點只送一次、409 重開不再送、扣了錢沒開成不講付款失敗、回程 ok 只開一次機、錯誤後主鈕字換回來 ──
   {
-    const mkEl = (tag) => { const e = { tag, children: [], dataset: {}, attrs: {}, className: "", textContent: "", hidden: false, disabled: false, title: "", el: null,
+    const mkEl = (tag) => { const e = { tag, children: [], dataset: {}, attrs: {}, style: {}, className: "", textContent: "", hidden: false, disabled: false, title: "", el: null,
       classList: { add() {}, remove() {}, toggle() {} }, append(...k) { k.forEach((x) => { if (x && typeof x === "object") this.children.push(x); else this.textContent += String(x); }); },
       appendChild(x) { this.children.push(x); return x; }, setAttribute(k, v) { this.attrs[k] = v; }, removeAttribute(k) { delete this.attrs[k]; },
       addEventListener(ev, f) { (this.on = this.on || {})[ev] = f; }, click() { return this.on && this.on.click && this.on.click(); }, remove() { this.removed = true; },
@@ -293,6 +297,8 @@ const PV = { agent: { monthly_twd: 888, annual_twd: 8880, period_days: 30, ai_cr
       faultCard: () => { const c = { el: mkEl("div"), b1: mkEl("button"), last: null, set(x) { this.last = x; } }; cards.push(c); return c; },
       sysLz: (fn) => fn(), trackFeature: (n) => calls.push("t:" + n), trackEvent: (ev, pr) => evs.push(ev + ":" + J(pr || {})), acctCheck: () => calls.push("acctCheck"), planPaint: () => {}, sidePaint: () => {},
       planOpen: () => calls.push("planOpen"), pubLoad: async () => {}, planSignIn: async () => ({ ok: false }), acctUrl: () => "U", planPayUrl: () => "P",
+      // 加密付款的網址用 app.js 的真函式(Wei 實測:舊版開的是 planPayUrl,網頁把 from=desktop 換成綁卡頁)
+      planCryptoUrl: new Function("LANG", "return " + (app.match(/^const planCryptoUrl = (\(o\) => [^;]*);/m) || [])[1] + ";")("zh"),
       window: { addEventListener() {}, blave: {
         plan3Quote: async () => { calls.push("quote"); return quoteReply; },
         plan3AgentStart: async (o) => { calls.push("start:" + J(o)); if (startWait) await startWait; return startReply; },
@@ -369,6 +375,27 @@ const PV = { agent: { monthly_twd: 888, annual_twd: 8880, period_days: 30, ai_cr
       const once = resends;
       C.P3.wait = { kind: "plan", tier: "agent", at: Date.now(), card: C.faultCard() }; await C.p3Poll(); await new Promise((r) => setImmediate(r));
       ok("④ P7:回程 ok 重跑一次,之後再一個 ok 不再跑", once === 1 && resends === 1); }
+    { // 11-20 試用綁卡誤報「已刷 888」:試用單沒開成講卡用過試用,金額用記號的驗證金,不讀 api 的 amount_twd(舊 api 放的是到期那一期)
+      reset(); evs.length = 0; const wt = C.faultCard(); C.P3.wait = { kind: "trial", tier: "agent", at: Date.now(), card: wt };
+      resultReply = { mark: { kind: "trial", tier: "agent", at: Date.now(), pay: 10 }, res: { kind: "trial", status: "wallet", amount_twd: 888 } };
+      await C.p3Poll(); await new Promise((r) => setImmediate(r));
+      const tx = (wt.last && wt.last.text) || "";
+      ok("④ 試用綁卡回 wallet(舊 api 帶 888):講「這張卡用過試用」＋記號的 10,不出 888、不出付費那句、不出退款句",
+        /^p3\.w\.trialCardUsed\{"v":"?10"?\}$/.test(tx) && !/888|p3\.w\.wallet|p3\.w\.refund/.test(tx), tx);
+      ok("④ 試用綁卡 wallet:埋點記 trial_wallet(不跟付費單的 wallet 混);卡上一顆〔看方案〕開 888 方案框(from retry)",
+        evs.includes('plan_bind_res:{"step":"trial_wallet"}') && !evs.includes('plan_bind_res:{"step":"wallet"}') && wt.last.label === "data.seePlan" && typeof wt.last.on === "function"
+        && /else if \(v\.plan\) w\.card\.set\(sysLz\(\(\) => \(\{ calm: v\.calm, text: text\(\), label: t\("data\.seePlan"\), on: \(\) => p3OpenAgent\(w\.card\.b1, null, "retry"\) \}\)\)\);/.test(src));
+      ok("④ TRIAL_NOT_ELIGIBLE 那句不寫「再」(沒試用過、付過方案或有大主機的人也是這個碼)", /不符合試用資格/.test(STR.zh["p3.w.trialNoElig"]) && !/再/.test(STR.zh["p3.w.trialNoElig"] + STR.zh["p3.w.trialNoEligNoNum"])
+        && /isn't eligible for a trial/.test(STR.en["p3.w.trialNoElig"]));
+      const R = (res, pay) => C.p3ResultView(Object.assign({ status: "wallet" }, res), "trial", pay);
+      ok("④ 試用綁卡 wallet:記號沒金額 → 不帶數字那句;原因碼 TRIAL_NOT_ELIGIBLE → 帳號那句;付費單照舊",
+        R({ amount_twd: 888 }, null).key === "p3.w.trialCardUsedNoNum" && !R({ amount_twd: 888 }, null).vars
+        && R({ amount_twd: 10, reason_code: "TRIAL_NOT_ELIGIBLE" }, 10).key === "p3.w.trialNoElig" && R({ amount_twd: 888, refund_review: true }, 10).refund !== true
+        && C.p3ResultView({ status: "wallet", amount_twd: 888 }, "plan").key === "p3.w.wallet");
+      ok("④ 試用 wallet 四句與「每張卡限試用一次」兩語都有;zh 不用分號", ["p3.w.trialCardUsed", "p3.w.trialCardUsedNoNum", "p3.w.trialNoElig", "p3.w.trialNoEligNoNum", "p3.a.oncePerCard"]
+        .every((k) => STR.zh[k] && STR.en[k] && !/；|;/.test(STR.zh[k] + STR.en[k])));
+      ok("④ 主行程收 reason_code(只認兩個值)", M.resultBody({ bind: { kind: "trial", status: "wallet", amount_twd: 10, reason_code: "TRIAL_CARD_USED" } }).reason_code === "TRIAL_CARD_USED"
+        && M.resultBody({ bind: { kind: "trial", status: "wallet", reason_code: "x; y" } }).reason_code === null); }
     { reset(); const proQ = Q({ trial: nt, has_card: true, card_last4: "4242", agent_offer: payQ.agent_offer, studio_subscription: { source: "apple", plan: "pro", auto_renew: true, expires_at: "2026-12-03T00:00:00Z" } });
       const pm = C.p3AgentModel(proQ, PV); startReply = { status: 200, body: { state: "none" } };
       await C.p3AgentGo(pm, null, false);
@@ -393,7 +420,21 @@ const PV = { agent: { monthly_twd: 888, annual_twd: 8880, period_days: 30, ai_cr
       reset(); const mB = C.p3AgentModel(payQ, PV); C.p3AgentBox(mB, null); const ab = boxes[boxes.length - 1], cryp = { click: () => ab.link.onClick() };
       let rel2; startWait = new Promise((r) => { rel2 = r; }); startReply = { status: 200, body: { state: "none" } };
       const go2 = ab.onOk(); await null; cryp.click(); rel2(); await go2; startWait = null;
-      ok("④ M1 付款中按〔用加密貨幣轉帳〕不外開", !calls.some((c) => c.startsWith("open:"))); }
+      ok("④ M1 付款中按〔用加密貨幣轉帳〕不外開", !calls.some((c) => c.startsWith("open:")));
+      // 〔用加密貨幣轉帳〕要開網頁的加密付款(買方案頁帶 pay=crypto),不是 usage?from=desktop(會被換成綁卡頁)
+      reset(); C.p3AgentBox(C.p3AgentModel(payQ, PV), null); const cb = boxes[boxes.length - 1]; cb.link.onClick();
+      const opened = calls.filter((c) => c.startsWith("open:"));
+      // Agent 方案框(888)只買方案:帶 plan=agent(不帶的話網頁 v3 連雲端主機一起報價,稽核 0158),繳別是這一單的月繳
+      ok("④ Agent 方案框〔用加密貨幣轉帳〕開 pay=crypto&plan=agent&cycle=monthly 的買方案頁,不是綁卡頁", cb.link.label === "p3.crypto" && opened.length === 1
+        && opened[0] === "open:https://blave.org/agent/zh?pay=crypto&plan=agent&cycle=monthly" && !/usage\?from=desktop/.test(opened[0]), opened); }
+    { const U = new Function("LANG", "return " + (app.match(/^const planCryptoUrl = (\(o\) => [^;]*);/m) || [])[1] + ";")("en");
+      ok("④ 加購主機失敗卡的〔用加密貨幣轉帳〕不帶 plan=agent、繳別照這一單(年繳 annual);Agent 那條才帶",
+        U({ agent: false, cycle: "annual" }) === "https://blave.org/agent/en?pay=crypto&cycle=annual" && U({ agent: false, cycle: "monthly" }) === "https://blave.org/agent/en?pay=crypto&cycle=monthly"
+        && U({ agent: true, cycle: "monthly" }) === "https://blave.org/agent/en?pay=crypto&plan=agent&cycle=monthly"
+        && /second: \{ label: t\("p3\.crypto"\), quiet: true, on: \(\) => \{ window\.blave\.openExternal\(planCryptoUrl\(\{ agent: !\(w\.tier && w\.tier !== "agent"\), cycle: w\.cycle \}\)\); \} \}/.test(src)); }
+    ok("④ 每一處〔用加密貨幣轉帳〕(p3.crypto)都開 planCryptoUrl;planPayUrl 不再配加密的字",
+      (src.match(/t\("p3\.crypto"\)[^\n]*openExternal\((\w+)\(/g) || []).length === 2 && (src.match(/t\("p3\.crypto"\)[^\n]*openExternal\((\w+)\(/g) || []).every((x) => /planCryptoUrl/.test(x))
+      && !/t\("p3\.crypto"\)[^\n]*planPayUrl/.test(src) && /pay=crypto/.test((app.match(/^const planCryptoUrl = [^\n]*/m) || [""])[0]));
     { // M2 自動儲值那句看得見:觸發字是 .mp-tip 鈕,泡泡是相鄰的 .tip(只有泡泡本體叫 tip)
       const line = C.p3TopupLine(), w = line.children[0], trig = w && w.children[0], tip = w && w.children[1];
       ok("④ M2 自動儲值那句:句子在 .mp-tip 鈕上(不在 .tip 裡,.tip 是預設隱藏的泡泡本體),泡泡帶門檻、aria-describedby 綁住、不掛 aria-label",
@@ -431,11 +472,42 @@ const PV = { agent: { monthly_twd: 888, annual_twd: 8880, period_days: 30, ai_cr
       const full = (o) => Q(Object.assign({ trial: { eligible: true, active: false, gen: "v3", ends_at: null, cancel_at_end: false, days: 14, ai_credit_twd: 150 } }, o));
       const fq = full(); fq.agent_offer.monthly.period_days = 30; fq.agent_offer.monthly.ai_credit_twd = 300;
       reset(); const mt = C.p3AgentModel(fq, null); C.p3AgentBox(mt, null); const tb = boxes[boxes.length - 1], tt = txt(tb.extra);
-      ok("④ A 試用框、報價帶齊(公開價目讀不到也照畫):頭「14 天免費試用」＋「11/30 起每 30 天 888 TWD,之前取消不扣」;勾寫 150／300;鈕上一句驗證 10＋自動儲值;主鈕〔綁卡試用〕不帶天數;框腳〔用加密貨幣轉帳〕",
-        mt.kind === "trial" && /14\|p3\.a\.trialUnit/.test(tt) && /p3\.a\.trialSub\{"at":"11\/30","d":"30","p":"888"\}/.test(tt) && /p3\.tick\.aiTrial\{"q":"150","n":"300"\}/.test(tt)
-        && /p3\.a\.verifyLine\{"v":"10"\}/.test(tt) && /p3\.topup/.test(tt) && tb.ok === "p3.a.okTrialNoNum" && tb.link.label === "p3.crypto" && !tb.link.stay && !/p3\.tl\.|p3\.a\.cancelBy/.test(tt));
+      ok("④ A 試用框、報價帶齊(公開價目讀不到也照畫):頭「14 天免費試用」＋「11/30 起每 30 天 888 TWD,之前取消不扣」;勾不寫額度數字(Wei 11-20,api 照給 150／300 也不印);鈕上一句驗證 10＋自動儲值;主鈕〔綁卡試用〕不帶天數;框腳〔用加密貨幣轉帳〕",
+        mt.kind === "trial" && /14\|p3\.a\.trialUnit/.test(tt) && /p3\.a\.trialSub\{"at":"11\/30","d":"30","p":"888"\}/.test(tt) && /p3\.tick\.aiTrial(?!\{)/.test(tt) && !/p3\.tick\.ai(Trial|Period)\{/.test(tt)
+        && /p3\.a\.oncePerCard\|p3\.a\.verifyLine\{"v":"10"\}/.test(tt) && /p3\.topup/.test(tt) && tb.ok === "p3.a.okTrialNoNum" && tb.link.label === "p3.crypto" && !tb.link.stay && !/p3\.tl\.|p3\.a\.cancelBy/.test(tt));
       const pq = Q({ trial: nt, has_card: true, card_last4: "4242", agent_offer: { kind: "pay", monthly: { today_twd: 888, today_is: "charge", first_charge_at: null, first_charge_twd: 888, source: "card", period_days: 30, ai_credit_twd: 300 } } });
       reset(); const mp = C.p3AgentModel(pq, null); C.p3AgentBox(mp, null); const pb = boxes[boxes.length - 1], pt = txt(pb.extra);
+      // ── 設定 › 帳號與方案的 AI 額度列(spec agent-888-vague-ai-credit §3、設計 ai-credit-usage-bar §3–§6):用量條＋「已用 N%」,不印額度的 TWD 數字 ──
+      { const U = C.p3UsedPct;
+        ok("用量百分比:granted 0／缺 → null(整列不出);left 剛好 0 → 100;超額(left 0)→ 100;一般無條件捨去;只差一點也只到 99;left > granted → 0",
+          U(0, 0) === null && U(null, 5) === null && U(undefined, 5) === null && U(300, 0) === 100 && U(300, -12) === 100 && U(300, 174) === 42 && U(300, 0.5) === 99 && U(300, 1) === 99 && U(300, 300) === 0 && U(300, 400) === 0
+          // 浮點:(100−71)/100×100 = 28.999…,要跟網頁 aiUsedPct 與 references/billing.md 一樣是 29(稽核 vague-credit-postpush)
+          && U(100, 71) === 29 && U(100, 70) === 30 && U(100, 1) === 99 && U(100, 99) === 1 && U(300, 213) === 29 && U(3, 2) === 33 && U(1000, 710) === 29 && U(150, 106.5) === 29
+          && U(300, null) === null && U(300, undefined) === null && U(300, NaN) === null && U(300, "120") === null, [U(300, 174), U(300, 0.5), U(300, 0), U(300, null)]); }
+      { const txtAll = (n) => [n.textContent || "", n.title || "", JSON.stringify(n.attrs || {}), JSON.stringify(n.dataset || {})].concat((n.children || []).map(txtAll)).join("|");
+        if (!C.acctNoCard) C.acctNoCard = () => true;   // 自動儲值那句不在這幾條的範圍
+        const rowsOf = (bal, ai) => { C.P3.bal = bal; C.acct = Object.assign({ v3_active: true, can_run: true }, ai ? { ai_credit: ai } : {}); const box = mkEl("div"); C.p3PlanRows(box); return box; };
+        const grant = { kind: "period", next_grant_at: "2026-12-03T00:00:00Z", granted_twd: 300, left_twd: 174, low_threshold_twd: 20 };
+        const normal = rowsOf({ aiGranted: 300, aiLeft: 174, aiOver: 0 }, grant), nt = txtAll(normal);
+        const bar = walk(normal, (n) => n.className === "ai-track")[0], fill = walk(normal, (n) => n.className === "ai-fill")[0];
+        ok("設定列一般:條＋「已用 42%」、條下「{at} 重置。」;條 aria-hidden、寬度 42%;沒有 role=meter", /p3\.set\.used\{"p":"42"\}/.test(nt) && /p3\.set\.reset\{"at":"12\/03"\}/.test(nt)
+          && !!bar && bar.attrs["aria-hidden"] === "true" && fill.style.width === "42%" && !/meter|progressbar/.test(nt), nt);
+        const over = txtAll(rowsOf({ aiGranted: 300, aiLeft: 0, aiOver: 18 }, grant)), upNo = txtAll(rowsOf({ aiGranted: 300, aiLeft: 0, aiOver: 0 }, grant));
+        const trial = txtAll(rowsOf({ aiGranted: 150, aiLeft: 140, aiOver: 0 }, { kind: "trial", next_grant_at: null, granted_twd: 150, left_twd: 140 }));
+        ok("設定列超額:已用 100%,條下先「本期已超額 18 TWD」(錢包扣的錢照寫)再「重置」;用完沒超額:100%、只有重置;試用:沒有重置日",
+          /p3\.set\.used\{"p":"100"\}/.test(over) && over.indexOf("p3.set.over") >= 0 && over.indexOf("p3.set.over") < over.indexOf("p3.set.reset") && /p3\.set\.over\{"o":"18"\}/.test(over)
+          && /p3\.set\.used\{"p":"100"\}/.test(upNo) && upNo.indexOf("p3.set.over") < 0 && /p3\.set\.reset/.test(upNo) && /p3\.set\.used\{"p":"6"\}/.test(trial) && trial.indexOf("p3.set.reset") < 0, [over, trial]);
+        // api 照給完整的 TWD 欄位(granted／left 300、174、150、140),畫面上(含 title／aria／data)一個都不出現;只有超額那筆錢可以出現
+        ok("設定列不印任何 AI 額度的 TWD 數字(總額、剩餘);title／aria／data 也沒有;沒有額度格 → 整列不出", [nt, upNo, trial, over.replace('{"o":"18"}', "")].every((x) => !/\b(300|174|150|140)\b|TWD/.test(x))
+          && txtAll(rowsOf({ aiGranted: null, aiLeft: null, aiOver: 0 }, grant)).indexOf("p3.set.used") < 0
+          // 舊 api 只給 granted、沒給 left:不知道用了多少 → 條與百分比都不出,不編一個「已用 100%」(稽核 0158)
+          && txtAll(rowsOf({ aiGranted: 300, aiLeft: null, aiOver: null }, grant)).indexOf("p3.set.used") < 0 && walk(rowsOf({ aiGranted: 300, aiLeft: null, aiOver: null }, grant), (n) => n.className === "ai-track").length === 0 && txtAll(rowsOf({ aiGranted: 0, aiLeft: 0, aiOver: 0 }, grant)).indexOf("p3.set.used") < 0);
+        ok("額度相關的字串(兩語)都不再帶額度數字的佔位:p3.c.planH／trialH／p3.set.aiV 拿掉;tick、up.next、low、lowReset、pv.offer.li.ai、pv.d.offer.blave、acct.sub 沒有 {n}／{q}／{g}",
+          ["p3.c.planH", "p3.c.trialH", "p3.set.aiV"].every((k) => !(k in STR.zh) && !(k in STR.en))
+          && ["p3.tick.aiPeriod", "p3.tick.aiTrial", "p3.up.next", "p3.low", "p3.lowReset", "pv.offer.li.ai", "pv.d.offer.blave", "acct.sub", "p3.set.used", "p3.set.reset"].every((k) => STR.zh[k] && STR.en[k] && !/\{(n|q|g)\}|TWD/.test(STR.zh[k] + STR.en[k]))
+          && STR.zh["p3.set.used"] === "已用 {p}%" && STR.en["p3.set.used"] === "{p}% used" && STR.zh["p3.set.reset"] === "{at} 重置。" && STR.en["p3.set.reset"] === "Resets {at}."
+          && STR.zh["p3.low"] === "AI 額度快用完了。" && STR.zh["p3.up.next"] === "{at} 重置。" && STR.en["p3.tick.aiPeriod"] === "Included every period");
+        C.acct = { v3_active: true }; C.P3.bal = null; }
       ok("④ A 已綁卡付款框:頭 888 TWD／30 天＋「自動續扣,可隨時取消,不退款」;鈕上一句「今天刷末四碼 4242」;主鈕付 888;框身沒有鈕",
         mp.kind === "pay" && /888\|p3\.a\.unit\{"d":"30"\}/.test(pt) && /p3\.a\.renewShort/.test(pt) && /p3\.a\.todayCard\{"l":"4242"\}/.test(pt) && pb.ok === 'p3.a.okPay{"p":"888"}' && walk(pb.extra, (n) => n.tag === "button").length === 0);
       const bq = Q({ trial: nt, balance_twd: 900, agent_offer: { kind: "pay", monthly: { today_twd: 888, today_is: "charge", first_charge_at: null, first_charge_twd: 888, source: "wallet", period_days: 30, ai_credit_twd: 300 } } });
@@ -477,7 +549,7 @@ const PV = { agent: { monthly_twd: 888, annual_twd: 8880, period_days: 30, ai_cr
       const TEN = { acct_card_alt: { alt: ["paper", "running", "none"] }, acct_card_alt_click: { card: ["pre_free", "turn_free"] }, free_low_shown: null,
         ai_credit_line: { kind: ["low_trial", "low_period", "used_up", "topped"] }, plan_box: { from: ["data", "free", "low", "side", "welcome", "set", "cloud", "unlaunched", "retry", "model", "lib"] },
         plan_box_res: { step: ["trial_page", "pay_page", "paid_card", "paid_wallet", "repriced", "src_changed", "charge_fail", "busy", "net", "rate", "active"] },
-        plan_bind_res: { step: ["trial_ok", "plan_ok", "failed", "wallet", "refund", "unsettled", "dropped", "expired"] },
+        plan_bind_res: { step: ["trial_ok", "plan_ok", "failed", "wallet", "trial_wallet", "refund", "unsettled", "dropped", "expired"] },
         addon_res: { step: ["ok_full", "ok_prorated", "ok_free", "ok_convert", "bind_page", "repriced", "src_changed", "capped", "cap_down", "paid_no_srv", "charge_fail", "wallet_short", "net"] },
         addon_pick: { tier: ["linux_starter", "linux_premium", "linux_max", "windows_starter", "windows_premium", "windows_max"] }, auto_resume: { r: ["sent", "skip_new", "skip_state"] } };
       const evBlock = TS.slice(TS.indexOf("const EVENTS = {"), TS.indexOf("\n};", TS.indexOf("const EVENTS = {")));
@@ -516,9 +588,18 @@ const PV = { agent: { monthly_twd: 888, annual_twd: 8880, period_days: 30, ai_cr
         && C.p3BoxStep({ status: 429, body: {} }) === "rate" && C.p3BoxStep({ status: 0, body: null }) === "net" && C.p3BoxStep({ status: 402, body: { error_code: "PLAN_CHARGE_FAILED" } }) === "charge_fail"
         && C.p3AddonStep({ status: 200, body: { kind: "prorated" } }, "prorated") === "ok_prorated" && C.p3AddonStep({ status: 200, body: { kind: "full" } }, "trial_convert") === "ok_convert"
         && C.p3AddonStep({ status: 502, body: { charged_twd: 1440 } }) === "paid_no_srv" && C.p3AddonStep({ status: 503, body: { error_code: "LAUNCH_LIMIT_UNAVAILABLE" } }) === "cap_down" && C.p3AddonStep({ status: 200, opened: true }) === "bind_page");
-      // 2. billing.md 這版不提前講新價(停放在交接資料夾,公告後再進)
+      // 2. billing.md 的 Agent 方案新價已公告進 main(72b8441b／c183d869):外殼照 api 的 v3_active 切,文件也只能從切換時間起講新價——
+      //    888 不准出現在切換時間那一句之前、台北與 UTC 兩個寫法要是同一刻、看不到帳號時切換前預設舊價;切換時間 = api V3_FROM(找得到 api 才比)
       const bill = read(path.join(__dirname, "..", "references", "billing.md"));
-      ok("⑤ references/billing.md 不提前講 Agent 方案新價(不寫 888、不寫「要改成 Agent 方案」)", !/\b888\b/.test(bill) && !/changing to the Agent plan|Agent plan pricing/.test(bill));
+      const sw = /\*\*Agent plan pricing\*\* — from the switch date, (\d{4})-(\d\d)-(\d\d) (\d\d):(\d\d) Taipei time\s+\((\d\d):(\d\d) UTC\)/.exec(bill);
+      const swUtc = sw ? Date.UTC(+sw[1], +sw[2] - 1, +sw[3], +sw[4] - 8, +sw[5]) : NaN;
+      ok("⑤ references/billing.md 講 Agent 方案新價先講切換時間:888 不出現在那一句之前、台北／UTC 同一刻、看不到帳號時切換前預設舊價",
+        !!sw && bill.search(/\b888\b/) > sw.index && new Date(swUtc).getUTCHours() === +sw[6] && new Date(swUtc).getUTCMinutes() === +sw[7]
+        && /before the switch date, treat earlier\s+plan pricing as the default/.test(bill));
+      { const cfg = path.join(process.env.BLAVE_API_DIR || path.join(__dirname, "..", "..", "api"), "account", "agent_plan_config.py");
+        const vf = fs.existsSync(cfg) ? /^V3_FROM = datetime\((\d+), (\d+), (\d+), (\d+), (\d+)\)/m.exec(read(cfg)) : null;
+        if (!vf) console.log("SKIP  billing.md 切換時間 = api V3_FROM(找不到 api 的 agent_plan_config.py 或 V3_FROM;設 BLAVE_API_DIR)");
+        else ok("⑤ billing.md 的切換時間 = api agent_plan_config.V3_FROM(UTC)", swUtc === Date.UTC(+vf[1], +vf[2] - 1, +vf[3], +vf[4], +vf[5])); }
       // 4. 改價前開始的試用:不講「開主機會結束試用」、雲端開通頁照舊「開機不另收」
       C.acct = { v3_active: true, trial_gen: "v2" }; const v2 = C.p3TrialV3(); C.acct = { v3_active: true, trial_gen: "v3" }; const v3t = C.p3TrialV3(); C.acct = { v3_active: true }; const none = C.p3TrialV3();
       ok("⑤ 試用代別:只有 trial_gen v3 才算 v3 試用(v1／v2／讀不到都照舊);設定試用格與雲端開通頁都讀它", !v2 && v3t && !none && /rule: t\(\(typeof p3TrialV3 === "function" && p3TrialV3\(\)\) \? "p3\.f\.trial"/.test(app)

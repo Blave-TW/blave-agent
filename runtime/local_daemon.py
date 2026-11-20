@@ -111,20 +111,23 @@ ALLOWED = frozenset({
     # staged under state/transfer_in/ — a 16 KB command file cannot carry them
     "strategy_import",
 })
-# In the api's list, refused here: the Capital (群益) and 統一期貨 connect steps
-# install broker components and an NSSM worker on a cloud Windows host —
+# In the api's list, refused here: the Capital (群益), 統一期貨 and 永豐期貨 connect steps
+# install broker components and a worker on a cloud host —
 # nothing of that on a user's own computer.
 CLOUD_ONLY = frozenset({
     "capital_setup", "capital_pfx_key", "capital_pfx", "capital_probe", "capital_finish",
     "president_setup", "president_pfx_key", "president_pfx", "president_pfx_local", "president_probe",
     "president_host", "president_test_order", "president_finish",
+    # 永豐期貨雲端開通(Linux 與 Windows 主機,runtime/sinopac_connect.py 隨 1.1.167 出、閘門關著每一步回 NOT_OPEN):本機沒有
+    "sinopac_setup", "sinopac_pfx_key", "sinopac_pfx", "sinopac_probe", "sinopac_sim_test", "sinopac_finish",
     # 策略搬家:export 只有雲端有(本機的檔外殼自己讀)
     "strategy_export",
 })
 # Not in the api's list at all: the desktop's own 統一期貨 connect flow
 # (runtime/president_connect.local_dispatch). Only the app's main process sends
 # it (shell/daemon.js MAIN_ONLY_COMMANDS); its secrets arrive sealed.
-LOCAL_ONLY = frozenset({"president_local", "capital_local"})   # 群益: runtime/capital_local.py, same shape
+LOCAL_ONLY = frozenset({"president_local", "capital_local",   # 群益: runtime/capital_local.py, same shape
+                        "sinopac_local"})                     # 永豐: runtime/sinopac_local.py (credentials)
 UNSIGNED_OK = frozenset({"halt"})
 
 MAX_BYTES = 16 * 1024      # = the api's MAX_BYTES on the way in
@@ -1262,7 +1265,8 @@ class Daemon:
         self.cl, self.events, self.reporter = cl, events, portfolio_reporter
         import president_connect
         import capital_local
-        self.pc, self.capl = president_connect, capital_local
+        import sinopac_local
+        self.pc, self.capl, self.spl = president_connect, capital_local, sinopac_local
         self.sup = ReconcilerSupervisor(workspace, _reconciler_env(cl._local_child_env), cl._pid_cmdline,
                                         cl._child_kw, secret_line=secret_line_all)
         try:
@@ -1427,6 +1431,7 @@ class Daemon:
                 _log(f"long job state failed: {type(e).__name__}: {e}")
             doc["president_local"] = self.pc.local_info()
             doc["capital_local"] = self.capl.local_info()
+            doc["sinopac_local"] = self.spl.local_info()
             try:
                 _write_json_atomic(self.status_path, doc)
             except (OSError, TypeError, ValueError) as e:
@@ -1514,6 +1519,10 @@ class Daemon:
                 self.capl.local_tick()
             except Exception as e:
                 _log(f"capital tick failed: {type(e).__name__}")
+            try:
+                self.spl.local_tick()
+            except Exception as e:
+                _log(f"sinopac tick failed: {type(e).__name__}")
             self._reconcile_watch()
             self.stop.wait(1)
 
@@ -1567,7 +1576,10 @@ class Daemon:
         # shell's connect screen and trusted set follow the same cell
         cl.LOCAL_OPEN_VENUES = frozenset(cl.LOCAL_OPEN_VENUES
                                          | {"BINANCE", "OKX", "BINGX", "GATEIO", "BYBIT", "STOCKCOIN", "PRESIDENT", "CAPITAL"}
-                                         | ({"BITGET"} if cl.venue_traits.verified_modes("bitget") else set()))
+                                         | ({"BITGET"} if cl.venue_traits.verified_modes("bitget") else set())
+                                         # 永豐: only through sinopac_local's bind (sinopac_service.bind_gate)
+                                         | ({"SINOPAC"} if "futures" in cl.venue_traits.verified_modes(cl.venue_traits.SINOPAC)
+                                            else set()))
         self.pc.set_seal_key(self.secret)
         self.pc._LOCAL["on_secrets"] = lambda: self.sup.respawn_when_idle("統一期貨 credentials handed over")
         self.pc._LOCAL["on_ready"] = self.account_kick.set
@@ -1577,6 +1589,10 @@ class Daemon:
         self.capl._LOCAL["on_secrets"] = lambda: self.sup.respawn_when_idle("群益 credentials handed over")
         self.capl._LOCAL["on_ready"] = self.account_kick.set
         self.capl._LOCAL["worker"].reap_orphan(cl._pid_cmdline)
+        # 永豐: wanted by its own rule (sinopac_service.wanted + the app's handover), started from the
+        # supervise loop; its credentials reach only the worker (sinopac_local)
+        self.spl.set_seal_key(self.secret)
+        self.spl.reap_orphan(cl._pid_cmdline)
         try:
             self.capl.startup_sweep()
         except Exception as e:
@@ -1620,6 +1636,10 @@ class Daemon:
             self.capl.local_shutdown()
         except Exception as e:
             _log(f"capital worker not stopped ({type(e).__name__})")
+        try:
+            self.spl.local_shutdown()
+        except Exception as e:
+            _log(f"sinopac worker not stopped ({type(e).__name__})")
         if not self.sup.stop_reconciler(
                 f"the daemon is shutting down ({self.stop_why or 'SIGTERM / SIGINT'})"):
             _log("reconciler not confirmed stopped")

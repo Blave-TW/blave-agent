@@ -23,6 +23,9 @@ t("P2 不發,水位線照推", o.show.length === 0 && o.mark === 32);
 o = p1Pick([ev(33, "exchange_unreachable", { venue: "capital", minutes: 30 }), ev(34, "exchange_unreachable", { venue: "capital", minutes: 150 }),
   ev(35, "exchange_unreachable", { venue: "okx", minutes: 600 })], 32, NOW);
 t("群益讀不到 ≥150 分(對帳器第二則起)升 P1 發通知;30 分那則與加密交易所不發", types(o) === "exchange_unreachable:34" && o.mark === 35);
+o = p1Pick([ev(36, "exchange_unreachable", { venue: "sinopac", minutes: 25 }), ev(37, "exchange_unreachable", { venue: "sinopac", minutes: 150 }),
+  ev(38, "exchange_unreachable", { venue: "sinopac", minutes: 145 })], 35, NOW);
+t("永豐連不上同一條(= api level_for):≥150 分升 P1 發通知;25、145 分那兩則不發", types(o) === "exchange_unreachable:37" && o.mark === 38);
 t("群益讀不到的通知:走 _capital 那組字、標題代入小時", /ev_exchange_unreachable_capital: "Capital account unreadable for \{hours\} h"/.test(src)
   && /\|\| p1UnreachLong\(e\);/.test(src) && /const title = p1UnreachLong\(e\) && head \? head\.replace\("\{hours\}", \(\) => String\(Math\.floor\(e\.payload\.minutes \/ 60\)\)\) : head;/.test(src)
   && /notifTitle\(tmLabels\.notifPrefixLocal, title \+/.test(src));
@@ -213,6 +216,16 @@ t("狀態:全部平倉延到開盤與取消延後不發,水位線照推;要再�
     x.show.map((e) => e.type + "/" + e.payload.symbol).join() === "order_unconfirmed/2330@spot,order_error/2330@spot");
   t("沒有 exchange 的舊列照叫(分不出模擬或真帳戶)", st([E({ exchange: undefined })]).show.length === 1);
   const k0 = st([E({})]).show[0].cool;
+  // 機器端連 3 次才發(lib/portfolio._RejectBackoff):沒到通知點與擠出重寫的列帶 silent,本機不叫、水位線照推;
+  // 第 3 次與 24 小時提醒那列帶 since,不再套 3300 秒冷卻(第一列已經不叫了,冷卻只會吃掉第 3 次)
+  x = st([E({ silent: true, ts: NOW - 9 }), E({ silent: true, symbol: "2317@spot", ts: NOW - 8 })]);
+  t("silent 的拒單列不叫,水位線照推", x.show.length === 0 && x.err === NOW - 8);
+  x = st([E({ silent: true, ts: NOW - 9 }), E({ since: "2026-11-20T01:00:00", count: 3, ts: NOW - 4 })]);
+  t("第 3 次那列(帶 since)照叫、沒有冷卻 key", x.show.length === 1 && x.show[0].type === "order_error" && x.show[0].cool === null);
+  t("24 小時提醒那列(reminder、since)照叫、沒有冷卻 key",
+    (() => { const y = st([E({ since: "2026-11-19T01:00:00", count: 9, reminder: true })]).show; return y.length === 1 && y[0].cool === null; })());
+  t("沒有 since 的舊機器列照舊有冷卻 key", st([E({ count: 2 })]).show[0].cool === k0);
+  t("silent 只認拒單:帶 kind 的列(停放)照叫", st([E({ silent: true, kind: "order_unconfirmed", park_id: "P1" })]).show.map((e) => e.type).join() === "order_unconfirmed");
   t("冷卻 key 只在 order_error 上,其他型別不帶", !!k0 && st([E({ kind: "order_unconfirmed" })]).show[0].cool === null);
   t("冷卻 key:只差數字算同一個原因", st([E({ error: "[order_reject:insufficient_margin] need 7,000.25 have 12" })]).show[0].cool === k0);
   t("冷卻 key:換標的、換交易所、換原因各算各的",

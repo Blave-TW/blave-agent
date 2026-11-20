@@ -129,8 +129,8 @@
           <div class="ph-pop" id="ph-pop" hidden></div>
           <button class="cv-pill" id="side-cv" type="button" hidden></button>
           <span class="row-note" id="side-note" hidden></span>
-          <!-- 更新圓鈕(§3.3):整個視窗唯一的橘;版號只在提示、aria-label 與更新框標題 -->
-          <button class="up-pill" id="up-pill" type="button" hidden><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg></button>
+          <!-- 更新鈕(§3.3;spec update-button-label-2026-11-19 A):整個視窗唯一的橘;列裡是寫「更新」的膠囊,放不下才退回圓鈕(.is-icon,promptslot.js slotUpFit)。版號只在提示、aria-label 與更新框標題 -->
+          <button class="up-pill" id="up-pill" type="button" hidden><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg><span class="t" data-i18n="up.btn"></span></button>
         </div>
       </div>
     </aside>
@@ -649,7 +649,7 @@
             </div>
           </div>
           <!-- 法遵兩份並排、不成句(不是「使用即表示同意」那種同意文字)。服務條款只有這一個入口;隱私權政策在 設定 › 隱私 另有一個就地的。
-               外開瀏覽器,網址帶目前語言。整頁的直接子層:釘在框底 -->
+               外開瀏覽器,網址帶目前語言。整頁的直接子層,排在內容最後(不釘底) -->
           <p class="set-legal"><button type="button" class="btn-quiet" id="set-terms" data-i18n="legal.terms"></button> <span aria-hidden="true">·</span> <button type="button" class="btn-quiet" id="set-privacy" data-i18n="legal.privacy"></button></p>
         </div>
         <div class="set-pane" data-set-cat="model" id="set-model" hidden></div>
@@ -952,6 +952,7 @@
 <script src="capital.js"></script>
 <script src="president.js"></script>
 <script src="capital_local.js"></script>
+<script src="sinopac.js"></script>
 <script src="datasrc.js"></script>
 <script src="apikey.js"></script>
 <script src="busy.js"></script>

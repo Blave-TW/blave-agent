@@ -97,7 +97,9 @@ const mk = (reply, o) => { const sent = []; let creds = (o && o.creds) || { toke
   ok("打包清單有 balance.js(main.js require 它,漏了打包版一開就炸)", /files:\s*\[[^\]]*"balance\.js"/.test(fs.readFileSync(path.join(SHELL, "electron-builder.config.js"), "utf8")));
   // 登入那刻發的綁卡前額度:不寫死、跟連結畫面同一個來源(cnFreeQ),不是綁卡試用那池(planVars().q)
   { const strings = fs.readFileSync(path.join(SHELL, "renderer", "strings.js"), "utf8");
-    ok("cn.blave.descSet 的額度是變數({q},來自 api 的 free_ai_credit);拿不到數字只講怎麼收錢那半句", (strings.match(/"cn\.blave\.descSet": "[^"]*\{q\} TWD[^"]*"/g) || []).length === 2 && !/"cn\.blave\.descSet": "[^"]*100/.test(strings)
+    // Wei 11-20:綁卡前送的額度也不寫數字;有沒有贈額仍看 api 的 free_ai_credit(cnFreeQ),拿不到就只講怎麼收錢那半句
+    ok("cn.blave.descSet 兩語都不寫額度數字({q}／TWD／數字都沒有);有沒有贈額看 cnFreeQ;拿不到只講怎麼收錢那半句", (strings.match(/"cn\.blave\.descSet": "[^"]*"/g) || []).length === 2
+      && (strings.match(/"cn\.blave\.descSet": "[^"]*"/g) || []).every((x) => !/\{q\}|TWD|\d/.test(x.split(": ")[1]))
       && (strings.match(/"cn\.blave\.descSetNoNum":/g) || []).length === 2 && /const q = desc === "cn\.blave\.descSet" \? cnFreeQ\(\) : "";/.test(app)); }
   console.log(red ? `\n${red} FAILED` : "\nALL PASS"); process.exit(red ? 1 : 0);
 })().catch((e) => { console.log("FAIL  " + (e && e.stack)); process.exit(1); });

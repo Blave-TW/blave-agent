@@ -14,8 +14,10 @@ let red = 0; const ok = (n, c, got) => { console.log((c ? "PASS  " : "FAIL  ") +
 const J = JSON.stringify;
 
 if (!process.versions.electron) (async () => {
-  ok("⓪ trade.js 有 PRES_LOCAL_ON 旗標,「台灣期貨」那組磚看它(cxPresListed);群益本機另受 CAPL_LOCAL_ON 管(0.1.50 起開);不是 Windows 不出期貨磚", !!presFlag && !!caplFlag
-    && /if \(env !== "local"\) return \[\[CAPITAL, "cap\.venue"\]\];\n  if \(platform !== "win32"\) return null;\n  return \[cxCaplListed\(\) \? \[CAPITAL, "cap\.venue"\] : null, cxPresListed\(\) \? \["president", "pres\.venue"\] : null\]\.filter\(Boolean\);/.test(tradeSrc)
+  ok("⓪ trade.js 有 PRES_LOCAL_ON 旗標,「台灣期貨」那組磚看它(cxPresListed);群益本機另受 CAPL_LOCAL_ON 管(0.1.50 起開);不是 Windows 只出永豐(SINOPAC_LOCAL_ON 開才出;0.1.58 隨附、旗標關著)", !!presFlag && !!caplFlag
+    && tradeSrc.includes('function cxTwTiles(env, platform) {\n  const sp = SINOPAC_LOCAL_ON ? ["sinopac", "sp.venue"] : null;\n  if (env !== "local") return [[CAPITAL, "cap.venue"], sp].filter(Boolean);'
+      + '   // 雲端:Linux 與為群益／統一開的 Windows 主機都開永豐(Wei 11-17)\n  if (platform !== "win32") return sp ? [sp] : null;\n'
+      + '  return [cxCaplListed() ? [CAPITAL, "cap.venue"] : null, cxPresListed() ? ["president", "pres.venue"] : null, sp].filter(Boolean);')
     && /const tw = cxTwTiles\(CXF\.env, window\.blave\.platform\);/.test(tradeSrc));
   // ── ① daemon 白名單 ──
   const { argsOk } = require(path.join(SHELL, "daemon.js"));

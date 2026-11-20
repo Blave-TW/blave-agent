@@ -14,10 +14,14 @@ const wsPath = path.join(webDir, "app", "main", "templates", "agent", "workspace
 if (!fs.existsSync(wsPath)) { console.log("FAIL  找不到 " + wsPath + "(設 BLAVE_WEB_DIR 指到 web)"); process.exit(1); }
 const web = fs.readFileSync(wsPath, "utf8"), desk = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.js"), "utf8");
 // 電腦版:CX_VENUES 的 ccy + 另外兩個帳戶
-const cx = /const CX_VENUES = \{([\s\S]*?)\};/.exec(desk), other = /const TR_VENUE_CCY_OTHER = \{([^}]*)\};/.exec(desk);
+// TR_VENUE_CCY_OTHER 兩種寫法:{…},或 Object.assign({…}, FLAG ? {…} : {})——旗標那段只在 trade.js 的 `const FLAG = true;` 時算進表
+const cx = /const CX_VENUES = \{([\s\S]*?)\};/.exec(desk), other = /const TR_VENUE_CCY_OTHER = (?:\{([^}]*)\}|Object\.assign\(\{([^}]*)\}, ([A-Z_]+) \? \{([^}]*)\} : \{\}\));/.exec(desk);
 const dt = {};
 if (cx) for (const m of cx[1].matchAll(/(\w+): \{([^}]*)\}/g)) { const c = /ccy: "(\w+)"/.exec(m[2]); if (c) dt[m[1]] = c[1]; }
-if (other) for (const m of other[1].matchAll(/(\w+): "(\w+)"/g)) dt[m[1]] = m[2];
+const otherFlag = other && other[3] ? new RegExp("^const " + other[3] + " = (true|false);", "m").exec(desk) : null;
+const otherSrc = !other ? "" : other[1] !== undefined ? other[1] : other[2] + (otherFlag && otherFlag[1] === "true" ? "," + other[4] : "");
+for (const m of otherSrc.matchAll(/(\w+): "(\w+)"/g)) dt[m[1]] = m[2];
+ok("電腦版 TR_VENUE_CCY_OTHER 讀得到(旗標寫法的旗標也讀得到)", !!other && (other[1] !== undefined || !!otherFlag));
 // 網頁:CX_VENUES 陣列裡每個 { id: "…", … ccy: "…" }
 const wa = web.indexOf("const CX_VENUES = ["), wb = web.indexOf("\n        ];\n", wa), wt = {};
 if (wa >= 0 && wb > wa) for (const m of web.slice(wa, wb).matchAll(/\{\s*id: "(\w+)"[^{}]*?ccy: "(\w+)"/g)) wt[m[1]] = m[2];
@@ -179,7 +183,13 @@ const START_PAIRS = { "tr.start": "workspace_pf_start", "tr.opt.legend": "worksp
   "tr.opt.catchHow.market": "workspace_pf_catch_how_market", "tr.opt.catchHow.twap": "workspace_pf_catch_how_twap", "tr.opt.catchHow.chase": "workspace_pf_catch_how_chase", "tr.opt.catchHow.custom": "workspace_pf_catch_how_custom",
   "tr.keep.own": "workspace_pf_keep_own", "tr.keep.ownFirst": "workspace_pf_keep_own_first", "tr.keep.ownBuilt": "workspace_pf_keep_own_built", "tr.startWait": "workspace_pf_start_wait", "tr.startCatchUp": "workspace_pf_start_catch_up", "cf.more": "workspace_pf_more",
   "tr.deferTxfCancel": "workspace_pf_defer_txf_cancel",   // 稽核 0153 Y2:延後的台指期平倉會被啟動取消(zh 是 Wei 核准原文)
-  "tr.closeAllWarn2Z": "workspace_pf_close_all_warn2_z" };   // 停止框後果句沒有策略設金額那一版(稽核 release-0154 S1)
+  "tr.closeAllWarn2Z": "workspace_pf_close_all_warn2_z",   // 停止框後果句沒有策略設金額那一版(稽核 release-0154 S1)
+  // 0.1.58 補齊排第一(spec 0158-catchup-intro §1.6):讀過帳沒有單、按下時單變了
+  "tr.opt.catchNone": "workspace_pf_opt_catch_none", "tr.opt.catchChanged": "workspace_pf_opt_catch_changed",
+  // 單那一行「會」只寫第一筆(設計稽核 0158 S3)
+  "tr.opt.catchWill": "workspace_pf_catch_will", "tr.opt.catchWillMore": "workspace_pf_catch_will_more",
+  // 讀到帳之前補齊停用的原因(Wei 裁定稽核 0158 R1)
+  "tr.opt.catchNeedRead": "workspace_pf_opt_catch_need_read", "tr.opt.catchNeedSignal": "workspace_pf_opt_catch_need_signal" };
 for (const lang of ["zh", "en"]) {
   const dp = poMap(path.join(__dirname, "..", "shell", "i18n", lang + ".po")), wp = poMap(path.join(webDir, "app", "translations", lang, "LC_MESSAGES", "messages.po"));
   const bad = Object.entries(START_PAIRS).filter(([d, w]) => typeof dp[d] !== "string" || dp[d] !== wp[w]);

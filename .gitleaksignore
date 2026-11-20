@@ -36,3 +36,6 @@ tests/fixtures/error_report_cases.json:generic-api-key:33
 shell/renderer/planv3.js:generic-api-key:102
 tests/check_shell_plan_v3.js:generic-api-key:151
 tests/check_shell_plan_v3.js:generic-api-key:155
+# 0.1.58：i18n key（p3.w.trialNoElig）與永豐測試的假值（sinopac_secret_key=s），generic-api-key 誤判，不是憑證；行號一改就要重取
+tests/check_shell_plan_v3.js:generic-api-key:393
+tests/check_sinopac_local.py:generic-api-key:152

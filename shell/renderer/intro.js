@@ -17,6 +17,7 @@ function introDecide(o) {
   if (o.sent) return "sent";
   if (o.running) return "running";
   if (o.modal) return "modal";
+  if (!o.settled) return "settle";
   if (!o.visible) return "hidden";
   if (!o.check || o.check.show !== true) return "ipc";
   return "";
@@ -25,7 +26,15 @@ function introDecide(o) {
 
 // engine:wait / ok / fail(這次開著失敗過就一直是 fail,之後在卡上重試成功也不彈);check:undefined = 還沒問、null = 問了在路上
 // fresh = 減少動態的初始狀態(停在最後一格、還沒按過播放);resume = 視窗藏起來那一刻正在播
-const INTRO = { done: false, engine: "wait", sent: false, check: undefined, queued: false, fresh: false, resume: false };
+// readyAt =「這台電腦準備好了」那行出現的時間(這次沒出安裝卡就是引擎可用那一刻);lastInput = 最後一次按鍵／點按／滾輪;timer = 等穩的那一個 setTimeout
+// wsAt = 這次第一次看到工作頁(連上 AI、#view-ws 露出)的時間
+const INTRO = { done: false, engine: "wait", sent: false, check: undefined, queued: false, fresh: false, resume: false, readyAt: null, wsAt: null, lastInput: 0, timer: 0 };
+/* 等穩(spec 0158-catchup-intro §2.1):準備好那行停留 1.5 秒、用戶 1.5 秒沒操作、輸入框是空的才開。
+   是狀態判斷的等待(同 ENG_STALL_MS),不是動畫時長,所以不進 --motion-* */
+const INTRO_SETTLE_MS = 1500;
+/* 有安裝卡、引擎也可用了,卻等不到 engDone 插進「準備好了」那行(phase done 沒來):最多等這麼久就當作那行已經出現,
+   框不會因為少一個事件而這次永遠不彈(稽核 0158 I3)。沒彈就沒寫 introSeen,下次開 app 照樣會再判 */
+const INTRO_READY_CAP_MS = 10000;
 const INTRO_PLAY = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11l9-5.5z"/></svg>';
 const INTRO_PAUSE = '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="2.5" width="3" height="11" rx="1"/><rect x="9.5" y="2.5" width="3" height="11" rx="1"/></svg>';
 
@@ -33,21 +42,41 @@ function introInputs() {
   const c = typeof cur !== "undefined" ? cur : null, tok = typeof hasToken !== "undefined" && hasToken === true, a = typeof acct !== "undefined" ? acct : null;
   // 連 Blave AI 且登入:帳號狀態回來才判(accountStatus 回 null = 查不到,也不彈);stFill 在狀態未知時會把 canRun:null 當能跑,所以先過這道
   const acctKnown = !(c === "blave" && tok) || a !== null;
+  const conn = c != null && !$("view-ws").hidden;
+  if (conn && INTRO.wsAt == null) INTRO.wsAt = Date.now();
   return {
-    done: INTRO.done, conn: c != null && !$("view-ws").hidden, engine: INTRO.engine, acctKnown,
+    done: INTRO.done, conn, engine: INTRO.engine, acctKnown,
     fill: acctKnown && stFill({ engine: c, signedIn: tok, canRun: a ? a.can_run : null }),
     // 代下載那一兩秒(歡迎頁卡或策略庫確認後)running 還是 false:也算在跑,不然 modal 會蓋上剛確認的安裝、主鈕那句還會讓安裝送不出去
     sent: INTRO.sent, running: (typeof csAnyTurn === "function" ? csAnyTurn() : typeof running !== "undefined" && running === true) || (typeof LIB !== "undefined" && LIB.pending.size > 0),   // 任何分頁在跑都不彈
-    modal: brModalOpen(), visible: document.visibilityState === "visible", check: INTRO.check,
+    modal: brModalOpen(), settled: introSettleWait(Date.now()) === 0, visible: document.visibilityState === "visible", check: INTRO.check,
   };
 }
+/* 還要等幾毫秒才算穩:0 = 穩了;Infinity = 不計時(準備好那行還沒出來、還沒看到工作頁、或輸入框有字:用戶在打自己的想法,框是打斷;等下一次輸入事件再算)。
+   起點取「準備好那行出現」與「第一次看到工作頁」較晚的那個:spec §2.1 寫引擎可用那一刻、§2.4 寫工作頁出現後約 1.5 秒,兩句衝突時取較晚、較不突兀的
+   (稽核 0158 I2;引擎在歡迎頁或登入前就好了的話,照 §2.1 進工作頁那一刻框會立刻彈,正是這次要修的) */
+function introSettleWait(now) {
+  const ta = $("ta");
+  if (INTRO.readyAt == null || INTRO.wsAt == null || (ta && ta.value)) return Infinity;
+  return Math.max(0, Math.max(INTRO.readyAt, INTRO.wsAt) + INTRO_SETTLE_MS - now, INTRO.lastInput + INTRO_SETTLE_MS - now);
+}
+function introArm(ms) { clearTimeout(INTRO.timer); INTRO.timer = isFinite(ms) ? setTimeout(() => { INTRO.timer = 0; if (!INTRO.done) introSync(); }, ms) : 0; }
+// 只在還沒彈時掛;彈了或確定這次不彈就拆
+const introOnInput = () => { INTRO.lastInput = Date.now(); if (!INTRO.done) introArm(introSettleWait(INTRO.lastInput)); };
+// input:最後一下 Backspace 的 keydown 發生在字清空之前,清空要靠 input 才重新計時(稽核 0158 I1)
+const INTRO_INPUTS = ["keydown", "pointerdown", "wheel", "input"];
+INTRO_INPUTS.forEach((k) => window.addEventListener(k, introOnInput, { capture: true, passive: true }));
+function introUnwatch() { clearTimeout(INTRO.timer); INTRO.timer = 0; INTRO_INPUTS.forEach((k) => window.removeEventListener(k, introOnInput, { capture: true })); }
+// engine.js engDone:安裝卡淡出、「準備好了」那行真的插進聊天欄的那一刻
+function introReady() { INTRO.readyAt = Date.now(); if (!INTRO.done) introSync(); }
 function introSync() {
   const why = introDecide(introInputs());
   if (why === "ipc" && INTRO.check === undefined) {
     INTRO.check = null;
-    Promise.resolve().then(() => window.blave.introCheck()).then((r) => r, () => null).then((r) => { INTRO.check = r || { show: false }; introSync(); });
+    Promise.resolve().then(() => window.blave.introCheck()).then((r) => r, () => null).then((r) => { INTRO.check = r || { show: false }; if (INTRO.check.show !== true && typeof introUnwatch === "function") introUnwatch(); introSync(); });
     return;
   }
+  if (why === "settle" && typeof introArm === "function") introArm(introSettleWait(Date.now()));
   if (!why) introShow();
 }
 function introMarkSent() { INTRO.sent = true; }
@@ -60,10 +89,17 @@ introMo.observe(document.body, { attributes: true, attributeFilter: ["hidden"], 
 document.addEventListener("visibilitychange", () => { if (!INTRO.done) introSync(); });
 /* 引擎:先讀快照。背景安裝這次已經失敗過就不叫 ensureEngine——它會從頭重裝,等於替用戶按了重試、卡從「失敗」變回「安裝中」 */
 function introEngineWatch() {
-  window.blave.onEngineState((s) => { if (s && s.phase === "fail") INTRO.engine = "fail"; });
+  window.blave.onEngineState((s) => { if (s && s.phase === "fail") { INTRO.engine = "fail"; if (typeof introUnwatch === "function") introUnwatch(); } });
   return Promise.resolve().then(() => window.blave.engineState()).then((s) => s, () => null).then((s) => {
     if ((s && s.phase === "fail") || INTRO.engine === "fail") { INTRO.engine = "fail"; return; }
-    return Promise.resolve().then(() => window.blave.ensureEngine()).then(() => { if (INTRO.engine === "fail") return; INTRO.engine = "ok"; introSync(); }, () => { INTRO.engine = "fail"; });
+    // 這次有出安裝卡(ENG.card 還在):起點等 engDone 插進「準備好了」那行(introReady);沒出卡就是現在
+    return Promise.resolve().then(() => window.blave.ensureEngine()).then(() => {
+      if (INTRO.engine === "fail") return;
+      INTRO.engine = "ok";
+      if (INTRO.readyAt == null && !(typeof ENG !== "undefined" && ENG.card)) INTRO.readyAt = Date.now();
+      else if (INTRO.readyAt == null) setTimeout(() => { if (INTRO.readyAt == null && !INTRO.done && typeof introReady === "function") introReady(); }, typeof INTRO_READY_CAP_MS === "number" ? INTRO_READY_CAP_MS : 10000);
+      introSync();
+    }, () => { INTRO.engine = "fail"; });
   });
 }
 introEngineWatch();
@@ -106,7 +142,7 @@ document.addEventListener("visibilitychange", () => {
 /* ── 開 / 關 ── */
 function introShow() {
   const sc = $("intro-scrim"); if (!sc.hidden) return;
-  INTRO.done = true; introMo.disconnect();
+  INTRO.done = true; introMo.disconnect(); introUnwatch();
   Promise.resolve().then(() => window.blave.introSeen()).catch(() => {});
   trackFeature("intro_shown");
   // 減少動態:不自動播,loadedmetadata 後停在最後一格,鈕是「播放示範」
@@ -114,7 +150,14 @@ function introShow() {
   INTRO.fresh = still; INTRO.resume = false; $("intro-play").hidden = false;
   introBtn(INTRO_PLAY, still ? "intro.play" : "intro.resume");
   v.muted = true; v.poster = m.poster; v.src = m.src;
-  if (!still) introPlay();
+  // 影片等框到位才播(§2.2):滑進來的那 180ms 只看 poster,畫面不同時有兩樣東西在動。transitionend 與兜底的計時器先到先播、只播一次
+  if (!still) {
+    const md = $("intro-modal"); let played = false;
+    const go = () => { if (played) return; played = true; md.removeEventListener("transitionend", onEnd); if (!sc.hidden) introPlay(); };
+    const onEnd = (e) => { if (e.target === md && e.propertyName === "transform") go(); };
+    md.addEventListener("transitionend", onEnd);
+    setTimeout(go, motionBaseMs() + 30);
+  }
   $("view-ws").inert = true;
   sc.hidden = false;
   requestAnimationFrame(() => sc.classList.add("open"));

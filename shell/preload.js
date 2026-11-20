@@ -138,6 +138,17 @@ contextBridge.exposeInMainWorld("blave", {
   caplStep: (name, o) => ipcRenderer.invoke("capl-step", name, o || {}),
   caplOld: (remove) => ipcRenderer.invoke("capl-old", remove === true),
   caplUnbind: (o) => ipcRenderer.invoke("capl-unbind", o || {}),
+  // 永豐本機開通(sinopac_local.js):欄位送進主行程一次,拿得回來的只有代號與到期日;憑證檔路徑不回來
+  sinopacInfo: () => ipcRenderer.invoke("sinopac-info"),
+  sinopacPick: () => ipcRenderer.invoke("sinopac-pick"),
+  sinopacBind: (a) => ipcRenderer.invoke("sinopac-bind", a || {}),
+  sinopacStep: (name) => ipcRenderer.invoke("sinopac-step", name),
+  sinopacClose: () => ipcRenderer.invoke("sinopac-close"),
+  sinopacUnbind: (o) => ipcRenderer.invoke("sinopac-unbind", o || {}),
+  // 雲端主機的永豐開通(cloud_sinopac.js):同上,只回代號
+  sinopacCloudPick: () => ipcRenderer.invoke("sinopac-cloud-pick"),
+  sinopacCloudUpload: (a) => ipcRenderer.invoke("sinopac-cloud-upload", a || {}),
+  sinopacCloudStep: (name) => ipcRenderer.invoke("sinopac-cloud-step", name),
   // 最低版本閘:{ blocked, min, current, checked_at };被擋時 trade-send 的啟動類回 UPDATE_REQUIRED、send-message 回 { blocked: "UPDATE_REQUIRED" }
   minVersionState: () => ipcRenderer.invoke("min-version-state"),
   onMinVersionState: (fn) => ipcRenderer.on("min-version-state", (_e, st) => fn(st)),

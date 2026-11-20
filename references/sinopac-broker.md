@@ -35,7 +35,8 @@ The first live Taiwan-stock deployment lost **three rounds of orders to silent r
 Shioaji's `place_order` does not raise on rejection; a dead order just sits with status `Failed`
 or never leaves `PendingSubmit`. Each lesson below cost a real debugging round:
 
-1. **`SINOPAC_LIVE=true` must be set in `.env`, or nothing is real.** Without it the connection
+1. **Live or simulation is a login setting** (the connect flow's switch now, `SINOPAC_LIVE` in
+   `.env` back then), and a wrong one is silent. In simulation the connection
    runs in simulation mode against a fake account whose holdings have nothing to do with the
    user's real account (the simulation account showed 24 fake positions worth $24.4M while the
    real account was empty; sell orders bounced with 「集保賣出餘股數不足」 against holdings that
@@ -178,9 +179,12 @@ password.
 - The connect page for SinoPac futures is not available yet. Until it is, tell the user SinoPac
   futures are not available yet — never write `.env` lines for them.
 - Never read, print or echo these values, and never open the `.pfx`.
-- **These `.env` names are locked** (already-bound machines resolve them): `sinopac_api_key`,
-  `sinopac_secret_key`, `sinopac_ca_path`, `sinopac_ca_passwd`, `sinopac_person_id` (optional,
-  defaults to the certificate password), `SINOPAC_LIVE`.
+- The values never sit in `.env`. The connect flow stores them like 統一's (`lib/sinopac_vault`):
+  `.env` holds `vault:` placeholders under the locked names `sinopac_api_key`,
+  `sinopac_secret_key`, `sinopac_ca_passwd`, `sinopac_person_id`, plus `sinopac_ca_path`.
+  Never edit or add these lines: a `credentials` write of any `sinopac_*` line outside the connect
+  flow is refused, plain values start no worker, and a `SINOPAC_LIVE` line is ignored — production
+  is the connect flow's switch.
 
 ---
 
@@ -228,7 +232,9 @@ in `lib/order_sinopac.py` (full API in `references/lib.md`) refuse with `code ==
 send nothing until a real-account order run passes. Once verified:
 
 - Orders do not log in: they are request files for `lib/sinopac_worker.py`, the machine's one
-  Shioaji login. **Never start the worker yourself** — each start is a real login.
+  Shioaji login. The platform starts and stops it while SinoPac is bound (cloud:
+  `blave-agent-sinopac.timer`; desktop: the app's daemon). **Never start the worker yourself** —
+  each start is a real login.
 - Market `IOC`, sent to a specific month (the held month for an add or a close, else the near
   month), never to `TXFR1`. `book_months=` (the months the bot's book holds; the reconciler and
   the close-all both send it) limits that to the bot's own months: a month the user opened in the SinoPac
@@ -241,10 +247,11 @@ send nothing until a real-account order run passes. Once verified:
 - Nothing goes out while the machine is paused (`state/HALT`) or stopped after a restart, except
   the user's own close. Entries wait outside the regular session and while this machine's clock is
   off (`lib/tw_clock`); closes are not held by that gate.
-- A worker login that got no answer (timeout, connection, SinoPac maintenance, 451) is retried by
-  itself and never stops: 1, 2, 4, 8 and 10 minutes apart, then every 30 minutes, at least 10
-  minutes after a 451; trading on SinoPac skips those rounds, and the user is told 25 minutes in and
-  every 2 hours after. Any other failed login (key, certificate, not signed, no futures account)
+- A worker login that got no answer (timeout, connection, network down, SinoPac maintenance, 451)
+  is retried by itself and never stops: 1, 2, 4, 8 and 10 minutes apart, then every 30 minutes, at
+  least 10 minutes after a 451; a worker restarted after a crash waits the same spacing. Trading on
+  SinoPac skips those rounds, and the user is told 25 minutes in, at
+  150 minutes, then every 2 hours. Any other failed login (key, certificate, not signed, no futures account)
   stops SinoPac only — no HALT — and the user is told once; only the user's
   confirmed login on the platform restarts it.
 - No broker-side stop or take-profit: Shioaji's touch-price order runs in the client process, so

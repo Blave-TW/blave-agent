@@ -80,6 +80,24 @@ def waiting():
     return str(snap["waiting"])
 
 
+def waiting_info():
+    """{waiting, retry_at} for the account entry while waiting() (runtime/account_reader), else None.
+    retry_at: the epoch second of the next login try."""
+    w = waiting()
+    if not w:
+        return None
+    try:
+        retry_at = float(load_json(_SNAPSHOT, encoding="utf-8").get("retry_at") or 0) or None
+    except (OSError, ValueError, AttributeError):
+        retry_at = None
+    return {"waiting": w, "retry_at": retry_at}
+
+
+def get_account_masked(env: dict) -> str:
+    """The futures account as `****1234` (the worker masks it; the full number never leaves it)."""
+    return str(_read_snapshot().get("account_masked") or "")
+
+
 class SnapshotLag(RuntimeError):
     """The worker's last read began before this machine's last send had settled — its positions
     may not show that send yet (not a connectivity failure: skip the round)."""

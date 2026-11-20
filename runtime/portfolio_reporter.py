@@ -2555,6 +2555,20 @@ def build_report(reporter=None):
         if isinstance(stop, dict):
             pres = dict(pres, login_stop={"kind": str(stop.get("kind") or "UNKNOWN"), "at": stop.get("at")})
         report["president_connect"] = pres
+    # 永豐期貨 connect progress (runtime/sinopac_connect.py: cloud steps and the desktop's
+    # sinopac_local), plus a worker login STOP as {reason, at}: the page's 〔重新登入〕 and its reason line
+    spc = _read_json(os.path.join(WORKSPACE_STATE, "sinopac_connect.json"))
+    if isinstance(spc, dict):
+        stop = _read_json(os.path.join(WORKSPACE_STATE, "sinopac_login_stopped.json"))
+        if isinstance(stop, dict):
+            spc = dict(spc, login_stop={"reason": str(stop.get("reason") or "UNKNOWN"), "at": stop.get("at")})
+        # the worker retrying a login that got no answer (lib/sinopac_worker RETRY_PATH, an open streak):
+        # the page's p-retry {time}; absent when it is not retrying
+        rt = _read_json(os.path.join(WORKSPACE_STATE, "sinopac_login_retry.json"))
+        if isinstance(rt, dict) and rt.get("since") and not isinstance(stop, dict):
+            spc = dict(spc, login_retry={"retry_at": rt.get("retry_at"), "since": rt.get("since"),
+                                         "failures": rt.get("failures")})
+        report["sinopac_connect"] = spc
     # which feed the last 台指期 live tick read its bars from (lib/data._with_broker_tail,
     # 統一-bound desktop only) — the trade page's one-line 「行情:…」
     src = _read_json(os.path.join(WORKSPACE_STATE, "twfutures_live_source.json"))

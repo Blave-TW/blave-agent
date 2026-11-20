@@ -195,49 +195,54 @@
 .bt-heat-frame { overflow-x: auto; }
 .bt-heat {
   width: 100%;
-  /* 雲端是 680(它的中欄寬);桌面版的中欄常見只有 500 上下,680 會讓橫捲變成常態,
-     而被捲出畫面的剛好是最右邊的年度合計(實測)。降到 460:12 個月 + 年度欄在
-     500px 裡每格約 30px,「+31%」在 11px 字下放得下;更窄才橫捲。格距同步縮一階。 */
-  min-width: 460px;
+  /* 最小寬由 JS 照量到的格字寬算(report-backtest.js heatGeom),寫在 inline style:預設 1280 寬的中欄放得下整年、
+     更窄才 frame 橫捲,不截字(0.1.57 驗收 S5、0.1.58 驗收)。格距 2px,heatGeom 的 HEAT_GAP 同值 */
   table-layout: fixed;
   border-collapse: separate;
   border-spacing: var(--space-2);
+  font-size: 12px;   /* canon type:表格數值最小 12px;JS 算欄寬的 ch 也以這個字級為準 */
   font-variant-numeric: tabular-nums;
 }
 .bt-heat th {
-  font-size: 11px;
+  padding: 0;   /* 瀏覽器預設 th 有 1px 內距:不歸零,表會比 heatGeom 算的寬(1280 多 1px 就要捲,設計稽核 0158 M5) */
   font-weight: 500;
   color: var(--ink-3);
   text-align: center;
 }
-.bt-heat th:first-child { width: 40px; }
+.bt-heat th:first-child { width: 40px; }   /* 量不到時的預設;JS 照年份字寬改 inline width */
 /* 橫捲時年份欄釘住;box-shadow 補滿 frame 內距那條縫,不然捲過去的格子會從縫裡透出來。
    左邊的值由 frame 內距推導,改內距時這裡跟著對 */
 .bt-heat tbody th,
 .bt-heat thead th:first-child {
   position: sticky;
   left: 0;
-  padding-right: var(--space-8);
+  padding-right: var(--space-4);   /* 4 + 2px 格距:預設 1280 寬整年放得下(0.1.58 驗收);JS heatGeom 的 HEAT_HEAD_PAD 同值 */
   text-align: left;
   background: var(--bg-body);
   box-shadow:
-    var(--space-4) 0 0 var(--bg-body),
+    var(--space-2) 0 0 var(--bg-body),   /* 只蓋 2px 格距,不蓋到第一個月格的圓角(設計稽核 0158 S6) */
     calc((var(--space-16) + var(--space-4)) * -1) 0 0 var(--bg-body);
 }
 .bt-heat td {
   height: 30px;
-  padding: 0;
+  padding: 0 var(--space-2);   /* 數字不貼色塊邊;heatGeom 的 HEAT_CELL_PAD 同值、算進欄寬 */
   border-radius: var(--radius-micro);
-  font-size: 11px;
   text-align: center;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow: visible;   /* 欄寬照量到的字寬給(heatGeom);次像素誤差讓字伸進格距,絕不用「…」截掉數字 */
   color: var(--ink);
 }
 /* 年度合計是推導值不是原始月份:加粗 + 一條浮在 4px 格距中間的分隔線
    (用 border 的話熱色會直接貼到線上,沒有空氣) */
-.bt-heat .yr { width: 48px; position: relative; }
+/* 年度欄釘在右邊(設計稽核 0158 S4):欄寬照字撐之後,最小視窗 1024 下表比 frame 寬,年度合計不能跟著被捲走——捲的只有中間的月份。
+   box-shadow 左邊補 2px 格距、右邊補 frame 內距那條縫(同年份欄,值由 frame 內距推導);熱色格的底由 JS 疊在 --bg-body 上,捲過去的格子不透出來 */
+.bt-heat .yr {
+  width: 48px; position: sticky; right: 0; z-index: 1;
+  box-shadow:
+    calc(var(--space-2) * -1) 0 0 var(--bg-body),
+    calc(var(--space-16) + var(--space-4)) 0 0 var(--bg-body);
+}
+.bt-heat th.yr, .bt-heat td.yr:empty { background: var(--bg-body); }
 .bt-heat td.yr { font-weight: 700; }
 .bt-heat .yr::before {
   content: "";

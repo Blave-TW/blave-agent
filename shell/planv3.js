@@ -110,7 +110,7 @@ function resultBody(b) {
   const r = obj(b) && obj(b.bind);
   if (!r || !pick(r.kind, ["trial", "plan"]) || !pick(r.status, ["pending", "ok", "unsettled", "failed", "wallet"])) return null;
   return { kind: r.kind, status: r.status, tier: pick(r.tier, TIERS), cycle: pick(r.cycle, CYCLES), amount_twd: amt(r.amount_twd),
-    refund_review: r.refund_review === true, at: iso(r.at) };
+    refund_review: r.refund_review === true, at: iso(r.at), reason_code: pick(r.reason_code, ["TRIAL_CARD_USED", "TRIAL_NOT_ELIGIBLE"]) };
 }
 /* 記號:{ kind: trial|plan, tier, cycle, at }。過期或壞掉 = 沒有(順手清掉) */
 function markOk(m, now) {

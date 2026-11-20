@@ -10,7 +10,7 @@
      409 一律用伺服器現價重開同一個框,頂上一句講為什麼又出現,不自動重送。
    用到 app.js 的 $ / t / LANG / acct / pub / pubLoad / hasToken / cur / RP / confirmBox / delClose / delOkBusy / delCtx / faultCard / sysLz /
    trackFeature / trackEvent / srSay / planDate / planOpen / planSignIn / acctCheck / planPaint / sidePaint / laiOpen / stratSelect /
-   planPayUrl / acctUrl / creditCards——都在呼叫時才取。 */
+   planPayUrl / planCryptoUrl / acctUrl / creditCards——都在呼叫時才取。 */
 const P3 = { from: "set", addonFrom: "cloud", qAt: 0, qBusy: false, focusBack: null, tipSeq: 0, resume: null, pollT: null, polling: false, okLabel: null, busy: false, q: null, sel: null, wait: null, unlSaid: false, topSeen: undefined, bal: null };
 const P3_SAID_KEY = "p3.said";          // 「只講一次」的那幾行:每一格(slot_start)各一次,登入送的 30 一次
 const P3_POLL_MS = 5000;                // bind_result 每分鐘 30 次上限,這裡 12 次
@@ -111,10 +111,16 @@ function p3AddonModel(q, sel, pv, cap) {
 function p3TierOf(os, size) { return os + "_" + size; }
 function p3SplitTier(tier) { const i = tier.indexOf("_"); return { os: tier.slice(0, i), size: tier.slice(i + 1) }; }
 /* 付款頁回程(第 6 步,另含契約 6.4 的 wallet／unsettled 兩態)。回 { calm, key, vars, retry, refund } 或 null(還在等) */
-function p3ResultView(res, kind) {
+function p3ResultView(res, kind, verify) {
   if (!res || res.status === "pending") return null;
   if (res.status === "ok") return { calm: true, key: kind === "trial" ? "acct.ready" : "p3.w.okPlan" };
   if (res.status === "failed") return { calm: false, key: kind === "trial" ? "p3.w.failTrial" : "p3.w.failPay", retry: true };
+  /* 試用綁卡只刷驗證金:金額用框上印的那筆(記號的 pay),不讀 api 的 amount_twd——舊 api 在這裡放的是到期那一期 888。
+     試用綁卡永遠不印付費那句;原因碼缺(舊 api)講卡用過,綁卡前只判人,沒開成幾乎都是卡 */
+  if (res.status === "wallet" && kind === "trial") {
+    const key = res.reason_code === "TRIAL_NOT_ELIGIBLE" ? "p3.w.trialNoElig" : "p3.w.trialCardUsed";
+    return Object.assign({ calm: false, plan: true }, Number.isInteger(verify) && verify > 0 ? { key, vars: { v: verify } } : { key: key + "NoNum" });
+  }
   // 金額讀不到就用不帶數字那句(不印「已刷  TWD」;稽核 B5)
   if (res.status === "wallet") return { calm: false, key: typeof res.amount_twd === "number" && res.amount_twd > 0 ? "p3.w.wallet" : "p3.w.walletNoNum", vars: { p: res.amount_twd }, refund: res.refund_review === true };
   return { calm: true, key: "p3.w.unsettled", wait: true };   // unsettled:還在確認,繼續等
@@ -134,19 +140,21 @@ function p3TurnLines(s) {
   if (s.blocked) return out;   // 402 那張卡已經講了,不疊
   const top = s.topNew ? ["p3.topped" + (s.last4 ? "" : "NoCard"), { a: s.topNew.amount, l: s.last4 }] : null;
   if (ai && ai.state === "used_up" && !said.has("up:" + ai.slot_start)) {
-    const second = top || (ai.kind === "period" && ai.next_grant_at && s.per ? ["p3.up.next", { at: ai.next_grant_at, n: s.per }] : null);
+    // 不寫每期給多少(Wei 11-20:對外不寫 AI 額度的 TWD 數字),只寫哪天重置
+    const second = top || (ai.kind === "period" && ai.next_grant_at ? ["p3.up.next", { at: ai.next_grant_at }] : null);
     out.push({ id: "up:" + ai.slot_start, keys: [["p3.up", null]].concat(second ? [second] : []), local: true });
     return out;
   }
   if (top) out.push({ id: null, keys: [top] });
   if (ai && ai.state === "low" && !said.has("low:" + ai.slot_start) && s.low) {
     /* 方案戶另寫下一格哪天發(notifications P2):只寫日期、併進第一句(設計稽核 M5——一段最多兩句、不跟「自動儲值 300」並列第二個 300);試用格沒有下一格 */
-    const first = ai.kind === "period" && ai.next_grant_at ? ["p3.lowReset", { n: s.low, at: ai.next_grant_at }] : ["p3.low", { n: s.low }];
+    // 門檻照 s.low 判,字不寫數字(Wei 11-20)
+    const first = ai.kind === "period" && ai.next_grant_at ? ["p3.lowReset", { at: ai.next_grant_at }] : ["p3.low", null];
     // 自動儲值開著才講門檻與金額:account_status.auto_topup 為 true／false 照它;缺或 null(舊 api、時閘前)退回「有卡就當開著」
     const auto = s.autoTopup === true || s.autoTopup === false ? s.autoTopup : s.hasCard;
     out.push({ id: "low:" + ai.slot_start, keys: [first, auto && s.lo && s.amt ? ["p3.low.then", { lo: s.lo, a: s.amt }] : ["p3.low.thenNoCard", null]] });
   } else if (!ai && typeof s.free === "number" && s.free > 0 && s.free < P3_FREE_LOW_TWD && !said.has("free")) {
-    out.push({ id: "free", keys: [["p3.low", { n: P3_FREE_LOW_TWD }]], cta: true });
+    out.push({ id: "free", keys: [["p3.low", null]], cta: true });
   }
   return out;
 }
@@ -317,7 +325,7 @@ function p3AgentBox(m, opener, note) {
   }
   x.appendChild(head);
   const ul = p3El("ul", "p3-ticks"), ai = p3El("li", "", t("p3.tick.ai"));
-  ai.appendChild(p3El("span", "", m.kind === "trial" ? p3T("p3.tick.aiTrial", { q: m.aiTrial, n: m.aiPeriod }) : p3T("p3.tick.aiPeriod", { n: m.aiPeriod })));
+  ai.appendChild(p3El("span", "", t(m.kind === "trial" ? "p3.tick.aiTrial" : "p3.tick.aiPeriod")));   // 不寫額度的 TWD 數字(Wei 11-20)
   ul.append(p3El("li", "", t("p3.tick.data")), ai, p3El("li", "", t("p3.tick.pro")));
   x.appendChild(ul);
   if (m.kind === "out") {
@@ -328,6 +336,7 @@ function p3AgentBox(m, opener, note) {
   // 主鈕正上方那一句
   let ok;
   if (m.kind === "trial") {
+    x.appendChild(p3El("p", "p3-t", t("p3.a.oncePerCard")));
     x.appendChild(p3TopupLine(p3T("p3.a.verifyLine", { v: m.verify })));
     ok = t("p3.a.okTrialNoNum");   // 頭已經寫了幾天(copy #1:同一事實只講一次)
   } else if (m.kind === "bindPay") {
@@ -342,7 +351,7 @@ function p3AgentBox(m, opener, note) {
   // 框腳左邊:錢包夠一整期的〔用錢包付〕(要留在框裡鎖住扣款:stay),否則〔用加密貨幣轉帳〕(外開網站,先關框)
   const link = m.kind === "bindPay" && m.wallet
     ? { label: p3T("p3.a.walletPay", { p: m.price }), stay: true, onClick: () => { if (!P3.busy) p3AgentGo(m, opener, true); } }
-    : { label: t("p3.crypto"), onClick: () => { if (!P3.busy) window.blave.openExternal(planPayUrl()); } };
+    : { label: t("p3.crypto"), onClick: () => { if (!P3.busy) window.blave.openExternal(planCryptoUrl({ agent: true, cycle: "monthly" })); } };   // 這個框的單一律月繳(p3AgentGo)
   confirmBox({ title: t("p3.a.title"), lines: [], extra: x, ok, opener, stay: true, link, onOk: () => p3AgentGo(m, opener, false) });
 }
 function p3ProCancel(go) {
@@ -566,18 +575,20 @@ async function p3PollOnce() {
   if (!mark) { if (P3.wait) { trackEvent("plan_bind_res", { step: "expired" }); p3WaitDrop(); } return; }   // 記號沒了(過了效期、或別處已收掉):那一行收掉
   if (!P3.wait) { const card = p3Card(); P3.wait = { kind: mark.kind, tier: mark.tier, cycle: mark.cycle || "monthly", confirm: mark.confirm || null, pay: mark.pay || null, at: mark.at, card, pro: null };   // 重開 app 接著等
     p3WaitCard(card); }
-  const v = p3ResultView(res, mark.kind), w = P3.wait;
+  const v = p3ResultView(res, mark.kind, mark.pay), w = P3.wait;
   if (!v || v.wait) {
     if (v) { w.card.set(sysLz(() => ({ calm: true, text: t(v.key) }))); if (!w.unsettledSaid) { w.unsettledSaid = true; trackEvent("plan_bind_res", { step: "unsettled" }); } }
     if (Date.now() - w.at < P3_WAIT_MS) p3PollSoon(); else { trackEvent("plan_bind_res", { step: "expired" }); p3WaitDrop(); }
     return;
   }
   P3.wait = null;
-  trackEvent("plan_bind_res", { step: res.status === "ok" ? (mark.kind === "trial" ? "trial_ok" : "plan_ok") : res.status === "wallet" ? (v.refund ? "refund" : "wallet") : "failed" });
+  trackEvent("plan_bind_res", { step: res.status === "ok" ? (mark.kind === "trial" ? "trial_ok" : "plan_ok") : res.status === "wallet" ? (mark.kind === "trial" ? "trial_wallet" : v.refund ? "refund" : "wallet") : "failed" });
   const text = () => p3T(v.key, v.vars) + (v.refund ? (LANG === "zh" ? "" : " ") + t("p3.w.refund") : "");
   if (v.retry) w.card.set(sysLz(() => ({ calm: false, text: text(), label: t("p3.w.retry"), on: () => (w.tier && w.tier !== "agent" ? p3OpenAddon(w.card.b1, w.tier, undefined, "retry") : p3OpenAgent(w.card.b1, null, "retry")),
-    second: { label: t("p3.crypto"), quiet: true, on: () => { window.blave.openExternal(planPayUrl()); } } })));
+    second: { label: t("p3.crypto"), quiet: true, on: () => { window.blave.openExternal(planCryptoUrl({ agent: !(w.tier && w.tier !== "agent"), cycle: w.cycle })); } } })));
   else if (res.status === "ok") p3Done(w.card, v.key, w.pro);
+  // 試用沒開成但卡已綁上:可能想直接開通,給一顆開 888 方案框的鈕(框裡照常確認金額,不自動扣)
+  else if (v.plan) w.card.set(sysLz(() => ({ calm: v.calm, text: text(), label: t("data.seePlan"), on: () => p3OpenAgent(w.card.b1, null, "retry") })));
   else w.card.set(sysLz(() => ({ calm: v.calm, text: text() })));
   if (res.status !== "ok") acctCheck();
   if (typeof balLoad === "function") balLoad();
@@ -617,13 +628,13 @@ async function p3FreeCardPaint(card, where, s) {
   const v = p3FreeCard({ eligible, hasBt: !!bt, isRunning: live, need }), pv = p3Pv() || {};
   card._p3 = v.paper ? "paper" : live ? "running" : "none";
   if (!card._p3sent) { card._p3sent = true; trackEvent("acct_card_alt", { alt: card._p3 }); }
-  const per = pv.agent && pv.agent.ai_credit_per_period_twd, q = pv.trial && pv.trial.ai_credit_twd, days = (pv.trial && pv.trial.days) || s.trial_days;
+  const days = (pv.trial && pv.trial.days) || s.trial_days;
   const trialBtn = () => ({ label: days ? p3T("p3.a.okTrial", { t: days }) : t("p3.a.okTrialNoNum"), on: () => { acctClicked(where, s); p3OpenAgent(null, null, "free"); } });
   const planBtn = () => ({ label: t("p3.c.plan"), on: () => { acctClicked(where, s); p3OpenAgent(null, null, "free"); } });
   card.set(sysLz(() => {
     const offer = p3El("div", "p3-offer"), act = p3El("div", "p3-act"), mk = (o, cls) => { const b = p3El("button", cls, o.label); b.type = "button"; b.addEventListener("click", o.on); return b; };
     if (v.head === "paper") { offer.append(p3El("h4", "", t("p3.c.paperH")), p3El("p", "", p3T("p3.c.recent", { name: bt.displayName || bt.name }))); }
-    else offer.appendChild(p3El("h4", "", v.head === "trial" ? (q ? p3T("p3.c.trialH", { q }) : t("p3.c.trialHNoNum")) : (per ? p3T("p3.c.planH", { n: per }) : t("p3.c.planHNoNum"))));
+    else offer.appendChild(p3El("h4", "", t(v.head === "trial" ? "p3.c.trialHNoNum" : "p3.c.planHNoNum")));   // 不寫額度的 TWD 數字(Wei 11-20)
     const main = v.main === "see" ? { label: t("p3.c.see"), on: () => { trackEvent("acct_card_alt_click", { card: where === "pre" ? "pre_free" : "turn_free" }); stratSelect(bt.name); } } : v.main === "trial" ? trialBtn() : planBtn();
     const second = v.second === "trial" ? trialBtn() : v.second === "plan" ? planBtn() : v.second === "local" ? { label: t("acct.useLocal"), on: () => laiOpen(card) } : null;
     act.append(mk(main, "btn-fill")); if (second) act.append(mk(second, "btn-quiet")); offer.appendChild(act);
@@ -645,9 +656,9 @@ function p3TurnDraw(b) {
   // 第一次讀(還不知道這一輪之前是哪一筆):只記下來不講;之後 at 變了、而且是最近 30 分鐘內的,才是這一輪剛發生的
   const topNew = seen !== undefined && top && top.at !== seen && Date.now() - Date.parse(top.at) < 30 * 60 * 1000 ? top : null;
   P3.topSeen = top ? top.at : null; P3.bal = b;
-  const ac = (p3Pv() || {}).ai_credit || {}, pv = p3Pv() || {};
+  const ac = (p3Pv() || {}).ai_credit || {};
   const lines = p3TurnLines({ ai: acct && acct.ai_credit, free: b.free, topNew, said: p3SaidGet(), hasCard: !acctNoCard(acct), autoTopup: acct ? acct.auto_topup : undefined, last4: b.last4,
-    blocked: typeof creditCards !== "undefined" && creditCards.length > 0, per: pv.agent && pv.agent.ai_credit_per_period_twd,
+    blocked: typeof creditCards !== "undefined" && creditCards.length > 0,
     low: ac.low_threshold_twd, lo: ac.auto_topup_min || (acct && acct.auto_topup_min), amt: ac.auto_topup_amount || (acct && acct.auto_topup_amount) });
   lines.forEach((l) => {
     if (l.id) p3SaidAdd(l.id);
@@ -679,14 +690,30 @@ async function p3QuoteLoad() {
   if (r && r.status === 200 && r.body) { P3.q = r.body; if (typeof planPaint === "function" && !$("set-scrim").hidden) planPaint(); if (typeof sidePaint === "function") sidePaint(); }
 }
 
-/* ── 設定 › 帳號與方案:本期 AI 額度與超額(第 9 步「超額中的設定頁」)、自動儲值那一句 ── */
+/* 用量條的百分比(設計 ai-credit-usage-bar-2026-11-20 §3):granted 不是 >0 → null(整列不出);用完(left <= 0,含超額)→ 100;
+   其餘無條件捨去、最多 99——只有真的用完才寫 100。left 不是數字(舊 api 只給 granted)→ null:不知道用了多少,不能編一個 100% */
+function p3UsedPct(granted, left) {
+  const g = Number(granted), l = Number(left);
+  if (!(g > 0) || typeof left !== "number" || !isFinite(left)) return null;
+  if (!(l > 0)) return 100;
+  // 同網頁 aiUsedPct:先收到小數 6 位再捨去——(100−71)/100×100 在浮點是 28.999…,直接 floor 會少 1%(網頁與 references/billing.md 都是 29)
+  return Math.max(0, Math.min(99, Math.floor(Number((((g - l) / g) * 100).toFixed(6)))));
+}
+/* ── 設定 › 帳號與方案:本期 AI 額度用量條與超額(第 9 步「超額中的設定頁」)、自動儲值那一句 ──
+   Wei 11-20:不寫 AI 額度的總額與剩餘 TWD,只寫「已用 N%」;條下依序「本期已超額 {o} TWD」(錢包扣的錢照寫)→「{at} 重置。」。
+   條是裝飾(aria-hidden),title／aria／data 都不放 TWD 數字 */
 function p3PlanRows(id) {
   if (!p3Live() || !hasToken) return false;
-  const b = P3.bal, row = (l, v, na) => { const r = p3El("div", "plan-bal"); r.append(p3El("span", "l", l), p3El("span", "v" + (na ? " na" : ""), v)); return r; };
-  if (b && b.aiGranted !== null && b.aiGranted !== undefined) {
-    const left = Math.max(0, Math.round(b.aiLeft || 0)), r = row(t("p3.set.ai"), p3T("p3.set.aiV", { n: left, g: Math.round(b.aiGranted) }));
+  const b = P3.bal, pct = b ? p3UsedPct(b.aiGranted, b.aiLeft) : null;
+  if (pct !== null) {
+    const r = p3El("div", "plan-bal is-meter"), m = p3El("span", "v ai-meter"), track = p3El("span", "ai-track"), fill = p3El("span", "ai-fill");
+    track.setAttribute("aria-hidden", "true"); fill.style.width = pct + "%"; if (pct > 0) fill.classList.add("on"); track.appendChild(fill);
+    m.append(track, p3El("span", "pct", p3T("p3.set.used", { p: pct })));
+    r.append(p3El("span", "l", t("p3.set.ai")), m);
     id.appendChild(r);
     if (b.aiOver > 0) id.appendChild(p3El("p", "plan-fine", p3T("p3.set.over", { o: Math.round(b.aiOver) })));
+    const ai = acct && acct.ai_credit;
+    if (ai && ai.kind === "period" && ai.next_grant_at) id.appendChild(p3El("p", "plan-fine", p3T("p3.set.reset", { at: ai.next_grant_at })));
   }
   if (!acctNoCard(acct) && !(acct && acct.auto_topup === false)) { const p = p3TopupLine(); p.className = "plan-fine"; id.appendChild(p); }   // 關了自動儲值:不講它會補(auto_topup 缺或 null 照有卡判)
   return true;

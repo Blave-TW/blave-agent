@@ -394,8 +394,16 @@ const BODY_0134 = "- 新增「成交測試」分頁，在樣本外驗證和程�
       && /border: 1px solid transparent;/.test(pill) && !/overflow/.test(pill) && pi.length === 1 && 26 - 2 * pi[0] >= 44);
     t("M2 圖示 14、線寬 2;橘底墨色圖示;細軌底部用 .rail-bot 釘底(更新與齒輪間距 16),圓鈕本身不帶 margin-top:auto", /^\.up-pill \.ic \{ width: 14px; height: 14px; stroke-width: 2; \}/m.test(css) && /background: var\(--color-primary\); color: var\(--ink-on-primary\);/.test(pill)
       && /^\.rail-bot \{ margin-top: auto; display: flex; flex-direction: column; align-items: center; gap: var\(--space-16\); \}/m.test(css) && !/margin-top/.test(pill) && rule(".up-rail") === null);
-    t("S3 不寫字:列裡 #up-pill 與細軌 #up-rail 都只有一個圖示,沒有字的節點;長膠囊的 .up-pill-wrap／.up-pill-t／.no-ic 都拿掉了", /<button class="up-pill" id="up-pill" type="button" hidden><svg class="ic"[^>]*>(?:<path [^>]*\/>)+<\/svg><\/button>/.test(html)
+    // spec update-button-label-2026-11-19 A:列裡那顆寫「更新」(up.btn),圖示留在 DOM 給退回圓鈕用;細軌照舊只有圖示
+    t("A 列裡寫字:#up-pill 是圖示＋.t(data-i18n up.btn);細軌 #up-rail 只有圖示;舊長膠囊的 .up-pill-wrap／.up-pill-t／.no-ic 仍不在",
+      /<button class="up-pill" id="up-pill" type="button" hidden><svg class="ic"[^>]*>(?:<path [^>]*\/>)+<\/svg><span class="t" data-i18n="up\.btn"><\/span><\/button>/.test(html)
       && /<button class="up-pill up-rail" id="up-rail" type="button" hidden><svg class="ic"[^>]*>(?:<path [^>]*\/>)+<\/svg><\/button>/.test(html) && !/up-pill-wrap|up-pill-t\b|no-ic/.test(css + html));
+    { const S = fs.readFileSync(path.join(SHELL, "renderer", "strings.js"), "utf8"), zh = S.slice(S.indexOf("\n  zh: {")), en = S.slice(0, S.indexOf("\n  zh: {"));
+      t("A 字:up.btn zh「更新」、en「Update」", /"up\.btn": "更新",/.test(zh) && /"up\.btn": "Update",/.test(en)); }
+    t("A 膠囊幾何同帳號膠囊:28 高、min-width 44、左右 --space-8、12/500、line-height 1、不換行;熱區 -9／-1;列裡藏圖示、退回圓鈕(.is-icon)與細軌藏字",
+      /^\.foot-row \.up-pill:not\(\.is-icon\) \{ width: auto; min-width: 44px; padding: 0 var\(--space-8\); font-size: 12px; font-weight: 500; line-height: 1; white-space: nowrap; \}/m.test(css)
+      && /^\.foot-row \.up-pill:not\(\.is-icon\)::before \{ inset: -9px -1px; \}/m.test(css) && /^\.foot-row \.up-pill:not\(\.is-icon\) \.ic \{ display: none; \}/m.test(css)
+      && /^\.up-pill \.t \{ display: none; \}/m.test(css) && /^\.foot-row \.up-pill:not\(\.is-icon\) \.t \{ display: inline; \}/m.test(css) && /height: 28px;/.test(pill));
     t("S4 停用:底、字、框照 .btn-fill:disabled(surface-muted／ink-3／greyMedium)", /\.up-pill:disabled, \.up-pill\[aria-disabled="true"\] \{ background: var\(--surface-muted\); border-color: var\(--color-greyMedium\); color: var\(--ink-3\);/.test(css)
       && /\.btn-fill:disabled[^{]*\{ background: var\(--surface-muted\); color: var\(--ink-3\); border: 1px solid var\(--color-greyMedium\);/.test(css));
     t("S1 條列最後一條不留底距、整組跟後面的草稿句隔 12", /\.del-body \.up-notes li:last-child \{ margin-bottom: 0; \}/.test(css) && /\.del-body \.up-notes-slot \{ margin-bottom: var\(--space-12\); \}/.test(css));

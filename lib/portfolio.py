@@ -193,6 +193,239 @@ def _order_error_fresh(symbol, error, leg='entry', now=None):
     return True
 
 
+# A venue rejection in reconcile()'s send (Wei 11-20, batch 2: 335 rows and 21 mails from one
+# OKX user in 11 hours), per exchange + symbol + leg + reason — the cooldown above stays for the
+# other callers (protective orders, 統一's shut market):
+# - an entry leg is not sent again before 5 min, 15 min, 1 h, then every 6 h; a reduce / close
+#   leg is sent every round (an exit that cannot get out is worse than the noise);
+# - a reason without an [order_reject:<kind>] token gets 3 sends a round apart before that;
+# - the user is told once a key has failed 3 times in a row (not the first time: a one-off refusal
+#   is noise), once more 24 h after that (how long, how many times), then not until the reason
+#   changes or the leg goes through; a key quiet for 24 h is forgotten and counts from zero again.
+#   An entry leg counts per reason. A reduce / close leg counts every failure whatever the reason
+#   (two reasons taking turns must not keep an exit that cannot get out under 3) and is told once
+#   per reason it has not been told yet. Rows written before the notice carry `silent`.
+# - order_errors.json keeps 5 rows: at most 5 notices per 5 minutes, the rest wait for their next
+#   failure, so a told row is never pushed out before the reporter has read it.
+# Saving the order settings, 啟動下單 (a round under HALT), a new key or exchange, a turned or
+# unneeded leg, a new reason and a fill end the wait. Kept in a file so a restarted reconciler
+# goes on where it was; a broken or unreadable file, or an entry with a value that cannot be,
+# holds nothing back — and nothing here may stop the round.
+REJECT_BACKOFF_PATH = 'state/execution/reject_backoff.json'
+REJECT_BACKOFF_STEPS_S = (300, 900, 3600, 21600)
+REJECT_UNTAGGED_FREE = 3
+REJECT_REMIND_AFTER_S = 86400
+REJECT_NOTIFY_AFTER = 3
+REJECT_NOTIFY_ROWS = 5           # the rows order_errors.json keeps
+REJECT_NOTIFY_WINDOW_S = 300
+_REJECT_NO_BACKOFF = ('key_permission', 'market_closed')  # a rejected key HALTs; market_closed is a close-all's
+_reject_mem = {}  # this process's last state: notices keep to it while the file cannot be read
+
+
+def _backoff_clock():
+    return time.time()
+
+
+def _num(v):
+    try:
+        f = float(v)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return f if math.isfinite(f) else None
+
+
+def _reject_backoff_fingerprint():
+    """Saving the order settings rewrites the config and its UI mirror; a bind rewrites .env."""
+    out = []
+    for p in ('manager/portfolio_config.json', _UI_MIRROR_PATH, '.env'):
+        try:
+            out.append(os.stat(p).st_mtime_ns)
+        except OSError:
+            out.append(None)
+    return out
+
+
+def _load_reject_backoff():
+    """(readable, doc). Missing → empty; broken → set aside as .corrupt, empty; unreadable →
+    this process's last copy, with nothing held back and nothing written over."""
+    try:
+        doc = load_json(REJECT_BACKOFF_PATH)
+    except FileNotFoundError:
+        return True, {}
+    except ValueError:
+        doc = None
+    except OSError as e:
+        logging.warning(f'{REJECT_BACKOFF_PATH} unreadable ({type(e).__name__}): no leg held back')
+        return False, json.loads(json.dumps(_reject_mem))
+    if isinstance(doc, dict) and isinstance(doc.get('legs'), dict):
+        return True, doc
+    try:
+        atomic_replace(REJECT_BACKOFF_PATH, REJECT_BACKOFF_PATH + '.corrupt')
+    except OSError:
+        pass
+    return True, {}
+
+
+def _reject_entry_sane(e, now):
+    """A hand-edited file, an old backup or a clock that jumped can hold anything."""
+    if not isinstance(e, dict) or not isinstance(e.get('reason'), str):
+        return False
+    first, last, count = _num(e.get('first_at')), _num(e.get('last_at')), _num(e.get('count'))
+    if first is None or last is None or count is None or not 0 <= first <= last <= now + 60 \
+            or not 0 <= count < 1e9:
+        return False
+    for f, top in (('next_retry_at', now + REJECT_BACKOFF_STEPS_S[-1] + 60), ('notified_at', now + 60),
+                   ('streak', 1e9)):
+        if f in e and not (_num(e[f]) is not None and 0 <= _num(e[f]) <= top):
+            return False
+    if 'sign' in e and e['sign'] not in (1, -1):
+        return False
+    told = e.get('told', [])
+    return isinstance(told, list) and all(isinstance(t, str) for t in told)
+
+
+class _RejectBackoff:
+    """One reconcile round's view of REJECT_BACKOFF_PATH. Every method swallows its own errors:
+    whatever is wrong with the file, the round goes on and the leg is sent."""
+
+    def __init__(self, halted):
+        global _reject_mem
+        self.now = _backoff_clock()
+        self.seen = set()
+        self.ok, self.legs, self.told, self.fp, self.dirty = False, {}, [], None, False
+        try:
+            self.ok, doc = _load_reject_backoff()
+            legs = doc.get('legs') if isinstance(doc.get('legs'), dict) else {}
+            self.legs = {k: e for k, e in legs.items() if isinstance(k, str) and _reject_entry_sane(e, self.now)}
+            told = doc.get('told') if isinstance(doc.get('told'), list) else []
+            self.told = [t for t in (_num(x) for x in told) if t is not None and 0 <= self.now - t < REJECT_NOTIFY_WINDOW_S]
+            self.fp = _reject_backoff_fingerprint()
+            self.dirty = doc.get('fp') != self.fp or len(self.legs) != len(legs)
+            if len(self.legs) != len(legs):
+                logging.warning(f'{REJECT_BACKOFF_PATH}: {len(legs) - len(self.legs)} unusable entries dropped')
+            if halted or self.dirty:
+                for e in self.legs.values():
+                    self._release(e)
+        except Exception as e:  # noqa: BLE001 — never stops a round
+            logging.warning(f'{REJECT_BACKOFF_PATH}: {type(e).__name__}: {e} — no leg held back')
+            self.ok, self.legs, self.told = False, {}, []
+        _reject_mem = {'fp': self.fp, 'legs': self.legs, 'told': self.told}
+
+    @staticmethod
+    def _key(exchange, symbol, leg):
+        return f'{exchange or ""}|{symbol}|{leg}'
+
+    def _release(self, e):
+        if isinstance(e, dict):
+            for f in ('streak', 'next_retry_at', 'sign'):
+                if e.pop(f, None) is not None:
+                    self.dirty = True
+
+    def hold(self, exchange, symbol, sign):
+        """Seconds this entry leg still waits, else None."""
+        try:
+            k = self._key(exchange, symbol, 'entry')
+            self.seen.add(k)
+            e = self.legs.get(k)
+            at = _num(e.get('next_retry_at')) if self.ok and isinstance(e, dict) else None
+            if at is None:
+                return None
+            if e.get('sign') != sign:
+                self._release(e)
+                return None
+            return at - self.now if self.now < at else None
+        except Exception as e:  # noqa: BLE001
+            logging.warning(f'reject backoff hold {symbol}: {type(e).__name__}: {e} — sent')
+            return None
+
+    def _may_tell(self):
+        """At most REJECT_NOTIFY_ROWS notices per window: a told row must stay in the 5 kept rows
+        until the reporter has read it. The rest are told at their next failure."""
+        if len(self.told) >= REJECT_NOTIFY_ROWS:
+            return False
+        self.told.append(self.now)
+        return True
+
+    def fail(self, exchange, symbol, leg, error, sign, backoff):
+        """Count a rejection → (notice, entry); notice is 'first', 'reminder' or None."""
+        try:
+            return self._fail(exchange, symbol, leg, error, sign, backoff)
+        except Exception as e:  # noqa: BLE001
+            logging.warning(f'reject backoff fail {symbol}: {type(e).__name__}: {e}')
+            self.legs.pop(self._key(exchange, symbol, leg), None)
+            return None, {'count': 1, 'first_at': self.now, 'last_at': self.now}
+
+    def _fail(self, exchange, symbol, leg, error, sign, backoff):
+        k = self._key(exchange, symbol, leg)
+        self.seen.add(k)
+        reason = _order_error_reason(error)
+        e = self.legs.get(k)
+        stale = not isinstance(e, dict) or self.now - e['last_at'] >= REJECT_REMIND_AFTER_S
+        if stale or (leg == 'entry' and e.get('reason') != reason):
+            e = self.legs[k] = {'reason': reason, 'first_at': self.now, 'count': 0}
+        e['reason'] = reason
+        e['count'] = int(e['count']) + 1
+        e['last_at'] = self.now
+        notice = None
+        told = e.setdefault('told', [])
+        if e['count'] >= REJECT_NOTIFY_AFTER and reason not in told:
+            if self._may_tell():
+                told[:] = (told + [reason])[-10:]
+                e['notified_at'] = self.now
+                e.pop('reminded', None)
+                notice = 'first'
+        elif (e.get('notified_at') is not None and not e.get('reminded')
+                and self.now - e['notified_at'] >= REJECT_REMIND_AFTER_S and self._may_tell()):
+            e['reminded'] = True
+            notice = 'reminder'
+        token = re.match(r'\[order_reject:([a-z_]+)\]', _reject_front(error))
+        if backoff and not (token and token.group(1) in _REJECT_NO_BACKOFF):
+            e['streak'] = int(e.get('streak') or 0) + 1
+            e['sign'] = sign
+            step = e['streak'] - (0 if token else REJECT_UNTAGGED_FREE - 1)
+            if step >= 1:
+                e['next_retry_at'] = int(self.now + REJECT_BACKOFF_STEPS_S[min(step, len(REJECT_BACKOFF_STEPS_S)) - 1])
+        self.dirty = True
+        self.save()
+        return notice, e
+
+    def went_through(self, exchange, symbol, leg):
+        try:
+            k = self._key(exchange, symbol, leg)
+            self.seen.add(k)
+            if self.legs.pop(k, None) is not None:
+                self.dirty = True
+                self.save()
+        except Exception as e:  # noqa: BLE001
+            logging.warning(f'reject backoff went_through {symbol}: {type(e).__name__}: {e}')
+
+    def finish(self):
+        """End of the round: a leg not asked for this round waits no more; a key quiet a day goes."""
+        try:
+            for k, e in list(self.legs.items()):
+                if self.now - e['last_at'] >= REJECT_REMIND_AFTER_S:
+                    del self.legs[k]
+                    self.dirty = True
+                elif k not in self.seen:
+                    self._release(e)
+            self.save()
+        except Exception as e:  # noqa: BLE001
+            logging.warning(f'reject backoff finish: {type(e).__name__}: {e}')
+
+    def save(self):
+        if not (self.ok and self.dirty):
+            return
+        try:
+            os.makedirs(os.path.dirname(REJECT_BACKOFF_PATH), exist_ok=True)
+            tmp = f'{REJECT_BACKOFF_PATH}.{os.getpid()}.tmp'
+            with open(tmp, 'w') as f:
+                json.dump({'fp': self.fp, 'legs': self.legs, 'told': self.told}, f, indent=1)
+            atomic_replace(tmp, REJECT_BACKOFF_PATH)
+            self.dirty = False
+        except (OSError, TypeError, ValueError) as e:
+            logging.warning(f'{REJECT_BACKOFF_PATH} not written: {e}')
+
+
 def _reject_plain(error):
     """The message without its [order_reject:<kind>] token — for notices read by people (TG, desktop)."""
     try:
@@ -208,28 +441,72 @@ def _record_order_error(symbol, exchange, error, extra=None, repeat=False):
     tried (measured UX complaint). Best-effort; keeps the newest 5.
     `extra` adds fields (e.g. kind/symbols for the platform to route on).
     repeat=True (a throttled repeat, _order_error_fresh): the newest row of this
-    symbol + exchange + reason gets last_at and count instead of a new row; none → a new row."""
+    symbol + exchange + reason gets last_at and count instead of a new row; none (pushed out of
+    the 5) → a new row marked `silent`: the platform sends nothing for it. extra['next_retry_at'] (an entry leg's
+    _RejectBackoff) is set on the row either way; None takes it off."""
     try:
         path = 'manager/order_errors.json'
         rows = _order_errors_for_update(path)
         if rows is None:
             return
+        extra = dict(extra or {})
+        own = extra.pop('_reject_leg', None)   # 'entry' / 'reduce': reconcile's rejection row, stored as `leg`
         now = datetime.utcnow().isoformat()
         text = _reject_front(error)[:200]
         same = [r for r in rows if isinstance(r, dict) and r.get('symbol') == symbol
                 and r.get('exchange') == exchange
                 and _order_error_reason(r.get('error', '')) == _order_error_reason(text)] if repeat else []
         if same:
-            same[-1]['last_at'] = now
-            same[-1]['count'] = int(same[-1].get('count') or 1) + 1
+            row = same[-1]
+            row['last_at'] = now
+            row['count'] = int(row.get('count') or 1) + 1
         else:
-            rows.append({**(extra or {}), 'ts': now, 'symbol': symbol, 'exchange': exchange, 'error': text})
+            row = {**(extra or {}), 'ts': now, 'symbol': symbol, 'exchange': exchange, 'error': text}
+            if own:
+                row['leg'] = own
+            if repeat:
+                row['silent'] = True
+            rows.append(row)
+        if 'next_retry_at' in (extra or {}):
+            row.pop('next_retry_at', None)
+            if extra['next_retry_at'] is not None:
+                row['next_retry_at'] = int(extra['next_retry_at'])
+        _keep_order_error_rows(rows, row)
         tmp = f'{path}.{os.getpid()}.tmp'
         with open(tmp, 'w') as f:
-            json.dump(rows[-5:], f, indent=2)
+            json.dump(rows, f, indent=2)
         atomic_replace(tmp, path)
     except Exception as e:
         logging.warning(f'failed to record order error: {e}')
+
+
+ORDER_ERROR_ROWS = 5   # per budget: reconcile's rejection rows, and every other row
+
+
+def _keep_order_error_rows(rows, row=None):
+    """Two budgets of ORDER_ERROR_ROWS, so a rejection that comes back every round never pushes
+    out a parked, close-all or any other row, nor the other way round. Rejection rows (`leg`, no
+    kind — reconcile's send): a silent one goes first, then the oldest, but not a notice row
+    (`since`) inside REJECT_NOTIFY_WINDOW_S while another can go — _RejectBackoff caps those at
+    ORDER_ERROR_ROWS per window, so the reporter reads each. Every other row: the oldest goes.
+    `row`, just written, goes last in its budget."""
+    fresh = (datetime.utcnow() - timedelta(seconds=REJECT_NOTIFY_WINDOW_S)).isoformat()
+    rej = lambda r: isinstance(r, dict) and r.get('leg') in ('entry', 'reduce') and not r.get('kind')  # noqa: E731
+    told = lambda r: r.get('since') is not None and not r.get('silent') and str(r.get('ts') or '') >= fresh  # noqa: E731
+    for mine in (True, False):
+        while True:
+            idx = [i for i, r in enumerate(rows) if rej(r) == mine]
+            if len(idx) <= ORDER_ERROR_ROWS:
+                break
+            others = [i for i in idx if rows[i] is not row]
+            if mine:
+                pool = [i for i in others if not told(rows[i])]
+                drop = ([i for i in pool if rows[i].get('silent') is True] or pool
+                        or [i for i in idx if rows[i] is row and not told(row)] or others)
+            else:
+                drop = others
+            del rows[drop[0]]
+    return rows
 
 
 def _order_errors_for_update(path):
@@ -394,7 +671,7 @@ def mark_inflight_released(ids, interrupted=False):
                 r['filled'] = _filled_since(r.get('symbol'), r.get('ts'))
         tmp = f'{path}.{os.getpid()}.tmp'
         with open(tmp, 'w') as f:
-            json.dump(rows[-5:], f, indent=2)
+            json.dump(_keep_order_error_rows(rows), f, indent=2)
         atomic_replace(tmp, path)
     except Exception as e:
         logging.warning(f'failed to mark inflight rows {ids} released: {e}')
@@ -454,7 +731,7 @@ def mark_park_released(pid, filled):
             r.update(released=True, released_at=now, filled=bool(filled))
         tmp = f'{path}.{os.getpid()}.tmp'
         with open(tmp, 'w') as f:
-            json.dump(rows[-5:], f, indent=2)
+            json.dump(_keep_order_error_rows(rows), f, indent=2)
         atomic_replace(tmp, path)
     except Exception as e:
         logging.warning(f'failed to mark park {pid} released: {e}')
@@ -475,7 +752,7 @@ def mark_rows_released(pick):
             r.update(released=True, released_at=now, filled=bool(filled))
         tmp = f'{path}.{os.getpid()}.tmp'
         with open(tmp, 'w') as f:
-            json.dump(rows[-5:], f, indent=2)
+            json.dump(_keep_order_error_rows(rows), f, indent=2)
         atomic_replace(tmp, path)
     except Exception as e:
         logging.warning(f'failed to mark rows released: {e}')
@@ -4672,6 +4949,7 @@ def reconcile(get_positions_fn, place_order_fn, threshold=RECONCILE_THRESHOLD, s
     # Clearing HALT changes the reconciler's watched __halt__ mtime, so a
     # clean round follows within one poll tick — the cost is one round's delay.
     halted_at_start = guard.halted()
+    backoff = _RejectBackoff(halted_at_start)
     # an order the venue took without a known outcome holds its symbol's entries, never the round
     parked = _settle_parked()
 
@@ -5147,6 +5425,14 @@ def reconcile(get_positions_fn, place_order_fn, threshold=RECONCILE_THRESHOLD, s
                 failed = True
                 break
 
+            wait_s = None if reduce_only else backoff.hold(order.get('exchange'), symbol,
+                                                            1 if sub_diff > 0 else -1)
+            if wait_s:
+                logging.info(f"[reconcile] {symbol} entry {sub_diff:+.2f} held — rejected for the "
+                             f"same reason, next try in {wait_s / 60:.0f} min")
+                failed = True
+                break
+
             # A market fill is only in the book once its orders.jsonl line is: a
             # process killed in between would leave the fill out and buy it again
             # after the restart. The marker (the one TWAP / chase write) outlives
@@ -5184,14 +5470,34 @@ def reconcile(get_positions_fn, place_order_fn, threshold=RECONCILE_THRESHOLD, s
                         keep_marker = True
                     failed = True
                     break
-                fresh = _order_error_fresh(symbol, e, 'reduce' if reduce_only else 'entry')
-                _record_order_error(symbol, order.get('exchange'), e,
-                                    extra={'strategies': names} if names else None,
-                                    repeat=not fresh)
-                if fresh:
+                notice, seen = backoff.fail(order.get('exchange'), symbol,
+                                            'reduce' if reduce_only else 'entry', e,
+                                            1 if sub_diff > 0 else -1, backoff=not reduce_only)
+                extra = {'strategies': names} if names else {}
+                hours = int((seen['last_at'] - seen['first_at']) // 3600)
+                if notice:
+                    extra.update(count=seen['count'],
+                                 since=datetime.utcfromtimestamp(seen['first_at']).isoformat(),
+                                 **({'reminder': True} if notice == 'reminder' else {}))
+                if not reduce_only:
+                    extra['next_retry_at'] = seen.get('next_retry_at')
+                extra['_reject_leg'] = 'reduce' if reduce_only else 'entry'
+                _record_order_error(symbol, order.get('exchange'), e, extra=extra,
+                                    repeat=notice is None)
+                if notice == 'first':
                     logging.error(f"order error {symbol}: {e}")
                     notices.append(('order_error', '⚠️ Order failed {symbol}: {error}',
                                     {'symbol': symbol, 'error': _reject_plain(e)}))
+                elif notice == 'reminder':
+                    logging.error(f"order error {symbol}: still failing after {hours}h, "
+                                  f"{seen['count']} times: {e}")
+                    notices.append(('order_error_reminder',
+                                    '⚠️ Order still failing {symbol} ({hours}h, {count} times): {error}',
+                                    {'symbol': symbol, 'error': _reject_plain(e), 'hours': hours,
+                                     'count': seen['count']}))
+                elif seen.get('notified_at') is None:
+                    logging.warning(f"order error {symbol}: {e} — {seen['count']} in a row, told at "
+                                    f"{REJECT_NOTIFY_AFTER}")
                 else:
                     logging.debug(f"order error {symbol}: same reason again, already notified")
                 failed = True
@@ -5205,6 +5511,7 @@ def reconcile(get_positions_fn, place_order_fn, threshold=RECONCILE_THRESHOLD, s
                              f"below minimum or async execution in flight")
                 continue
             _order_error_notified.pop((symbol, 'reduce' if reduce_only else 'entry'), None)   # it went through: a later failure is news again
+            backoff.went_through(order.get('exchange'), symbol, 'reduce' if reduce_only else 'entry')
 
             # self_ledger: the wiring closed the bot's whole book on this side
             # and says what is left can never be sold (see
@@ -5364,4 +5671,5 @@ def reconcile(get_positions_fn, place_order_fn, threshold=RECONCILE_THRESHOLD, s
         for key, default, kw in notices:
             _notify(key, default, **kw)
 
+    backoff.finish()
     return executed

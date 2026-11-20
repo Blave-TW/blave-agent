@@ -24,11 +24,13 @@ const CMD_TIMEOUT_MS = { manage_optimize: 150000, rename_strategy: 90000 };
 // president_local(統一本機開通,shell/president_local.js)也只有主行程送:帳密在這裡封裝,renderer 碰不到密文以外的東西;
 // 它不在 api 的任何清單(runtime local_daemon.LOCAL_ONLY)
 // capital_local(群益本機開通,shell/capital_local.js)同一套:身分證與交易密碼在主行程封裝
+// sinopac_local(永豐本機開通,shell/sinopac_local.js)同一套:金鑰、身分證、憑證密碼在主行程封裝
 // strategy_import(拉回這台電腦,shell/transfer.js down):主行程比過兩份 sha256、把檔寫進 state/transfer_in/<id>/ 之後才送,
 // 指令只帶暫存代號與雜湊;renderer 送不了,也就塞不進任意的檔
-const MAIN_ONLY_COMMANDS = new Set(["preferences_set", "reply_lang_set", "president_local", "capital_local", "strategy_import"]);
+const MAIN_ONLY_COMMANDS = new Set(["preferences_set", "reply_lang_set", "president_local", "capital_local", "sinopac_local", "strategy_import"]);
 const PRESIDENT_OPS = ["setup", "cert", "secrets", "probe", "host", "test_order", "start", "stop"];   // = runtime president_connect.LOCAL_OPS
 const CAPITAL_OPS = ["setup", "bind", "secrets", "probe", "start", "stop"];   // = runtime capital_local.LOCAL_OPS
+const SINOPAC_OPS = require("./sinopac_local").OPS, SINOPAC_LOGIN_OPS = require("./sinopac_local").LOGIN_OPS;
 const ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const MAX_BYTES = 16 * 1024;          // = daemon 的 MAX_BYTES;超過它會直接拒收
 const HEARTBEAT_DEAD_MS = 60 * 1000;  // 設計 §4:heartbeat_at 超過 60 秒 = daemon 死了
@@ -67,7 +69,9 @@ const TRUSTED_CRED_KEYS = Object.assign({}, ...TRUSTED_SETS);
 const PRESIDENT_ENV = ["PRESIDENT_ACCOUNT", "PRESIDENT_PASSWORD", "PRESIDENT_CA_PASSWORD", "PRESIDENT_CA_PATH", "PRESIDENT_URL", "PRESIDENT_TEST_URL"];
 // 群益本機的兩行(runtime capital_local._bound_env 寫的 sentinel)
 const CAPITAL_ENV = ["CAPITAL_API_KEY", "CAPITAL_PASSWORD"];
-const REMOVABLE = new Set([...Object.keys(CRED_KEYS), ...Object.keys(TRUSTED_CRED_KEYS), ...Object.keys(BITGET_SET), ...PRESIDENT_ENV, ...CAPITAL_ENV]);
+// 永豐的五行(runtime sinopac_service.bound_env 寫的哨兵與憑證路徑;機器端用小寫名)。只有 sinopac_local 的 bind 寫得進去,renderer 可以拿掉
+const SINOPAC_ENV = ["SINOPAC_API_KEY", "SINOPAC_SECRET_KEY", "SINOPAC_CA_PASSWD", "SINOPAC_PERSON_ID", "SINOPAC_CA_PATH"];
+const REMOVABLE = new Set([...Object.keys(CRED_KEYS), ...Object.keys(TRUSTED_CRED_KEYS), ...Object.keys(BITGET_SET), ...PRESIDENT_ENV, ...CAPITAL_ENV, ...SINOPAC_ENV]);
 const sameKeys = (o, set) => { const a = Object.keys(o), b = Object.keys(set); return a.length === b.length && a.every((k) => Object.prototype.hasOwnProperty.call(set, k)); };
 const NAME_RE = /^[A-Za-z0-9_\-.]{1,128}$/;
 const CONTRACT_NAME_RE = /^[A-Za-z0-9_-]{1,64}$/, CONTRACT_ROOTS = ["TXF", "MXF", "TMF"];
@@ -173,6 +177,13 @@ function argsOk(cmd, a, trusted) {
     if (CAPITAL_OPS.indexOf(a.op) < 0) return false;
     if (a.op === "bind" || a.op === "secrets") return keys.length === 2 && typeof a.sealed === "string" && a.sealed.length > 0 && a.sealed.length <= 8192 && /^[A-Za-z0-9+/]+={0,2}$/.test(a.sealed);
     if (a.op === "probe") return keys.every((k) => k === "op" || k === "after_unlock") && (a.after_unlock === undefined || a.after_unlock === true);
+    return keys.length === 1;
+  }
+  if (cmd === "sinopac_local") {
+    if (SINOPAC_OPS.indexOf(a.op) < 0) return false;
+    if (a.op === "bind" || a.op === "secrets") return keys.length === 2 && typeof a.sealed === "string" && a.sealed.length > 0 && a.sealed.length <= 8192 && /^[A-Za-z0-9+/]+={0,2}$/.test(a.sealed);
+    // 會登入的三步必帶 expect(存著的那組封好),daemon 比對手上那組(sinopac_local.js LOGIN_OPS)
+    if (SINOPAC_LOGIN_OPS.indexOf(a.op) >= 0) return keys.length === 2 && typeof a.expect === "string" && a.expect.length > 0 && a.expect.length <= 8192 && /^[A-Za-z0-9+/]+={0,2}$/.test(a.expect);
     return keys.length === 1;
   }
   /* 優化與移動窗格回測:剛好 members / allocator / params(= runtime _validate_manage_args 的形狀;語意由 handler 再驗)。
@@ -447,6 +458,8 @@ function createDaemonHost({ python, script, base, workspace, env, extraEnv = {},
   function sealPresident(obj) { return child && secret ? require("./president_local").sealFor(secret, obj) : null; }
   // 群益本機的封裝(shell/capital_local.sealFor):同一把 secret、另一組 info／AAD,統一的密文在群益那邊打不開
   function sealCapital(obj) { return child && secret ? require("./capital_local").sealFor(secret, obj) : null; }
+  // 永豐本機的封裝(shell/sinopac_local.sealFor):同一把 secret、自己的 info／AAD
+  function sealSinopac(obj) { return child && secret ? require("./sinopac_local").sealFor(secret, obj) : null; }
 
   // 統一／群益本機還有沒有部位(結束攔截、防睡眠用):讀不到時沿用最後一次讀成功的口數、並標成不確定(president_local.twHeld)
   const twMemo = { president: {}, capital: {} };
@@ -455,7 +468,7 @@ function createDaemonHost({ python, script, base, workspace, env, extraEnv = {},
     return { president: P.twHeld(r, "president", twMemo.president), capital: P.twHeld(r, "capital", twMemo.capital) };
   }
 
-  return { start, stop, send, status, equity, events, noteQuit, sealPresident, sealCapital, twHeld, _eqTick: eqTick, isRunning: () => !!child };
+  return { start, stop, send, status, equity, events, noteQuit, sealPresident, sealCapital, twHeld, sealSinopac, _eqTick: eqTick, isRunning: () => !!child };
 }
 /* close_all 的 ack(runtime command_listener._cmd_close_all):只有 started / already_running 真的有平倉程式在跑;
    halted_only、halted_capital_manual、nothing_closed、capital_manual 只掛了暫停(或什麼都沒送),事件列不能寫成在平倉 */
@@ -466,9 +479,10 @@ function unbindVenues(names) {
     const k = String(n).toLowerCase();
     if (PRESIDENT_ENV.indexOf(k) >= 0 || PRESIDENT_ENV.indexOf(k.toUpperCase()) >= 0) out.add("president");
     else if (CAPITAL_ENV.indexOf(k) >= 0 || CAPITAL_ENV.indexOf(k.toUpperCase()) >= 0) out.add("capital");
+    else if (SINOPAC_ENV.indexOf(k.toUpperCase()) >= 0) out.add("sinopac");
     else { const m = /^(.+)_api_key$/.exec(k); if (m) out.add(m[1]); }
   });
   return [...out];
 }
 function closeAllStarted(result) { return /^close_all=(?:restart_stopped:)?(?:started|already_running)$/.test(String(result || "")); }
-module.exports = { createDaemonHost, UI_COMMANDS, CMD_TIMEOUT_MS, MAIN_ONLY_COMMANDS, PRESIDENT_ENV, CAPITAL_ENV, argsOk, closeAllStarted };
+module.exports = { createDaemonHost, UI_COMMANDS, CMD_TIMEOUT_MS, MAIN_ONLY_COMMANDS, PRESIDENT_ENV, CAPITAL_ENV, SINOPAC_ENV, argsOk, closeAllStarted };

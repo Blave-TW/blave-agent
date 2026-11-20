@@ -523,18 +523,31 @@ class World:
             # a full disk kept the marker of an order it could not park; the next start HALTs on it
             self.boot()
             return self.silent()
-        for _ in range(6):
+        # The answers come in later than the history's rounds: each settle round is past the longest
+        # reject backoff step (lib/portfolio REJECT_BACKOFF_STEPS_S), so a leg held back after a reject
+        # is due again — the same way it would be on the real clock by then.
+        real_clock, t = portfolio._backoff_clock, [time.time()]
+
+        def later():
+            t[0] += portfolio.REJECT_BACKOFF_STEPS_S[-1] + 1
+            portfolio._backoff_clock = lambda: t[0]
+        try:
+            for _ in range(6):
+                later()
+                ex.round += 1
+                ex.plan = []
+                guard.clear_halt("user")
+                reconcile()
+                while unconfirmed.load():
+                    user_resolves(ex)
+                if ex.pos == ex.target and book_steps() == ex.target and not ex.unknown():
+                    break
+            later()
             ex.round += 1
-            ex.plan = []
-            guard.clear_halt("user")
+            n = ex.stats["posts"]
             reconcile()
-            while unconfirmed.load():
-                user_resolves(ex)
-            if ex.pos == ex.target and book_steps() == ex.target and not ex.unknown():
-                break
-        ex.round += 1
-        n = ex.stats["posts"]
-        reconcile()
+        finally:
+            portfolio._backoff_clock = real_clock
         if ex.stats["posts"] != n:
             ex.violations.append("settled — a round after the target was reached still sent an order")
         if ex.pos != ex.target or book_steps() != ex.target or unconfirmed.load():

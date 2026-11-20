@@ -49,7 +49,11 @@ check(len(libs) >= 7 and all(isinstance(v, str) and v != "<dynamic>" for v in li
 
 src = (ROOT / "shell" / "renderer" / "trade.js").read_text(encoding="utf-8")
 cx = re.search(r"const CX_VENUES = \{(.*?)\};", src, re.S)
-other = re.search(r"const TR_VENUE_CCY_OTHER = \{(.*?)\};", src, re.S)
+# 永豐 (ships in 0.1.58 behind the switch, turned on in a later small version): its entry sits behind the same switch as the connect screen, so it is a table entry only
+# once lib/account_sinopac.py ships with the switch on
+other = (re.search(r"const TR_VENUE_CCY_OTHER = \{(.*?)\};", src, re.S)
+         or re.search(r'const TR_VENUE_CCY_OTHER = Object\.assign\(\{(.*?)\}, SINOPAC_LOCAL_ON \? \{ sinopac: "TWD" \} : \{\}\);', src, re.S))
+gated = {"sinopac": "TWD"} if other and other.re.pattern.startswith("const TR_VENUE_CCY_OTHER = Object") else {}
 table = {}
 if cx:
     for vid, body in re.findall(r"(\w+): \{([^}]*)\}", cx.group(1)):
@@ -57,6 +61,7 @@ if cx:
         table[vid] = m.group(1) if m else None
 if other:
     table.update(dict(re.findall(r'(\w+): "(\w+)"', other.group(1))))
+    table.update({v: c for v, c in gated.items() if v in libs})
 check(bool(cx) and bool(other), "trade.js has CX_VENUES and TR_VENUE_CCY_OTHER")
 check(set(table) == set(libs), f"one table entry per account lib (table {sorted(table)} vs libs {sorted(libs)})")
 check(all(table.get(v) == c for v, c in libs.items()),

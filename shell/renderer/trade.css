@@ -116,6 +116,7 @@ html[data-env="cloud"] .cs-tabs .tab:not([aria-selected="true"]):has(+ .tab:not(
 .cv-note + .cv-slot, .cv-note + .plan-err { margin-top: var(--space-4); }
 .cv-card .plan-err { margin: var(--space-16) 0 0; font-size: 13px; color: var(--color-redText); }
 .cv-card .plan-err.is-calm { color: var(--ink-2); }
+.cn-st.is-calm .fault-mark { background: var(--ink-3); }   /* 永豐自動重試中:等一下就好,灰短劃(sinopac spec §1.3) */
 [data-theme="dark"] .cv-card .plan-err:not(.is-calm) { color: var(--color-redBlack); }
 .cv-acts { margin-top: var(--space-16); }
 .cv-acts .btn-fill, .cv-acts .btn-out { width: 100%; height: 36px; }
@@ -987,3 +988,4 @@ tr:nth-child(2n) .mg-sk.amt { width: 44px; }
 .del-body.lines p.cf-in-err { margin: var(--space-6) 0 0; font-size: 12px; line-height: 1.5; color: var(--color-redText); }
 .cf-in-ref[hidden], .cf-in-err[hidden] { display: none; }
 .cf-in-ref .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }   /* 確認框在 .app 外面,吃不到 .app .mono */
+.cx-body .btn-quiet::before { inset: auto; left: 50%; top: 50%; width: max(44px, calc(100% + 8px)); height: 44px; transform: translate(-50%, -50%); }   /* 連接框文字鈕熱區 44(設計稽核 sinopac M8,同 .ph-links) */

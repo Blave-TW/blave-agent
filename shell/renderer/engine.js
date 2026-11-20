@@ -139,6 +139,7 @@ function engDone(s) {
   const swap = () => {
     if (card.isConnected && card.parentNode !== $("chat-scroll")) card.replaceWith(line); else { card.remove(); if (CS.loaded) { chatEl().appendChild(line); busyPin(); } }
     engKeep(line); srSay(line.textContent); scrollChat(); if (s.warn) engWarn(s);
+    if (typeof introReady === "function") introReady();   // 第一次對話框從這一刻起等穩(intro.js):不搶在這行出來之前蓋上去
   };
   if (reducedMotion() || !card.isConnected) { swap(); return; }
   card.classList.add("is-leaving");

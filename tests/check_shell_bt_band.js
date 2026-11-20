@@ -292,5 +292,78 @@ const EQ_TOP = 12, EQ_H = 320 - 12 - 22 - 4 - Math.round((320 - 12 - 22 - 4) / 3
   ok("tokens.css:--chart-band 亮 #818f97、暗 greyDark", /:root \{[\s\S]*--chart-band: #818f97;[\s\S]*\[data-theme="dark"\] \{[\s\S]*--chart-band: var\(--color-greyDark\);/.test(tok));
 }
 
+// ── 月熱圖欄寬(0.1.57 驗收 S5:900 寬時「+21%」被截成「+2…」)──
+// 欄寬照最長的格字撐、放不下就橫捲;字級守 canon type 的表格數值 12px 下限
+{
+  const heat = (r) => all(r.box).find((x) => x.tag === "table" && x.className === "bt-heat");
+  // 2024-01 有一天 +100%(單日上限,sanitizeDailyReturn):那個月的格字是 5 字(「+1xx%」),年度合計更長
+  const big = render({ ...base, daily_returns: rets.map((v, i) => (i === 5 ? 1 : v)) });
+  const tb = heat(big), yth = tb && all(tb).find((x) => x.tag === "th" && x.className === "yr");
+  // 0.1.58 驗收:欄寬改成照量到的字寬(heatGeom),表的最小寬、列標欄、年度欄都寫成 px;harness 的假 canvas 每字 6px
+  { const G = big.h.R._bt.heatGeom, corner = all(tb).find((x) => x.tag === "th" && !x.className);
+    const labels = []; all(tb).forEach((x) => { if (x.tag === "td" && x.className === "" && x.text) labels.push(x.text); });
+    const ylabels = all(tb).filter((x) => x.tag === "td" && x.className === "yr" && x.text).map((x) => x.text);
+    const g = G(labels, ylabels, ["2024"], (z) => z.length * 6);
+    ok("表的最小寬、列標欄、年度欄 = heatGeom 量到的 px(不再是 ch 估寬、不再有 460 地板)", !!tb && tb.style.minWidth === g.table + "px" && corner && corner.style.width === g.head + "px"
+      && yth && yth.style.width === g.yr + "px" && !/ch\b|max\(/.test(tb.style.minWidth), [tb && tb.style.minWidth, g]); }
+  // 寬度情境(視窗寬 → 中欄 frame 的內容寬,0.1.58 驗收量到:1280 → 542−32 = 510;1024 → 446−32 = 414;900 → 350−32 = 318)。
+  // 字寬照 12px 系統字估:數字與 +／− 7.6、% 10.3、漢字 12;粗體 ×1.06
+  { const G = big.h.R._bt.heatGeom;
+    const cw = (ch) => (/[0-9+−-]/.test(ch) ? 7.6 : ch === "%" ? 10.3 : /[\u3400-\u9fff]/.test(ch) ? 12 : 7);
+    const M = (z, weight) => Array.from(z).reduce((a, ch) => a + cw(ch), 0) * (weight >= 700 ? 1.06 : 1);
+    // Wei 11-20:格子不帶「%」(單位寫在標題「月報酬（%）」),省下的字寬留給左右各 2px 的內距
+    const typical = ["+21", "−20", "+8", "−3", "+12", "", "+1", "−9", "+15", "−11", "+4", "−18"], g2 = G(typical, ["−21"], ["2025"], M);
+    ok("1280:兩位數的月報酬整年放得下(表最小寬 ≤ 510),不橫捲", g2.table <= 510, JSON.stringify(g2));
+    ok("每一欄都 ≥ 該欄最長的字＋左右各 2px 內距(不截字、不貼邊):月欄 ≥「−20」、全年欄 ≥ 粗體「−21」與「全年」,同一條規則;列標欄 ≥「2025」",
+      g2.col >= M("−00", 400) + 4 && g2.yr >= M("−00", 700) + 4 && g2.yr >= M("全年", 500) + 4 && g2.head >= M("0000", 500), JSON.stringify(g2));
+    const g3 = G(typical.concat(["+128"]), ["+172"], ["2025"], M);
+    ok("三位數月報酬(+128):欄跟著變寬、仍留內距;1024 這種窄寬度改成橫捲(表 > 414)", g3.col >= M("+000", 400) + 4 && g3.col > g2.col && g3.table > 414, JSON.stringify(g3));
+    { const F = big.h.R._bt.fmtHeat, src = fs.readFileSync(path.join(R, "report-backtest.js"), "utf8");
+      ok("格子的字:帶號整數、不帶「%」(0 不帶號);title 照舊是帶 % 的完整數字;標題「月報酬（%）」／「Monthly returns (%)」",
+        F(21.4) === "+21" && F(-20.2) === "\u221220" && F(0.2) === "0" && !/%/.test(F(5)) && /td\.title = fmtSignedPct\(v\);/.test(src)
+        && STR.zh["bt.monthly"] === "月報酬（%）" && STR.en["bt.monthly"] === "Monthly returns (%)"); }
+    // 設計稽核 0158 M5:各欄用原值、整張表最後才取一次整(各欄各自進位會多算,1280 量到多 1px 就要捲)
+    ok("表寬 = 各欄原值相加後只取一次整(不是各欄各自進位)", g2.table === Math.ceil(g2.head + 4 + 12 * g2.col + g2.yr + 30) && g2.table < Math.ceil(g2.head) + 4 + 12 * Math.ceil(g2.col) + Math.ceil(g2.yr) + 30 + 1, JSON.stringify(g2));
+    ok("量法:數字一律換成「0」量(tabular-nums)、字級 12px", /replace\(\/\[0-9\]\/g, "0"\)/.test(fs.readFileSync(path.join(R, "report-backtest.js"), "utf8")) && /HEAT_FONT_PX = 12/.test(fs.readFileSync(path.join(R, "report-backtest.js"), "utf8"))); }
+  { const src = fs.readFileSync(path.join(R, "report-backtest.js"), "utf8");
+    // 設計稽核 0158 S7:en 1024 量到表比 frame 寬 1px(scrollWidth 447／clientWidth 446)→ Windows 冒出只捲 1px 的捲軸。
+    // 差 8px 以內收回 frame 寬(min-width 100%),超過才捲到最右;不會有「只捲幾個像素」的情況
+    { const H = big.h.R._bt.heatFit;
+      ok("heatFit:不超出 → none;en 1024 差 1px、差 8px(Windows 字寬再寬一點)→ fit;差 9px 以上 → scroll(真的捲)",
+        H(446, 446) === "none" && H(440, 446) === "none" && H(447, 446) === "fit" && H(454, 446) === "fit" && H(455, 446) === "scroll" && H(612, 542) === "scroll", [H(447, 446), H(455, 446)]);
+      ok("fit 時把表的最小寬降成「量到的寬 − 8px」(固定像素,不是 100%);scroll 時一開始捲到最右(最新月份貼在全年欄左邊)",
+        /if \(how === "fit"\) table\.style\.minWidth = heatSnapMin\(g\.table\) \+ "px";\n\s*else if \(how === "scroll"\) frame\.scrollLeft = frame\.scrollWidth;/.test(src)
+        && /const HEAT_SNAP_PX = 8;/.test(src) && !/minWidth = "100%"/.test(src)); }
+    // 稽核 0158:收回之後再把中欄拖窄——表要有下限、照樣出捲軸,月欄不能縮到比字窄(數字相撞、12 月鑽到全年欄底下)。
+    // 模型:fixed layout 的表寬 = max(最小寬, frame 內容寬);月欄 = (表寬 − 列標欄 − 4 − 全年欄 − 30) / 12
+    { const G = big.h.R._bt.heatGeom, S = big.h.R._bt.heatSnapMin, H = big.h.R._bt.heatFit;
+      const cw = (ch) => (/[0-9+−-]/.test(ch) ? 7.6 : /[\u3400-\u9fff]/.test(ch) ? 12 : 7), M = (z, wt) => Array.from(z).reduce((a, ch) => a + cw(ch), 0) * (wt >= 700 ? 1.06 : 1);
+      const g = G(["+21", "−20", "+8", "−3", "+12", "", "+1", "−9", "+15", "−11", "+4", "−18"], ["−21"], ["2025"], M);
+      const frame0 = g.table - 1;   // 差 1px(en 1024 那種)
+      const min = H(g.table, frame0) === "fit" ? S(g.table) : g.table;
+      const colAt = (W) => (Math.max(min, W) - g.head - 4 - g.yr - 30) / 12;
+      ok("收回後當下:表寬 ≤ frame,不捲", Math.max(min, frame0) <= frame0 + 0.5 && min === g.table - 8, JSON.stringify({ min, frame0 }));
+      const frame1 = frame0 - 60;   // 之後中欄被拖窄 60px
+      ok("收回後再拖窄 60px:表寬停在下限、比 frame 寬 → 出捲軸(真的捲,不是幾個像素)", Math.max(min, frame1) - frame1 > 8, Math.max(min, frame1) - frame1);
+      ok("…月欄寬停在下限:≥ 量到的欄寬 − 1px,而且 ≥ 最長的字(不相撞、12 月不鑽到全年欄底下)", colAt(frame1) >= g.col - 1 && colAt(frame1) >= M("−00", 400) && colAt(frame1) === colAt(frame0 - 400), [colAt(frame1), g.col]); }
+  }
+  // 設計稽核 0158 S4:最小視窗 1024 時表比 frame 寬,年度欄釘在右邊;熱色疊在不透明的底上,捲過去的月份不透出來
+  { const yrTd = all(tb).find((x) => x.tag === "td" && x.className === "yr" && x.text);
+    ok("年度格的底:熱色疊在 var(--bg-body) 上(linear-gradient 兩層)", !!yrTd && /^linear-gradient\((.+), \1\), var\(--bg-body\)$/.test(yrTd.style.background), yrTd && yrTd.style.background); }
+  const css = fs.readFileSync(path.join(R, "report-backtest.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+  const heatRules = [...css.matchAll(/(^|\n)(\.bt-heat[^{]*)\{([^}]*)\}/g)];
+  { const yr = (heatRules.find((m) => m[2].trim() === ".bt-heat .yr") || [])[3] || "";
+    ok("年度欄 sticky right 0、z-index 1、box-shadow 左補格距右補 frame 內距;表頭年度格底是 --bg-body", /position: sticky;/.test(yr) && /right: 0;/.test(yr) && /z-index: 1;/.test(yr)
+      && /calc\(var\(--space-2\) \* -1\) 0 0 var\(--bg-body\)/.test(yr) && /calc\(var\(--space-16\) \+ var\(--space-4\)\) 0 0 var\(--bg-body\)/.test(yr)
+      && heatRules.some((m) => /th\.yr/.test(m[2]) && /background: var\(--bg-body\);/.test(m[3])), yr); }
+  { const td = (heatRules.find((m) => m[2].trim() === ".bt-heat td") || [])[3] || "";
+    ok("月格不用「…」截字:overflow visible、沒有 text-overflow ellipsis;左右內距 --space-2(數字不貼色塊邊)", /overflow: visible;/.test(td) && !/text-overflow/.test(td) && /padding: 0 var\(--space-2\);/.test(td), td); }
+  { const th = (heatRules.find((m) => m[2].trim() === ".bt-heat th") || [])[3] || "", sticky = (heatRules.find((m) => /\.bt-heat tbody th,/.test(m[2])) || [])[3] || "";
+    ok("表頭格內距歸零(瀏覽器預設 1px 會讓表比算的寬,M5);年份欄陰影第一層只蓋 2px 格距(S6,不蓋第一個月格的圓角)", /padding: 0;/.test(th)
+      && /var\(--space-2\) 0 0 var\(--bg-body\)/.test(sticky) && !/var\(--space-4\) 0 0 var\(--bg-body\)/.test(sticky), [th, sticky]); }
+  ok("熱圖字級:table 12px,th／td 不再寫比 12 小的字", /font-size: 12px;/.test((heatRules.find((m) => m[2].trim() === ".bt-heat") || [])[3] || "")
+    && heatRules.every((m) => !/font-size: (\d|1[01])px/.test(m[3])), heatRules.map((m) => m[2].trim() + " " + (m[3].match(/font-size: [^;]+/) || [""])[0]).join(";"));
+}
+
 console.log(red ? "\n" + red + " FAILED" : "\nALL PASS");
 process.exit(red ? 1 : 0);

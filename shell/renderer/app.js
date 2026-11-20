@@ -420,7 +420,8 @@ function cnFreePaint() {
   const free = cnFreeMode(), q = cnFreeQ();
   h.textContent = t(free ? "cn.h.free" : "cn.h");
   ttl.textContent = t("cn.blave.name");
-  meta.textContent = free ? (q ? t("cn.blave.descFree", { q }) : t("cn.blave.descFreeNoNum")) : t("cn.blave.desc");
+  // 有登入贈額(api 給了數字)才講「送 AI 額度」,但不寫數字(Wei 11-20:對外不寫 AI 額度的 TWD)
+  meta.textContent = free ? (q ? t("cn.blave.descFree") : t("cn.blave.descFreeNoNum")) : t("cn.blave.desc");
 }
 
 /* ── 設定 › 模型接入 ───────────────────────────────────────
@@ -453,7 +454,7 @@ function codexPkgRow(pkg, x) {
 }
 function mdlOptions(d, curKind, tok, pend, ak, pkg) {
   const p = pend || {};
-  const out = [{ kind: "blave", nameKey: "cn.blave.name", desc: tok ? "cn.blave.descSetNoNum" : "cn.blave.descSet",   // 沒登入講登入那刻發的綁卡前額度(數字來自 api public_tiers.free_ai_credit,mdlPaint 填;拿不到就退成扣款那句),登入後只講怎麼收錢
+  const out = [{ kind: "blave", nameKey: "cn.blave.name", desc: tok ? "cn.blave.descSetNoNum" : "cn.blave.descSet",   // 沒登入講登入就送額度(有沒有贈額看 api public_tiers.free_ai_credit,字不寫數字;拿不到就退成扣款那句),登入後只講怎麼收錢
     st: null,
     // 已經有 token 就不必再跑一次 OAuth:切回去是一個選擇,不是重新授權
     act: p.oauth ? "oauth.cancel" : curKind === "blave" ? null : tok ? "cn.use" : curKind ? "cn.blave.signinSwitch" : "cn.blave.btn",
@@ -534,7 +535,7 @@ function mdlPaint() {
     // Codex 隨包那列的下載大小這一頁不講(Wei 11-09);下載進度太長放不進右欄,改畫在說明那一行、右欄空著(資料仍是 st,連結畫面與額度用完 modal 照舊讀)
     const dl = o.st && o.st.key === "cn.pkgDl", desc = o.pkg && o.desc === "cn.pkgSize" ? null : o.desc;
     if (dl) tc.appendChild(el("p", "m", t(o.st.key, o.st.vars)));
-    else if (desc) { const q = desc === "cn.blave.descSet" ? cnFreeQ() : ""; tc.appendChild(el("p", "m", desc === "cn.blave.descSet" ? (q ? t(desc, { q }) : t("cn.blave.descSetNoNum")) : o.descVars ? t(desc, o.descVars) : t(desc, /^row\./.test(desc) ? rowVars(o.kind, o.name) : undefined))); }
+    else if (desc) { const q = desc === "cn.blave.descSet" ? cnFreeQ() : ""; tc.appendChild(el("p", "m", desc === "cn.blave.descSet" ? (q ? t(desc) : t("cn.blave.descSetNoNum")) : o.descVars ? t(desc, o.descVars) : t(desc, /^row\./.test(desc) ? rowVars(o.kind, o.name) : undefined))); }
     else if (o.names) tc.appendChild(el("p", "m", o.names.join(t("ak.sep"))));
     lab.append(rd, tc); r.appendChild(lab);
     // label 是 display:contents,欄距與列內距點下去打到的是列本身:轉給 radio。label 裡面的點擊(含它合成的那一下)與右欄的鈕不轉
@@ -3162,7 +3163,7 @@ function delOkBusy(on) {
 // note:常駐說明縮成一行＋〔細節〕點開的小卡(mockup 03 A 版),小卡只放 details 裡帶 items 的那幾條;帶 text 的那一組(哪些部位算 Blave 的)
 // 留在收合的 <details>、summary 用它的 label(跟網頁同一份);沒有 note 才把全部塞進 <details>。
 // 小卡用點的不用 hover(裡面有連結);攤在那一行下面,流內、不用浮層 token;Esc 先收小卡再收框(escTop)
-function confirmBox({ title, lines, ok, onOk, opener, alt, mark, markKind, extra, okDisabled, okWhy, env, footWhere, lead, single, cancel, choices, choicesLabel, keep, details, detailsOpen, onCancel, focus, link, stay, note, wrapTitle, sections }) {
+function confirmBox({ title, lines, ok, onOk, opener, alt, mark, markKind, extra, okDisabled, okWhy, env, footWhere, lead, single, cancel, choices, choicesLabel, keep, details, detailsOpen, onCancel, focus, link, stay, note, wrapTitle, sections, tail, armMs, dblGuard }) {
   cfSupersede();
   delOkBusy(false);
   const mk = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
@@ -3182,6 +3183,7 @@ function confirmBox({ title, lines, ok, onOk, opener, alt, mark, markKind, extra
       const d = mk("span", "cf-opt-d", c.disabled && c.why ? c.why : c.desc);
       if (c.disabled && c.why) { d.id = "cf-why-" + c.id; r.setAttribute("aria-describedby", d.id); }
       row.append(r, mk("span", "cf-opt-t", c.title), d);
+      if (c.list && !c.disabled) row.appendChild(mk("span", "cf-opt-l", c.list));   // 這一條會下的單:另起一行、主墨,按下前唯一要核對的東西(啟動下單框的補齊)
       if (c.warn && !c.disabled) row.appendChild(mk("span", "cf-opt-w", c.warn));
       r.addEventListener("change", () => { if (!r.checked || !delCtx) return; delCtx.onOk = c.onOk; $("del-ok").textContent = c.ok; $("del-ok").disabled = false; });
       fs.appendChild(row);
@@ -3190,6 +3192,8 @@ function confirmBox({ title, lines, ok, onOk, opener, alt, mark, markKind, extra
   }
   if (extra) body.appendChild(extra);
   if (keep && keep.length) { const ul = mk("ul", "cf-keep"); keep.forEach((x) => ul.appendChild(mk("li", "", x))); body.appendChild(ul); }
+  // tail:框底(說明一行之前)一句主墨的話——啟動下單框按下時單變了「看過再按一次」。焦點停在取消、節點是帶著字插進去的:role=alert 才保證念得到(同網頁 cf-changed,稽核 0158 R4)
+  if (tail) { const p = mk("p", "cf-tail", tail); p.setAttribute("role", "alert"); p.setAttribute("aria-live", "assertive"); p.setAttribute("aria-atomic", "true"); body.appendChild(p); }
   const groups = (host, list) => list.forEach((g) => {
     const box = mk("div"); if (g.label) box.appendChild(mk("span", "lbl", g.label));
     if (g.items) { const ul = mk("ul"); g.items.forEach((x) => { const li = mk("li", "", typeof x === "string" ? x : null); if (typeof x !== "string") li.appendChild(x); ul.appendChild(li); }); box.appendChild(ul); } else box.appendChild(mk("p", "", g.text));
@@ -3227,7 +3231,8 @@ function confirmBox({ title, lines, ok, onOk, opener, alt, mark, markKind, extra
   if (alt && alt.disabled && alt.why) $("del-alt").setAttribute("aria-describedby", alt.why); else $("del-alt").removeAttribute("aria-describedby");
   $("del-modal").classList.toggle("has-alt", !!alt);
   $("del-modal").classList.toggle("has-choices", !!choices);
-  delCtx = { custom: true, stay, onOk: choices ? (pre ? pre.onOk : null) : onOk, onAlt: alt && alt.onOk, altStay: !!(alt && alt.stay), onLink: link && link.onClick, linkStay: !!(link && link.stay), opener, onCancel };
+  // armMs:開框(重畫)後這麼久內主鈕的點擊不算;dblGuard:雙擊的第二下(e.detail > 1)一律不算——啟動下單框「單變了」重畫用(稽核 0158 M1,同網頁 armAt)
+  delCtx = { custom: true, armAt: armMs ? Date.now() + armMs : 0, dblGuard: !!dblGuard, stay, onOk: choices ? (pre ? pre.onOk : null) : onOk, onAlt: alt && alt.onOk, altStay: !!(alt && alt.stay), onLink: link && link.onClick, linkStay: !!(link && link.stay), opener, onCancel };
   $("view-ws").inert = true; $("set-scrim").inert = true; $("lai-scrim").inert = true;   // 疊在「用你自己的 AI」上面時(回合中按〔使用〕):底下那層也鎖
   // single:只有一顆鈕(「知道了」那種:沒有要取消的事)。焦點給它;Esc / 框外 / ✕ 照舊關
   $("del-cancel").hidden = !!single;
@@ -3270,7 +3275,9 @@ $("del-alt").addEventListener("click", () => {
 });
 // link.stay:按了不關框(改價 v3 方案框框腳的〔用錢包付〕要留在框裡鎖住扣款,同 alt.stay)
 $("del-link").addEventListener("click", () => { const go = delCtx && delCtx.onLink; if (delCtx && delCtx.linkStay) { if (go) go(); return; } delClose(false); if (go) go(); });
-$("del-ok").addEventListener("click", async () => {
+$("del-ok").addEventListener("click", async (e) => {
+  if ($("del-ok").disabled) return;   // 停用中的鈕(啟動框單變了那一態)程式觸發的 click 也不算
+  if (delCtx && ((delCtx.dblGuard && e && e.detail > 1) || (delCtx.armAt && Date.now() < delCtx.armAt))) return;
   if (delCtx && delCtx.custom) { const go = delCtx.onOk; if (!go) return; if (delCtx.stay) { go(); return; } delCtx.acted = true; delClose(false); go(); return; }   // 沒選選項(choices):鈕本來就停用,這裡再守一次
   const m = delCtx && delCtx.m; if (!m) return;
   if (!(await window.blave.deleteSession(m.id))) { delClose(false); const w = csWhy(); w.textContent = t("cs.delFail"); w.hidden = false; return; }   // 沒刪成(回覆中那條 / 寫不進):不能無聲關框
@@ -3363,6 +3370,11 @@ const CARD_TAG = /<blave-card:([a-z-]+)\/>/g;
    runtime 沒走到 finalize 的回合(出錯、被殺)草稿會原樣升格——這裡再剝一次,同 runtime _SUGGEST_BLOCK_RE / _SUGGEST_OPEN_TAIL_RE */
 const SUG_BLOCK = /[ \t]*<suggest>[\s\S]*?<\/suggest>[ \t]*/g;
 const SUG_OPEN_TAIL = /[ \t]*<suggest>(?:(?!<\/suggest>)[\s\S])*$/;
+/* 工具呼叫樣式的建議句(`<invoke name="suggest">…</invoke>`):runtime extract_suggestions 修好之前存下的歷史裡還有原文
+   (0.1.57 驗收 S4)。同 runtime _SUGGEST_INVOKE_RE / _SUGGEST_INVOKE_TAIL_RE:先收成 <suggest> 空區塊再走上面那條剝;
+   沒閉合的只在真的是尾段時剝,後面還有正文就整段不動。只在定稿(live=false)做,串流中不動 */
+const SUG_INVOKE = /(?:<function_calls>\s*)?<invoke\s+name=["']?suggest["']?\s*>(?:(?!<invoke\b|<\/invoke>)[\s\S])*<\/invoke>(?:\s*<\/function_calls>)?/g;
+const SUG_INVOKE_TAIL = /(?:<function_calls>\s*)?<invoke\s+name=["']?suggest["']?\s*>(?:\s*<parameter\b[^>]*>[^<\n]*<\/parameter>)*\s*(?:<parameter\b[^>]*>[^<\n]*)?(?:<\/?\w*)?\s*$/;
 /* 「等你回覆」標記 <await/>(references/turn-events.md,三種寫法):runtime finalize 剝掉、done 帶 awaiting(主行程存);
    串流中的 delta 與沒走到 finalize 的回合在這裡再剝一次,半截的(`<awa`)比照 `<sug` 先藏 */
 const AWAIT_TAG = /[ \t]*<await\s*\/?>(?:<\/await>)?[ \t]*/g;
@@ -3377,6 +3389,7 @@ const FORM_OPEN_TAIL = /[ \t]*<form\b[^<>]*$/;
 function aiParts(raw, live) {
   const cards = [];
   let text = String(raw).replace(CARD_TAG, (_m, name) => { cards.push(name); return ""; });
+  if (!live && text.indexOf("<invoke") >= 0) text = text.replace(SUG_INVOKE, "<suggest>\n</suggest>").replace(SUG_INVOKE_TAIL, "<suggest>\n</suggest>");
   if (text.indexOf("<suggest>") >= 0) text = text.replace(SUG_BLOCK, "").replace(SUG_OPEN_TAIL, "").replace(/\s+$/, "");
   if (text.indexOf("<await") >= 0) text = text.replace(AWAIT_TAG, "").replace(/\s+$/, "");
   if (text.indexOf("<form") >= 0 || text.indexOf("</form") >= 0) text = text.replace(FORM_TAG, "").replace(/\s+$/, "");
@@ -4580,6 +4593,10 @@ const acctUrl = () => "https://blave.org/agent/" + LANG + "/usage?from=desktop#t
 const cryptoTopupUrl = () => "https://blave.org/agent/" + LANG + "/usage?from=desktop&pay=crypto#topup";
 // 方案頁(web /agent/<lang>/usage#plan;api 通知連結也指這裡):重新付款、換卡、取消、升級、月繳↔年繳都在那邊
 const planPayUrl = () => "https://blave.org/agent/" + LANG + "/usage?from=desktop#plan";
+/* 用加密貨幣轉帳買方案:網頁的買方案頁(/agent/<lang>)帶 pay=crypto 一進來就是加密付款(launch.html payMethod,同網頁授權頁 data-dt-crypto="plan")。
+   o.agent:只買 Agent 方案(888 那個框)要帶 plan=agent,不帶的話網頁 v3 會連雲端主機一起報價;加購主機那條不帶。cycle 是這一單的繳別。
+   planPayUrl 那條帶 from=desktop 會被換成精簡綁卡頁,不能拿來開加密;儲值錢包用 cryptoTopupUrl */
+const planCryptoUrl = (o) => "https://blave.org/agent/" + LANG + "?pay=crypto" + (o && o.agent ? "&plan=agent" : "") + "&cycle=" + (o && o.cycle === "annual" ? "annual" : "monthly");
 const usageUrl = () => "https://blave.org/agent/" + LANG + "/usage?from=desktop";
 // 網站定價頁的 API 卡(api ERR007 的 next_steps.api_plan 同一處):#api 讓手機直接落在 API 卡而不是排第二的 Pro;from=desktop 給定價頁事件分來源
 const apiPlanUrl = () => "https://blave.org/landing/" + LANG + "/pricing?from=desktop#api";

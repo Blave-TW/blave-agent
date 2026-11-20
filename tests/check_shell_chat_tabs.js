@@ -48,7 +48,7 @@ const MOD_GLOBAL = {
   "busy.js": { BUSY_PENDING: "原因句的一次性提示" }, "capital.js": { CAP: "群益交接頁" }, "capital_local.js": { CAPL: "群益本機", caplTimer: "同上" },
   "chattabs.js": { tabsK: "分頁列 tick 第幾格(全列一起)", tabsSaid: "讀屏播報合併" }, "i18n.js": { LANG: "語言" },
   "portfolio.js": { PO_ADD_SIG: "策略組合", ctMenu: "同上", ctOpen: "同上", mgmPend: "同上", mgmOpener: "同上", mgsDraft: "同上", mgsOpener: "同上" },
-  "president.js": { PRES: "統一期貨", presTimer: "同上", PRES_FIRST_ARMED: "同上" }, "report-sharelist.js": { SHL_IO: "分享清單" }, "stratflags.js": { sfPop: "彈出層" }, "stratgroups.js": { sgMenu: "資料夾 ⋯ 選單,一次一個", sgPick: "emoji 選擇器,一次一個" },
+  "president.js": { PRES: "統一期貨", presTimer: "同上", PRES_FIRST_ARMED: "同上" }, "sinopac.js": { SP: "永豐期貨連接框(全 app 一個)" }, "report-sharelist.js": { SHL_IO: "分享清單" }, "stratflags.js": { sfPop: "彈出層" }, "stratgroups.js": { sgMenu: "資料夾 ⋯ 選單,一次一個", sgPick: "emoji 選擇器,一次一個" },
   "suggest.js": { SUG: "TAB_KEYS 整個換(托盤跟著分頁)" }, "form.js": { FORM: "TAB_KEYS 整個換(表單跟著分頁)", formSeq: "radio 群組名流水號(全 app 一組,兩條分頁的表單名字不撞)" },
   "trade.js": { TR_AS_SAVED: "自動下單頁", TR: "同上", trTipSeq: "同上", trHistTipEl: "同上", trHistTipAt: "同上", trHistTipOpened: "同上", trHistTipQuiet: "同上", trCvHide: "同上", trCvEscN: "同上", cxOpener: "同上", psOpener: "同上", psMode: "同上", psToAmt: "同上", psFromWhy: "同上", psLoading: "同上", ENV_COMPOSING: "輸入法" },
   "versions.js": { vcSeq: "版本頁", vcSide: "同上" }, "errreport.js": { ERR_MODE: "設定 › 隱私的錯誤回報(全 app 一個)", errAsking: "錯誤回報詢問一次一個", errLive: "還沒按的詢問卡(全 app 一張,一天最多一張)" }, "promptslot.js": { SLOT_SHOW_DAY: "左下角手機圖示(全 app 一顆)", SLOT_POP_KEY: "同上(pop 內容照開關與語言建)", SLOT_WHO_HOST: "同上(已登入那步的字,email 晚到原地補)", SLOT_WHO: "同上" },

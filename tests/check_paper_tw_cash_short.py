@@ -30,10 +30,9 @@ ROW_RE = re.compile(r"^\[order_reject:insufficient_margin\] insufficient paper c
 # A repeat inside the hour bumps count/last_at instead of a new row (lib/portfolio
 # _record_order_error) — but the file keeps 5 rows, so with more than 5 failing
 # symbols every row is evicted before its repeat and each round writes 5 new rows,
-# each a P1 on the platform. Red today; the fix is an api-side P1 cooldown for
-# order_error (agent_events), not the machine — flip to False once the machine
-# stops writing a fresh row per round.
-KNOWN_BUG_ROW_CHURN = True
+# each a P1 on the platform. Gone for entry legs since the reject backoff (batch 2,
+# lib/portfolio._RejectBackoff): the repeat round sends none of them, so writes no row.
+KNOWN_BUG_ROW_CHURN = False
 
 STRAT = '''STRATEGY_NAME = "tw_eq30"
 MARKET = "spot"
@@ -76,8 +75,13 @@ def child(case, ws, src):
     for _ in range(3):
         out = w.round()
         led = json.load(open(order_paper.LEDGER_PATH))
+        try:   # every rejection is counted here, told or silent (lib/portfolio._RejectBackoff)
+            legs = json.load(open("state/execution/reject_backoff.json")).get("legs", {})
+        except (OSError, ValueError):
+            legs = {}
+        rejected = {k.split("|")[1].split("@")[0]: v.get("count") for k, v in legs.items() if k.endswith("|entry")}
         rounds.append({"out": out, "held": sorted(led.get("spot") or {}), "cash": led["cash"],
-                       "rows": w.order_errors(), "tg": [str(x) for x in w.tg]})
+                       "rows": w.order_errors(), "tg": [str(x) for x in w.tg], "rejected": rejected})
     print("RESULT " + json.dumps(rounds, ensure_ascii=False))
     return 0
 
@@ -130,8 +134,13 @@ def main():
                 check(len(r1["held"]) == 30 and not r1["rows"] and n_fail == 0,
                       f"inside the cash: all 30 filled, no row ({len(r1['held'])}, {len(r1['rows'])} rows)")
                 continue
-            check(0 < len(r1["held"]) < 30 and len(r1["held"]) + n_fail == 30,
-                  f"bought until the cash ran out, every other stock failed ({len(r1['held'])} + {n_fail})")
+            # every stock not bought was really sent and refused: counted where the machine counts
+            # rejections, told or not (first failures are silent since batch 2)
+            rej = r1["rejected"]
+            check(0 < len(r1["held"]) < 30 and len(r1["held"]) + len(rej) == 30
+                  and not set(rej) & set(r1["held"]) and set(rej.values()) == {1},
+                  f"bought until the cash ran out, every other stock refused once ({len(r1['held'])} + {len(rej)})")
+            check(n_fail == 0, f"…the first refusals not told ({n_fail})")
             per = amount / 30 / RATE
             check(r1["cash"] < per * 1.005, f"what is left ({r1['cash']:.2f}) buys no further stock ({per:.2f})")
             check(r1["rows"] and len(r1["rows"]) <= 5, f"order_errors keeps the newest 5 ({len(r1['rows'])})")
@@ -148,7 +157,8 @@ def main():
                 fails += 0 if churn else 1
             else:
                 check(not churn, f"a repeat round inside the hour writes no new row ({len(new2)})")
-            check(sum("Order failed" in t for t in r[2]["tg"]) == n_fail, "machine TG: no repeat notice inside the hour")
+            check(sum("Order failed" in t for t in r[2]["tg"]) == 0,
+                  "machine TG: the repeat rounds are held by the backoff, nothing reaches 3 in a row")
     finally:
         shutil.rmtree(base, ignore_errors=True)
     print(f"\n{'ALL OK' if not fails else f'{fails} FAILED'}")

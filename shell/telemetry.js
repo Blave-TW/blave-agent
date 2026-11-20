@@ -28,7 +28,7 @@ const EVENTS = {
   connect_done: { kind: ["blave", "claude", "codex", "apikey"] },
   login_done: null,
   first_backtest_done: null,
-  trade_started: { venue_kind: ["paper", "real"] },
+  trade_started: { venue_kind: ["paper", "real"], mode: ["catch", "wait", "single"], pre: ["catch", "wait"] },   // mode / pre:0.1.58 啟動框(按下哪條、預選哪條)
   cloud_started: null,
   // 0.1.9 補「卡在哪一步」(研究 desktop-usage-2026-09-29 §5):屬性一律列舉,語意見 canon 登記表
   // *_free(0.1.22):綁卡前 30 TWD 額度用完、還沒綁卡時那組字(spec desktop-precard-credit §5.4);api 端同一份、同順序
@@ -84,7 +84,7 @@ const EVENTS = {
   ai_credit_line: { kind: ["low_trial", "low_period", "used_up", "topped"] },
   plan_box: { from: ["data", "free", "low", "side", "welcome", "set", "cloud", "unlaunched", "retry", "model", "lib"] },
   plan_box_res: { step: ["trial_page", "pay_page", "paid_card", "paid_wallet", "repriced", "src_changed", "charge_fail", "busy", "net", "rate", "active"] },
-  plan_bind_res: { step: ["trial_ok", "plan_ok", "failed", "wallet", "refund", "unsettled", "dropped", "expired"] },
+  plan_bind_res: { step: ["trial_ok", "plan_ok", "failed", "wallet", "trial_wallet", "refund", "unsettled", "dropped", "expired"] },
   addon_res: { step: ["ok_full", "ok_prorated", "ok_free", "ok_convert", "bind_page", "repriced", "src_changed", "capped", "cap_down", "paid_no_srv", "charge_fail", "wallet_short", "net"] },
   addon_pick: { tier: ["linux_starter", "linux_premium", "linux_max", "windows_starter", "windows_premium", "windows_max"] },
   auto_resume: { r: ["sent", "skip_new", "skip_state"] },
@@ -386,7 +386,13 @@ const EVENTS = {
     // (renderer/app.js amPaint、reports.js rptMenuGo)、第一格的新報告點被看見(amFirstPaint);自動下單清單空那張卡的〔新增策略〕／「連接帳戶」
     // (portfolio.js poFog("onb-new");trade_onb_cx 是 spec 的 trade_onb_connect,超過 prop 的 16 字)、新增策略框的範例籤(newstrategy.js)
     "side_menu_open", "side_menu_rpt", "side_menu_set", "side_menu_plan", "side_menu_usage",
-    "side_menu_docs", "side_menu_out", "rpt_dot_shown", "trade_onb_new", "trade_onb_cx", "ns_example"] },
+    "side_menu_docs", "side_menu_out", "rpt_dot_shown", "trade_onb_new", "trade_onb_cx", "ns_example",
+    // 0.1.58 啟動框:按下補齊時單已經變了(或進入重算),沒送、框換成新的單(renderer/trade.js trAskStart 的重畫那一支,每次重畫送一次;
+    // spec 的 start_catch_changed 超過 16 字,同 api 順序,api 先上)
+    "start_catch_chg",
+    // 0.1.58 隨附、旗標關著(之後的小版翻閘)的永豐期貨連接框(renderer/sinopac.js;spec sinopac-connect-2026-11-17 §12,api 先上,順序同 api):本機打開憑證過了進清單、
+    // 按〔到永豐簽署〕、模擬單送出、讀到已簽(審核通過或一開始就簽了)、下單程式起來、〔重新登入〕後確認登入過了。按〔到永豐建金鑰〕沿用 cx_key_page
+    "sinf_form_saved", "sinf_sign_open", "sinf_sim_sent", "sinf_signed", "sinf_ready", "sinf_relogin"] },
 };
 // `claude auth status` 的 authMethod 原值 → cli_auth 的 how(隨包 CLI 2.1.281 的 auth status 只會給這六個)。唯一的一份:
 // 主行程 detectAgents 算好放進 out.claude.how,畫面與主行程都讀那一欄。null／缺 = none,表外 = other

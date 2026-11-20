@@ -13,6 +13,8 @@
     "blave-agent-reconciler.service": {"enable": false},
     "blave-agent-sdk.service": {"enable": false},
     "blave-agent-sdk.timer": {"enable": true},
+    "blave-agent-sinopac.service": {"enable": false},
+    "blave-agent-sinopac.timer": {"enable": false},
     "blave-agent-strategies.path": {"enable": true}
   },
   "_comment_windows": "Scheduled tasks the release wants registered on Windows (schtasks stand-in for the timers; the event chain is the blave-agent-watcher NSSM service, provision-owned). script is relative to C:\\blave-agent; bin: venv|system. Control-plane tasks (updater/watchdog/firstboot) stay provision-owned and NEVER appear here. provision.ps1 registers the same definitions at build time as bootstrap; on drift, this manifest wins.",

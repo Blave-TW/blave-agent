@@ -13,7 +13,7 @@ const STR = vm.runInNewContext(read("renderer/strings.js") + "\nSTRINGS");
 // ── 假 DOM:promptslot.js 與 sideCvPaint 碰到的節點;pop 內容是 createElement 建的 ──
 const mkEl = (id, tag) => { const n = { id, tag: tag || "div", hidden: false, attrs: {}, listeners: {}, dataset: {}, children: [], parent: null, className: "", textContent: "", title: "", w: 0,
   style: {}, getBoundingClientRect: () => ({ left: 12, top: 700, width: n.w }),
-  classList: { add(c) { n.className = (n.className + " " + c).trim(); }, contains(c) { return n.className.split(" ").includes(c); },
+  classList: { add(c) { if (!n.className.split(" ").includes(c)) n.className = (n.className + " " + c).trim(); }, remove(c) { n.className = n.className.split(" ").filter((x) => x && x !== c).join(" "); }, contains(c) { return n.className.split(" ").includes(c); },
     toggle(c, on) { const has = n.className.split(" ").includes(c); if (on && !has) n.className = (n.className + " " + c).trim(); if (!on && has) n.className = n.className.split(" ").filter((x) => x !== c).join(" "); } },
   appendChild(k) { k.parent = n; n.children.push(k); return k; }, cloneNode() { return mkEl(null, n.tag); },
   setAttribute(k, v) { this.attrs[k] = v; }, removeAttribute(k) { delete this.attrs[k]; }, addEventListener(ev, fn) { this.listeners[ev] = fn; }, focus() { doc.lastFocus = id || n; doc.active = n; },
@@ -26,6 +26,8 @@ const $ = (id) => dom[id] || (dom[id] = mkEl(id));
 // 列的順序同 index.html:齒輪、手機、pop、帳號膠囊、灰字、更新。寬與 margin:齒輪 28、手機 16+28、膠囊 8+寬、更新 8+28
 const ROW = ["ws-conn", "ph-pill", "ph-pop", "side-cv", "side-note", "up-pill"];
 ROW.forEach((id) => { $(id).parent = $("foot-row"); $("foot-row").children.push($(id)); });
+// 更新鈕(spec update-button-label-2026-11-19 A):寫字的膠囊 zh 量到 44,退回圓鈕(.is-icon)是 28
+$("up-pill").getBoundingClientRect = () => ({ left: 300, top: 700, width: $("up-pill").classList.contains("is-icon") ? 28 : $("up-pill").textW || 44 });
 const STYLE = { "ph-pill": { marginLeft: "8px" }, "side-cv": { marginLeft: "8px" }, "side-note": { marginLeft: "8px" }, "up-pill": { marginLeft: "8px" }, "ph-pop": { position: "fixed" }, "foot-row": { paddingLeft: "6px" } };
 const getComputedStyle = (el) => ({ display: el.hidden ? "none" : "flex", position: "static", marginLeft: "0px", marginRight: "0px", paddingLeft: "0px", ...(STYLE[el.id] || {}) });
 const feat = [], opened = [];
@@ -54,13 +56,13 @@ t("§3.2 六條都成立 → 出", X.slotPhPlan(OK).draw === true);
 
 // ── §4.3 放不下:看得到的子節點寬 + margin + 列的 padding-left 跟 clientWidth 比;fixed 的 pop 與藏起來的不算 ──
 { const row = $("foot-row");
-  $("ws-conn").w = 28; $("ph-pill").w = 28; $("ph-pop").w = 240; $("side-cv").w = 66; $("up-pill").w = 28;
+  $("ws-conn").w = 28; $("ph-pill").w = 28; $("ph-pop").w = 240; $("side-cv").w = 66; $("up-pill").classList.add("is-icon");   // 量法只看寬:更新用 28 圓鈕那一態
   $("ph-pop").hidden = false; $("side-note").hidden = true; ["ws-conn", "ph-pill", "side-cv", "up-pill"].forEach((id) => { $(id).hidden = false; });
   const need = 6 + 28 + 8 + 28 + 8 + 66 + 8 + 28;   // 180:繁中「免費試用」+ 更新 + 手機(0.1.57 手機前 8)
   row.clientWidth = need; t("§4.3 剛好放得下(列寬 = 加總)→ 放得下;pop(fixed)不算寬", X.slotRowFits(row) === true);
   row.clientWidth = need - 1; t("§4.3 少 1px → 放不下", X.slotRowFits(row) === false);
   $("ph-pill").hidden = true; row.clientWidth = need - 36; t("§4.3 藏起來的不算(手機 28 + 前面 8)", X.slotRowFits(row) === true);
-  row.clientWidth = 0; t("§4.3 列沒排出來(寬 0)→ 當放不下,等 ResizeObserver", X.slotRowFits(row) === false);
+  row.clientWidth = 0; t("§4.3 列沒排出來(寬 0)→ 當放不下,等 ResizeObserver", X.slotRowFits(row) === false); $("up-pill").classList.remove("is-icon");
   t("§4.3 量法:不用 scrollWidth(透明熱區會被算進去)", !/scrollWidth/.test(cut(src, "function slotRowFits(")));
   t("§4.3 ResizeObserver 掛在列與列裡會變寬的三樣(不掛手機自己)", /new ResizeObserver\(\(\) => \(typeof sideCvPaint === "function" \? sideCvPaint\(\) : slotPaint\(\)\)\); \["foot-row", "side-cv", "side-note", "up-pill"\]/.test(src)); }
 
@@ -78,9 +80,22 @@ t("§3.2 六條都成立 → 出", X.slotPhPlan(OK).draw === true);
   reset(); ctx.PH = { ...PHOK, signedIn: false }; X.slotPaint(); t("畫面:沒登入不出(登入膠囊旁邊不會有手機)", $("ph-pill").hidden === true && feat.length === 0);
   reset(); ctx.__revoked = true; X.slotPaint(); t("畫面:登入失效(主行程 signedIn 仍 true)不出", $("ph-pill").hidden === true);
   reset(); doc.rail = true; X.slotPaint(); t("畫面:側欄收合不出", $("ph-pill").hidden === true);
-  reset(); $("up-pill").hidden = false; $("side-cv").w = 66; row.clientWidth = 6 + 28 + 8 + 28 + 8 + 66 + 8 + 28 - 1; X.slotPaint();
-  t("畫面:四樣放不下 → 手機讓位,其餘三樣不動", $("ph-pill").hidden === true && $("side-cv").hidden === false && $("up-pill").hidden === false);
-  row.clientWidth += 1; X.slotPaint(); t("畫面:放得下 → 手機回來", $("ph-pill").hidden === false);
+  reset(); $("up-pill").hidden = false; $("side-cv").w = 66; row.clientWidth = 6 + 28 + 8 + 28 + 8 + 66 + 8 + 44 - 1; X.slotPaint();
+  t("畫面:四樣放不下 → 手機讓位,其餘三樣不動(更新仍寫字)", $("ph-pill").hidden === true && $("side-cv").hidden === false && $("up-pill").hidden === false && !$("up-pill").classList.contains("is-icon"));
+  row.clientWidth += 1; X.slotPaint(); t("畫面:放得下 → 手機回來,更新寫字", $("ph-pill").hidden === false && !$("up-pill").classList.contains("is-icon"));
+  // 設計師 0158 裁定照 canon 順序:en 236 寬(帳號膠囊「Free Trial」72、更新「Update」60、列寬 211)手機讓位、更新留字,不為了留手機把更新變圓
+  { $("side-cv").w = 72; $("up-pill").textW = 60; row.clientWidth = 211; X.slotPaint();
+    t("S1 en 236 寬:手機讓位、更新留字(不退回圓鈕)", $("ph-pill").hidden === true && $("up-pill").hidden === false && !$("up-pill").classList.contains("is-icon"));
+    $("up-pill").hidden = true; X.slotPaint(); t("S1 …更新消失:手機回來、不掛 .is-icon", $("ph-pill").hidden === false && !$("up-pill").classList.contains("is-icon")); $("up-pill").hidden = false; $("side-cv").w = 66; $("up-pill").textW = 0; }
+  // 手機拿掉後還放不下:更新才退回 28 圓鈕;不截字、不換短字。寬回來就再寫字(手機也回來)
+  row.clientWidth = 6 + 28 + 8 + 66 + 8 + 44 - 1; X.slotPaint();
+  t("更新鈕 A:手機先讓位,還超出 1px → 退回圓鈕(.is-icon)", $("ph-pill").hidden === true && $("up-pill").classList.contains("is-icon"));
+  row.clientWidth += 1; X.slotPaint(); t("更新鈕 A:手機拿掉後剛好放得下 → 寫字、不退回圓鈕、手機不回來", $("ph-pill").hidden === true && !$("up-pill").classList.contains("is-icon"));
+  row.clientWidth = 400; X.slotPaint(); t("更新鈕 A:寬回來 → 寫字、手機回來", $("ph-pill").hidden === false && !$("up-pill").classList.contains("is-icon"));
+  { ctx.PH = { ...PHOK, pairedEver: true }; row.clientWidth = 6 + 28 + 8 + 66 + 8 + 44 - 1; X.slotPaint();
+    t("更新鈕 A:沒有手機可讓(配對過)也放不下 → 直接退回圓鈕", $("ph-pill").hidden === true && $("up-pill").classList.contains("is-icon"));
+    $("up-pill").hidden = true; X.slotPaint(); t("更新鈕 A:沒有更新時不掛 .is-icon", !$("up-pill").classList.contains("is-icon"));
+    $("up-pill").hidden = false; doc.rail = true; row.clientWidth = 0; X.slotPaint(); t("更新鈕 A:細軌(列寬 0)不判、不掛 .is-icon(細軌另有 #up-rail 圓鈕)", !$("up-pill").classList.contains("is-icon")); }
 
   // 步驟框
   reset(); X.slotPaint(); $("ph-pill").listeners.click(); await flush();
@@ -277,6 +292,7 @@ t("§3.2 六條都成立 → 出", X.slotPhPlan(OK).draw === true);
 
   // ── §8 埋點 ──
   t("§8.1 九個新名字接在 0.1.52 的 cx_key_page 後面、順序同 spec;之後接 0.1.54 拉回 icon 鈕 sp_pull_icon(0.1.57 的選單名字再接在後面)", /"cx_key_page",\n[^\n]*\n[^\n]*\n\s*"side_cv_login", "side_cv_trial", "side_cv_plan", "side_cv_stopped",\n\s*"login_side", "login_side_again", "bind_side", "plan_side", "stopped_side",\n[^\n]*\n\s*"sp_pull_icon",\n/.test(tele));
+  t("0.1.58 啟動框 start_catch_chg 接在 0.1.57 的 ns_example 後面;0.1.58 永豐連接框(旗標關著)sinf_* 六個再接在它後面、是白名單最後一段(順序同 api)", /"ns_example",\n[^\n]*\n[^\n]*\n\s*"start_catch_chg",\n[^\n]*\n[^\n]*\n\s*"sinf_form_saved", "sinf_sign_open", "sinf_sim_sent", "sinf_signed", "sinf_ready", "sinf_relogin"\] \},/.test(tele));
   t("§8.2 slot_ph_show／slot_ph_open 留著(手機圖示畫出／按下);slot_up_*、slot_ph_close、slot_ph_login 沒有送出點", /"slot_ph_show"/.test(src) && /"slot_ph_open"/.test(src) && !/slot_up_show|slot_up_open|slot_ph_close|slot_ph_login/.test(app + src));
   t("§8.2 upd_pill_shown 列裡或細軌看得到都算、每日一次;upd_go_pill 按圓鈕", /if \(p\.show && \(pill\.offsetParent !== null \|\| dot\.offsetParent !== null\)\)/.test(cut(app, "function upPillPaint(")) && /trackFeature\("upd_go_pill"\);/.test(cut(app, "function upPillClick(")));
   t("§7 主行程的提示格存檔拿掉:slot-state、slot-phone-set、slotPhone", !/slot-state|slot-phone-set|slotPhone|slotStateGet/.test(main + pre));

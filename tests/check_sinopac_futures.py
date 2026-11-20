@@ -282,6 +282,23 @@ sys.modules["shioaji"] = sj
 
 from lib import guard, order_sinopac as osj, sinopac_futures_account as account_sinopac, sinopac_worker as w  # noqa: E402
 
+# the credential store, inside this test's temp dir — never <repo parent>/credentials
+w.sinopac_vault.VAULT = os.path.join(TMP, "_cred", "sinopac_vault.json")
+w.sinopac_vault.PFX = os.path.join(TMP, "_cred", "sinopac.pfx")
+assert w.sinopac_vault.VAULT.startswith(TMP)
+
+
+def _bind_store(api_key="k", secret="s"):
+    """TMP bound the way the connect flow binds (runtime/sinopac_service.store): vault + sentinels."""
+    sv = w.sinopac_vault
+    os.makedirs(os.path.dirname(sv.VAULT), exist_ok=True)
+    with open(sv.VAULT, "w") as f:
+        json.dump({"sinopac_api_key": api_key, "sinopac_secret_key": secret, "sinopac_ca_passwd": "A123456789",
+                   "sinopac_person_id": "A123456789", "live": False}, f)
+    with open(os.path.join(TMP, ".env"), "w") as f:
+        f.write("".join(f"{k}={v}\n" for k, v in sv.bound_env(api_key, secret).items()))
+    open(w.WANTED_PATH, "w").close()  # the connect flow finished (runtime/sinopac_connect.run_finish)
+
 for mod in (osj, w):
     mod.ORDERS_DIR = os.path.join(TMP, "state", "sinopac_orders")
     mod.REFRESH_FLAG = os.path.join(TMP, "state", "sinopac_refresh")
@@ -291,6 +308,8 @@ w.PROBE_PATH = os.path.join(TMP, "state", "sinopac_probe.json")
 w.STOP_PATH = os.path.join(TMP, "state", "sinopac_login_stopped.json")
 w.TAGS_PATH = os.path.join(TMP, "state", "sinopac_order_tags.json")
 w.RETRY_PATH = os.path.join(TMP, "state", "sinopac_login_retry.json")
+w.SIM_PATH = os.path.join(TMP, "state", "sinopac_sim_test.json")
+w.WANTED_PATH = os.path.join(TMP, "state", "sinopac_worker_wanted.json")
 _enabled_rel = os.path.relpath(w.ENABLED_PATH, w.WORKSPACE).replace(os.sep, "/")
 w.ENABLED_PATH = os.path.join(TMP, "state", "sinopac_futures_enabled.json")
 w.CONFIRM_POLL_S = 0.01
@@ -932,9 +951,16 @@ e = raises(w.LoginError, lambda: w.login({"sinopac_api_key": "k", "sinopac_secre
                                           "sinopac_ca_path": "", "sinopac_ca_passwd": "",
                                           "sinopac_person_id": "", "live": False}))
 check(e is not None and holder["api"].logged_out, "no futures account → LoginError, logged out")
-check(raises(ValueError, lambda: w.creds({"sinopac_api_key": "k", "sinopac_secret_key": "s",
-                                          "SINOPAC_LIVE": "true"})) is not None,
-      "live without CA path/password is refused before any login")
+_bind_store()
+_bound = w._read_env(os.path.join(TMP, ".env"))
+# audit r2 S1: an old 零股 machine's leftover line neither switches anything nor dead-ends the connect
+check(w.sinopac_vault.resolve(dict(_bound, SINOPAC_LIVE="true"))["live"] is False
+      and w.sinopac_vault.resolve(dict(_bound, SINOPAC_LIVE="false")) == w.sinopac_vault.resolve(_bound)
+      and isinstance(raises(Exception, lambda: w.sinopac_vault.resolve({"sinopac_api_key": "k",
+                                                                         "sinopac_secret_key": "s"})),
+                     w.sinopac_vault.NotBound),
+      "production is the store's, never .env's (a leftover SINOPAC_LIVE line is ignored, either way); plain "
+      ".env values are not a binding")
 open(w.STOP_PATH, "w").write("{}")
 holder["api"] = FakeApi()
 real_ws = w.WORKSPACE
@@ -948,14 +974,98 @@ check(os.path.exists(w.ENABLED_PATH) and _enabled_rel == _vt.get("sinopac", "bou
       "a daemon start past the gate writes the durable futures-enabled marker, at venue_traits' "
       "bound_marker path (Wei 11-17: a machine that has had futures is never dormant again)", _enabled_rel)
 os.remove(w.STOP_PATH)
+# audit F4: the marker is what flatten / the account reader go by — one that cannot be written means
+# no login (the reconciler would trade a venue a close-all skips); a later start tries again
+_ep = w.ENABLED_PATH
+w.ENABLED_PATH = os.path.join(w.STOP_PATH + ".file", "sinopac_futures_enabled.json")
+open(w.STOP_PATH + ".file", "w").close()  # a file where the marker's folder should be
+holder["api"] = FakeApi()
+w.WORKSPACE = TMP
+try:
+    rc = w.main()
+except SystemExit as x:  # past the marker the daemon would go on to log in or stop
+    rc = x.code
+rc_once = w.run_once()
+w.WORKSPACE = real_ws
+check(rc == rc_once == w.STATE_EXIT and "login" not in holder["api"].calls,
+      "audit F4: futures-enabled marker not writable → daemon and --once exit STATE_EXIT without a login",
+      (rc, rc_once, holder["api"].calls))
+os.remove(w.STOP_PATH + ".file")
+w.ENABLED_PATH = _ep
+
+# item 3 (Wei 11-17): the worker logs in only with a connect-flow binding — plain .env values (a 零股
+# bind, or keys the agent wrote) start nothing: no login, no STOP, no futures-enabled marker, no notice
+_ep = w.ENABLED_PATH
+w.ENABLED_PATH = os.path.join(TMP, "state", "enabled-plain-check.json")
+with open(os.path.join(TMP, ".env"), "w") as f:
+    f.write("sinopac_api_key=k\nsinopac_secret_key=s\nsinopac_person_id=A123456789\nSINOPAC_LIVE=true\n")
+holder["api"] = FakeApi()
+w.WORKSPACE = TMP
+rc, rc_once = w.main(), w.run_once()
+w.WORKSPACE = real_ws
+check(rc == rc_once == w.NOT_BOUND_EXIT and "login" not in holder["api"].calls
+      and not os.path.exists(w.STOP_PATH) and not os.path.exists(w.ENABLED_PATH),
+      "plain .env values (a 零股 machine, SINOPAC_LIVE=true included): daemon and --once exit NOT_BOUND_EXIT "
+      "— no login, no STOP, no futures marker",
+      (rc, rc_once, holder["api"].calls))
+w.ENABLED_PATH = _ep
+_bind_store()
+# audit r2 M1: bound, but the connect flow has not finished (a rebind removed the marker): the daemon
+# does not log in, whoever started it (NSSM at a Windows boot) — --once still does (the flow's probe)
+os.remove(w.WANTED_PATH)
+holder["api"] = FakeApi()
+w.WORKSPACE = TMP
+rc = w.main()
+w.WORKSPACE = real_ws
+check(rc == w.NOT_BOUND_EXIT and "login" not in holder["api"].calls and not os.path.exists(w.STOP_PATH),
+      "audit r2 M1: no connect-flow finish marker → the daemon exits NOT_BOUND_EXIT without a login",
+      (rc, holder["api"].calls))
+_bind_store()
+
+
+class _UnbindApi(FakeApi):
+    """The second account read finds .env unbound (the cloud unbind cannot stop the service)."""
+
+    def __init__(self, new_env, **kw):
+        super().__init__(**kw)
+        self.new_env, self.reads = new_env, 0
+
+    def margin(self, acct):
+        self.reads += 1
+        if self.reads == 1:
+            with open(os.path.join(TMP, ".env"), "w") as f:
+                f.write(self.new_env)
+        return super().margin(acct)
+
+
+_pp = w.POLL_S
+w.POLL_S = 0.05
+_unbound = {}
+for new_env, why in (("BINANCE_API_KEY=x\nBINANCE_SECRET_KEY=y\n", "unbound"),
+                     ("".join(f"{k}={v}\n" for k, v in w.sinopac_vault.bound_env("k2", "s2").items()), "rebound")):
+    _bind_store()
+    holder["api"] = _UnbindApi(new_env)
+    w.WORKSPACE = TMP
+    try:
+        _unbound[why] = (w._serve(), holder["api"].logged_out, holder["api"].reads)
+    finally:
+        w.WORKSPACE = real_ws
+        if os.path.exists(w.RETRY_PATH):  # the logout's first spacing (60 s): the next pass must not wait it
+            os.remove(w.RETRY_PATH)
+w.POLL_S = _pp
+if os.path.exists(w.RETRY_PATH):
+    os.remove(w.RETRY_PATH)
+check(_unbound == {"unbound": (w.NOT_BOUND_EXIT, True, 1), "rebound": (w.NOT_BOUND_EXIT, True, 1)},
+      "an unbind or rebind seen in .env: the worker logs out and leaves (NOT_BOUND_EXIT) at its next round",
+      _unbound)
+_bind_store()
 
 # a failed daemon login: STOP record + one venue_login_blocked (sinopac only, no HALT); --once sends none
 emitted = []
 real_emit = w.events.emit
 w.events.emit = lambda t, **p: emitted.append((t, p)) or 1
 w._write_snapshot({"ok": True, "positions": [{"root": "TMF", "productid": "TMFK6", "net": -1}]})
-with open(os.path.join(TMP, ".env"), "w") as f:
-    f.write("sinopac_api_key=k\nsinopac_secret_key=s\n")
+_bind_store()
 holder["api"] = FakeApi(login_raises=RuntimeError("key refused for A123456789"))
 real_ws = w.WORKSPACE
 w.WORKSPACE = TMP
@@ -996,8 +1106,7 @@ e = raises(w.LoginError, lambda: w.login({"sinopac_api_key": "k", "sinopac_secre
                                           "sinopac_ca_passwd": "", "sinopac_person_id": "", "live": False}))
 check(e is not None and e.reason == "NOT_SIGNED" and _unsigned.logged_out,
       "signed=False → LoginError class NOT_SIGNED, logged out (not UNKNOWN)", e)
-with open(os.path.join(TMP, ".env"), "w") as f:
-    f.write("sinopac_api_key=k\nsinopac_secret_key=s\n")
+_bind_store()
 holder["api"] = _unsigned
 w.WORKSPACE = TMP
 rc = w.run_once()
@@ -1006,6 +1115,44 @@ probe = json.load(open(w.PROBE_PATH))
 check(rc == 2 and probe.get("reason") == "NOT_SIGNED" and not probe["ok"],
       "--once: the probe file carries the class too, so the connect page can tell 'wait for review' (audit N-B)",
       probe)
+# --sim-test (the signing review's test): an unsigned account still logs in — in SIMULATION, never
+# production, no certificate — and one TMF order goes out; the bot's last-order marker is not touched
+_sim_api = FakeApi()
+_sim_api.accounts[1].signed = False
+holder["api"] = _sim_api
+_before = w.sinopac_vault.last_order_at()
+_sim_modes = []
+_real_ctor = sj.Shioaji
+sj.Shioaji = lambda simulation=None: _sim_modes.append(simulation) or holder["api"]
+w.WORKSPACE = TMP
+try:
+    rc = w.run_sim_test()
+finally:
+    w.WORKSPACE = real_ws
+    sj.Shioaji = _real_ctor
+sim = json.load(open(w.SIM_PATH))
+_placed = [c for c in _sim_api.calls if isinstance(c, tuple) and c[0] == "place_order"]
+check(rc == 0 and sim.get("ok") is True and len(_placed) == 1 and _placed[0][1].startswith("TMF")
+      and "activate_ca" not in _sim_api.calls and _sim_api.logged_out and _sim_modes == [True]
+      and w.sinopac_vault.last_order_at() == _before,
+      "--sim-test: unsigned account, simulation login, one TMF order, logged out, no last-order marker",
+      (rc, sim, _placed, _sim_api.calls))
+# the restart stop and the HALT freeze hold the simulation order too: no login, nothing placed
+for _stop in (guard.RESTART_STOP_PATH, "state/HALT"):
+    _sim_api = FakeApi()
+    holder["api"] = _sim_api
+    open(_stop, "w").write("{}")
+    sj.Shioaji = lambda simulation=None: holder["api"]
+    w.WORKSPACE = TMP
+    try:
+        rc = w.run_sim_test()
+    finally:
+        w.WORKSPACE = real_ws
+        sj.Shioaji = _real_ctor
+        os.remove(_stop)
+    sim = json.load(open(w.SIM_PATH))
+    check(rc == 2 and sim.get("ok") is False and "reason" not in sim and not _sim_api.calls,
+          f"--sim-test with {_stop} present: refused before login, nothing placed", (rc, sim, _sim_api.calls))
 
 
 # the SDK's own classes (1.7.11 stubs: names only, shioaji is imported inside login)
@@ -1022,17 +1169,82 @@ check(w._login_reason(_sdk_err("AccountNotSignError")) == "NOT_SIGNED"
       and w._login_reason(_sdk_err("CaPasswordError", CaError)) == "CERT"
       and w._login_reason(_sdk_err("ShioajiTimeoutError", _Named, TimeoutError)) == "TIMEOUT",
       "SDK login errors: AccountNotSignError → NOT_SIGNED, a CaError → CERT, a timeout → TIMEOUT")
+# Wei 11-17 / designer sinopac-connect §4: five more classes the connect screen and the P1 tell apart
+ShioajiError = type("ShioajiError", (_Named,), {})
+AuthError = type("AuthError", (ShioajiError,), {})
+_c0 = {"sinopac_api_key": "k", "sinopac_secret_key": "s", "sinopac_ca_path": "", "sinopac_ca_passwd": "",
+       "sinopac_person_id": "", "live": False}
+_reasons = {"KEY": w._login_reason(_sdk_err("TokenError", AuthError)),
+            "TOO_MANY": w._login_reason(RuntimeError("451 Too Many Connections")),
+            "VERSION": w._login_reason(ModuleNotFoundError("No module named 'shioaji'"))}
+holder["api"] = FakeApi(futopt=False)
+_reasons["NO_FUTURES"] = getattr(raises(w.LoginError, lambda: w.login(_c0)), "reason", None)
+_old = sj.__version__
+sj.__version__ = "1.5.4"
+holder["api"] = FakeApi()
+_reasons["VERSION (pin)"] = getattr(raises(w.LoginError, lambda: w.login(_c0)), "reason", None)
+sj.__version__ = _old
+_real_skew = w.tw_clock.gross_skew
+w.tw_clock.gross_skew = lambda now=None: 45.0
+_reasons["CLOCK"] = w._login_reason(_sdk_err("TokenError", AuthError))
+_reasons["not CLOCK: our own error"] = w._login_reason(ValueError("sinopac_api_key missing"))
+w.tw_clock.gross_skew = lambda now=None: 5.0
+_reasons["KEY (clock fine)"] = w._login_reason(_sdk_err("TokenError", AuthError))
+w.tw_clock.gross_skew = _real_skew
+check(_reasons == {"KEY": "KEY", "NO_FUTURES": "NO_FUTURES", "TOO_MANY": "TOO_MANY", "VERSION": "VERSION",
+                   "VERSION (pin)": "VERSION", "CLOCK": "CLOCK", "not CLOCK: our own error": "UNKNOWN",
+                   "KEY (clock fine)": "KEY"},
+      "reason codes: KEY (AuthError family), NO_FUTURES, TOO_MANY (451, still retried), VERSION (pin / missing), "
+      "CLOCK (a broker refusal while the clock is measured off > receive_window, ahead of KEY)", _reasons)
+check(w.retryable(RuntimeError("451 Too Many Connections")) and not w.retryable(_sdk_err("TokenError", AuthError)),
+      "…TOO_MANY stays a retry, KEY a stop")
 _retry_cases = {"TimeoutError": TimeoutError("t"), "ShioajiConnectionError": _sdk_err("ShioajiConnectionError",
                                                                                     _Named, ConnectionError),
                 "DNS": __import__("socket").gaierror("no name"), "503": _sdk_err("SystemMaintenance"),
                 "451": RuntimeError("451 Too Many Connections")}
+import errno as _errno  # noqa: E402
+# audit F3: the network down / unreachable is a plain OSError (no ConnectionError subclass)
+_net = {f"OSError {n}": OSError(getattr(_errno, n), n) for n in ("ENETUNREACH", "EHOSTUNREACH", "ENETDOWN")}
+_retry_cases.update(_net)
 _stop_cases = {"TokenError": _sdk_err("TokenError"), "CaPasswordError": _sdk_err("CaPasswordError", CaError),
                "AccountNotSignError": _sdk_err("AccountNotSignError"), "unidentified": RuntimeError("bad key"),
-               "own LoginError": w.LoginError("x", "TIMEOUT"), "ValueError": ValueError("x")}
+               "own LoginError": w.LoginError("x", "TIMEOUT"), "ValueError": ValueError("x"),
+               # the certificate file missing or unreadable stays a CERT stop, not a retry
+               "FileNotFoundError": FileNotFoundError(_errno.ENOENT, "sinopac.pfx"),
+               "PermissionError": PermissionError(_errno.EACCES, "sinopac.pfx"),
+               "OSError EACCES": OSError(_errno.EACCES, "denied"), "IsADirectoryError": IsADirectoryError("x"),
+               "SSLCertVerificationError": __import__("ssl").SSLCertVerificationError("bad cert")}
+# audit r2 S2: every other OSError is the connection — retried (rule changed: a plain OSError used to stop)
+import ssl as _ssl  # noqa: E402
+_retry_cases.update({"OSError plain": OSError("x"), "EADDRNOTAVAIL": OSError(_errno.EADDRNOTAVAIL, "boot"),
+                     "SSLError": _ssl.SSLError("handshake"), "SSLEOFError": _ssl.SSLEOFError("eof")})
 check(all(w.retryable(x) for x in _retry_cases.values()) and not any(w.retryable(x) for x in _stop_cases.values()),
       "retryable: timeout / connection / DNS / 503 maintenance / 451 only; credentials, certificate, signing, "
       "this module's own LoginErrors and anything unidentified stop",
       ([k for k, x in _retry_cases.items() if not w.retryable(x)], [k for k, x in _stop_cases.items() if w.retryable(x)]))
+check(all(w._login_reason(x) == "TIMEOUT" for x in _net.values()),
+      "audit F3: network down / unreachable OSErrors are retried (class TIMEOUT), not a STOP", list(_net))
+
+
+class _CaRaises(FakeApi):
+    def __init__(self, exc, **kw):
+        super().__init__(**kw)
+        self.exc = exc
+
+    def activate_ca(self, **kw):
+        self.calls.append("activate_ca")
+        raise self.exc
+
+
+_live = {"sinopac_api_key": "k", "sinopac_secret_key": "s", "sinopac_ca_path": "/x.pfx", "sinopac_ca_passwd": "p",
+         "sinopac_person_id": "", "live": True}
+holder["api"] = _CaRaises(OSError(_errno.ENETUNREACH, "Network is unreachable"))
+e1 = raises(Exception, lambda: w.login(_live))
+holder["api"] = _CaRaises(FileNotFoundError(_errno.ENOENT, "x.pfx"))
+e2 = raises(Exception, lambda: w.login(_live))
+check(e1 is not None and not isinstance(e1, w.LoginError) and w.retryable(e1)
+      and isinstance(e2, w.LoginError) and e2.reason == "CERT",
+      "audit F3: activate_ca losing the network is retried; a missing certificate file is still CERT", (e1, e2))
 
 
 class _FlakyApi(FakeApi):
@@ -1052,8 +1264,21 @@ class _FlakyApi(FakeApi):
 
 _c = {"sinopac_api_key": "k", "sinopac_secret_key": "s", "sinopac_ca_path": "", "sinopac_ca_passwd": "",
       "sinopac_person_id": "", "live": False}
+
+
+def _rec():
+    """The login retry record, {} when there is none (a missing one must fail a check, not crash the file)."""
+    try:
+        return json.load(open(w.RETRY_PATH))
+    except FileNotFoundError:
+        return {}
+
+
+def _drop(path):
+    if os.path.exists(path):
+        os.remove(path)
 _knobs = ("LOGIN_RETRY_S", "LOGIN_RETRY_LONG_S", "LOGIN_451_WAIT_S", "POLL_S", "UNREACHABLE_AFTER_S",
-          "UNREACHABLE_REPEAT_S")
+          "UNREACHABLE_REPEAT_S", "LOGIN_STABLE_S")
 saved = {k: getattr(w, k) for k in _knobs}
 w.LOGIN_RETRY_S, w.LOGIN_RETRY_LONG_S, w.LOGIN_451_WAIT_S, w.POLL_S = (0.05, 0.05), 0.05, 0.4, 0.02
 w.UNREACHABLE_AFTER_S, w.UNREACHABLE_REPEAT_S = 3600, 7200  # no P1 inside these short tests unless set
@@ -1070,9 +1295,10 @@ try:
           "S7: before its first login the worker writes a `waiting: login` snapshot — a reboot's first "
           "rounds are skipped, not counted toward HALT", snaps[:1])
     check(holder["api"].logins == 3 and a is not None and not os.path.exists(w.STOP_PATH)
-          and not os.path.exists(w.RETRY_PATH) and emitted == [],
-          "S7: timeout and connection logins are retried after a spaced wait; the good login clears the count, "
-          "no STOP, no P1", (holder["api"].logins, emitted))
+          and _rec().get("failures") == 3 and emitted == [],
+          "S7: timeout and connection logins are retried after a spaced wait, no STOP, no P1; the good login's "
+          "record stays until the session held LOGIN_STABLE_S (audit F2)", (holder["api"].logins, emitted))
+    _drop(w.RETRY_PATH)
     check(waits and all(not s["ok"] and s["retry_at"] > 0 and "A123456789" not in s["error"] for s in waits),
           "…while waiting, a not-ok `waiting: login_retry` snapshot (restamped), no national id", waits[:1])
     # the account lib reads that snapshot as waiting (the reconciler's ReadSkipped), not as a failed read
@@ -1085,23 +1311,72 @@ try:
     w.UNREACHABLE_AFTER_S, w.UNREACHABLE_REPEAT_S = 0.12, 60
     holder["api"] = _FlakyApi([TimeoutError("t")] * 8)
     w._login_with_retry(_c)
-    check(holder["api"].logins == 9 and not os.path.exists(w.STOP_PATH) and not os.path.exists(w.RETRY_PATH)
+    check(holder["api"].logins == 9 and not os.path.exists(w.STOP_PATH)
+          and _rec().get("failures") == 9
           and [t for t, _ in emitted] == ["exchange_unreachable"]
           and emitted[0][1]["venue"] == "sinopac" and emitted[0][1]["code"] == "login",
           "S7: eight unanswered logins in a row — no STOP, one exchange_unreachable once the streak is old "
-          "enough, the ninth login gets in and clears the count", (holder["api"].logins, emitted))
+          "enough, the ninth login gets in", (holder["api"].logins, emitted))
+    _drop(w.RETRY_PATH)
     emitted.clear()
     w.UNREACHABLE_AFTER_S, w.UNREACHABLE_REPEAT_S = 3600, 7200
     # the cadence itself, on the shipped values: first P1 25 min in, then every 2 h
     A, R = saved["UNREACHABLE_AFTER_S"], saved["UNREACHABLE_REPEAT_S"]
     w.UNREACHABLE_AFTER_S, w.UNREACHABLE_REPEAT_S = A, R
     check((A, R) == (1500, 7200) and not w.announce_due(0, None, 1499) and w.announce_due(0, None, 1500)
-          and not w.announce_due(0, 1500, 1500 + 7199) and w.announce_due(0, 1500, 1500 + 7200)
+          and not w.announce_due(0, 1500, 1500 + 7200) and w.announce_due(0, 1500, 9000)
+          and not w.announce_due(0, 9000, 9000 + 7199) and w.announce_due(0, 9000, 9000 + 7200)
           and not w.announce_due(None, None, 10 ** 6),
-          "S7: exchange_unreachable at 25 minutes into the streak, then every 2 hours (群益's cadence)")
+          "S7: exchange_unreachable at 25 minutes into the streak, the next one not before 150 min (the P1 "
+          "mark, Wei 11-17), then every 2 hours (群益's cadence)")
     w.UNREACHABLE_AFTER_S, w.UNREACHABLE_REPEAT_S = 3600, 7200
     w.LOGIN_RETRY_S, w.LOGIN_RETRY_LONG_S, w.LOGIN_451_WAIT_S = (saved["LOGIN_RETRY_S"], saved["LOGIN_RETRY_LONG_S"],
                                                                  saved["LOGIN_451_WAIT_S"])
+    # the whole streak on the shipped values, a fake clock, every login failing at once: the notices
+    # land at 25, 150, 270, 390 min — one on the api's P1 mark (Wei 11-17: P2 at 25, P1 from 150)
+    w.UNREACHABLE_AFTER_S, w.UNREACHABLE_REPEAT_S = A, R
+
+    def _streak(err=None, hours=7):
+        t, n, ann, out = 0.0, 0, None, []
+        while t < hours * 3600:
+            n += 1
+            if w.announce_due(0.0, ann, t):
+                out.append(int(t // 60))
+                ann = t
+            nxt = t + w.p1_aligned_wait(w.retry_wait_s(n, err), 0.0, ann, t,
+                                        w.LOGIN_451_WAIT_S if err is not None else 0.0)
+            # _wait_retry sends a notice that falls due between two logins at its own time
+            while True:
+                due = w.next_announce_at(0.0, ann)
+                if due is None or due >= nxt:
+                    break
+                check(w.announce_due(0.0, ann, due) and not w.announce_due(0.0, ann, due - 1),
+                      "next_announce_at is the first moment announce_due turns true", (ann, due))
+                out.append(int(due // 60))
+                ann = due
+            t = nxt
+        return out
+
+    _sched = _streak()
+    check(_sched == [25, 150, 270, 390] and w.UNREACHABLE_P1_AT_S == 150 * 60,
+          "Wei 11-17: notices at 25, 150, 270, 390 min — a retry is moved onto the 150-min P1 mark "
+          "(30-min retries alone land at 145 / 175)", _sched)
+    _sched451 = _streak(RuntimeError("451 Too Many Connections"))
+    check(len(_sched451) >= 2 and _sched451[0] == 25 and _sched451[1] >= 150,
+          "…a 451 streak still gets its first notice at 25 min and one at or past 150 min", _sched451)
+    check(all(w.retry_wait_s(n, RuntimeError("451 Too Many Connections")) >= w.LOGIN_451_WAIT_S for n in range(1, 12)),
+          "…and every login after a 451 still waits at least LOGIN_451_WAIT_S (the notice moves, the login does not)")
+    # the real wait: a notice due while logged out goes out inside _wait_retry, once, and is kept on disk
+    emitted.clear()
+    _st = {"failures": 3, "retry_at": 0.0, "error": "451", "since": time.time() - w.UNREACHABLE_AFTER_S - 1,
+           "announced_at": None}
+    w._wait_retry(time.time() + 0.1, 3, "451", [], _st)
+    check([t for t, _ in emitted] == ["exchange_unreachable"] and emitted[0][1]["venue"] == "sinopac"
+          and emitted[0][1]["minutes"] == 25 and _st["announced_at"] and _rec().get("announced_at") == _st["announced_at"],
+          "_wait_retry: the 25-minute notice goes out during the wait (not at the next login), once, recorded",
+          (emitted, _st))
+    emitted.clear()
+    w.UNREACHABLE_AFTER_S, w.UNREACHABLE_REPEAT_S = 3600, 7200
     check([w.retry_wait_s(n) for n in range(1, 9)] == [60, 120, 240, 480, 600, 1800, 1800, 1800]
           and w.retry_wait_s(1, RuntimeError("451 Too Many Connections")) == 600
           and sum(w.retry_wait_s(n) for n in range(1, 6)) == 1500,
@@ -1128,8 +1403,9 @@ try:
     holder["api"] = _FlakyApi([])
     t0 = time.time()
     w._login_with_retry(_c)
-    check(time.time() - t0 >= 0.25 and holder["api"].logins == 1 and not os.path.exists(w.RETRY_PATH),
+    check(time.time() - t0 >= 0.25 and holder["api"].logins == 1,
           "S7: a restart waits out the persisted retry time before its login", time.time() - t0)
+    _drop(w.RETRY_PATH)
     json.dump({"failures": 1, "retry_at": time.time() - 7200}, open(w.RETRY_PATH, "w"))
     holder["api"] = _FlakyApi([])
     snaps.clear()
@@ -1139,13 +1415,139 @@ try:
     open(w.RETRY_PATH, "w").write("{not json")
     check(w._retry_state()["failures"] == 1 and w._retry_state()["retry_at"] > time.time(),
           "…an unreadable retry file waits the longest spacing, never an immediate login")
-    os.remove(w.RETRY_PATH)
+    _drop(w.RETRY_PATH)
     # 451: at least LOGIN_451_WAIT_S before the next login
     holder["api"] = _FlakyApi([RuntimeError("451 Too Many Connections")])
     t0 = time.time()
     w._login_with_retry(_c)
     check(time.time() - t0 >= 0.35 and holder["api"].logins == 2,
           "S7: after a 451 the next login waits LOGIN_451_WAIT_S", time.time() - t0)
+    _drop(w.RETRY_PATH)
+
+    # audit F2: every login is on record before it runs — a process killed inside it (or crashing
+    # soon after a good one) restarts on the ladder, never at once (451 / 1000 logins a day)
+    class _Killed(BaseException):
+        pass
+
+    class _KillApi(FakeApi):
+        def __init__(self, **kw):
+            super().__init__(**kw)
+            self.logins = 0
+
+        def login(self, **kw):
+            self.logins += 1
+            raise _Killed()
+
+    _ladder = (0.1, 0.2, 0.4)
+    w.LOGIN_RETRY_S, w.LOGIN_RETRY_LONG_S, w.LOGIN_451_WAIT_S = _ladder, 0.8, 1.0
+    gaps = []
+    for _ in range(3):
+        holder["api"] = _KillApi()
+        raises(_Killed, lambda: w._login_with_retry(_c))
+        t_kill = time.time()
+        rec = _rec()
+        gaps.append((rec.get("failures"), round(rec.get("retry_at", 0) - t_kill, 1)))
+    check(gaps == [(1, 0.1), (2, 0.2), (3, 0.4)],
+          "audit F2: a process killed mid-login leaves a failed attempt on record; each kill climbs the "
+          "ladder (no immediate relogin after a crash restart)", gaps)
+    holder["api"] = _FlakyApi([])
+    t0 = time.time()
+    w._login_with_retry(_c)
+    check(time.time() - t0 >= 0.3 and holder["api"].logins == 1,
+          "audit F2: …the restart after the third kill waits the ladder's wait before its login", time.time() - t0)
+    _drop(w.RETRY_PATH)
+    # a 451 wait is pending when the process dies; the restart's own attempt is killed too: the next
+    # start still waits LOGIN_451_WAIT_S, not the shorter ladder step
+    json.dump({"failures": 1, "retry_at": time.time() + 0.05, "since": time.time(),
+               "error": "RuntimeError: 451 Too Many Connections"}, open(w.RETRY_PATH, "w"))
+    holder["api"] = _KillApi()
+    t0 = time.time()
+    raises(_Killed, lambda: w._login_with_retry(_c))
+    rec = _rec()
+    check(time.time() - t0 >= 0.04 and rec.get("failures") == 2 and rec.get("retry_at", 0) - t0 >= w.LOGIN_451_WAIT_S - 0.05,
+          "audit F2: a persisted 451 wait is waited out after a restart, and a kill inside the next login "
+          "keeps the 451 floor (not the 2nd ladder step)", rec)
+    _drop(w.RETRY_PATH)
+    # the record cannot be written: no login at all (STATE_EXIT)
+    _rp = w.RETRY_PATH
+    w.RETRY_PATH = os.path.join(w.PROBE_PATH, "retry.json")  # under a file: the write fails
+    holder["api"] = _FlakyApi([])
+    e = raises(SystemExit, lambda: w._login_with_retry(_c))
+    w.RETRY_PATH = _rp
+    check(e is not None and e.code == w.STATE_EXIT and holder["api"].logins == 0,
+          "audit F2: a login record that cannot be written → no login, exit STATE_EXIT", e)
+
+    # a crash soon after a good login keeps the record; a session that held LOGIN_STABLE_S drops it; a
+    # requested stop (desktop stdin closed / a signal) logs out, no climb, the first spacing kept
+    class _ServeApi(FakeApi):
+        def __init__(self, on_margin, **kw):
+            super().__init__(**kw)
+            self.on_margin = on_margin
+
+        def margin(self, acct):
+            self.on_margin()
+            return super().margin(acct)
+
+    def _crash():
+        raise _Killed()
+
+    seen = {}
+
+    def _stable_then_stop():
+        seen["record"] = os.path.exists(w.RETRY_PATH)
+        w._STOP.set()
+
+    w.WORKSPACE = TMP
+    try:
+        holder["api"] = _ServeApi(_crash)
+        _bind_store()
+        raises(_Killed, w._serve)
+        rec = _rec()
+        crashed = (rec.get("failures"), holder["api"].logged_out)
+        _drop(w.RETRY_PATH)
+        w.LOGIN_STABLE_S = 0.0
+        holder["api"] = _ServeApi(_stable_then_stop)
+        t_stop = time.time()
+        rc = w._serve()
+        rec = _rec()
+    finally:
+        w.WORKSPACE = real_ws
+        w.LOGIN_STABLE_S = saved["LOGIN_STABLE_S"]
+        w._STOP.clear()
+    check(crashed == (1, True),
+          "audit F2: a crash right after a good login logs out and keeps the attempt on record (the restart "
+          "climbs)", crashed)
+    check(seen == {"record": False} and rc == 0 and holder["api"].logged_out
+          and rec.get("failures") == 0 and rec.get("retry_at", 0) - t_stop >= _ladder[0] - 0.05,
+          "…a session past LOGIN_STABLE_S drops it; a requested stop logs out (finally) and leaves the first "
+          "spacing only, no climb", (seen, rc, rec))
+    _drop(w.RETRY_PATH)
+    w.LOGIN_RETRY_S, w.LOGIN_RETRY_LONG_S, w.LOGIN_451_WAIT_S = (0.05, 0.05), 0.05, 0.4
+    # a good login ends the streak: a crash 26 min into a healthy session, then one unanswered login,
+    # must not send an unreachable notice dated from the old streak (nor reach the 150-min P1 early)
+    w.UNREACHABLE_AFTER_S = 0.3
+    holder["api"] = _FlakyApi([TimeoutError("t")])
+    w._login_with_retry(_c)
+    ended = _rec()
+    time.sleep(0.35)  # the healthy session outlives UNREACHABLE_AFTER_S, then crashes (record kept)
+    emitted.clear()
+    holder["api"] = _FlakyApi([TimeoutError("t")])
+    w._login_with_retry(_c)
+    w.UNREACHABLE_AFTER_S = 3600
+    check(ended.get("since") is None and ended.get("announced_at") is None and ended.get("failures") == 2
+          and emitted == [],
+          "audit F2: a good login keeps the crash ladder but ends the streak — the next unanswered login "
+          "after a crash starts a new one, no immediate exchange_unreachable", (ended, emitted))
+    _drop(w.RETRY_PATH)
+    # audit F3: the network not up (boot) or dropped is a plain OSError — retried, never a STOP
+    import errno as _errno
+    holder["api"] = _FlakyApi([OSError(_errno.ENETUNREACH, "Network is unreachable"),
+                               OSError(_errno.EHOSTUNREACH, "No route to host")])
+    w._login_with_retry(_c)
+    check(holder["api"].logins == 3 and not os.path.exists(w.STOP_PATH) and emitted == [],
+          "audit F3: ENETUNREACH / EHOSTUNREACH logins are retried — no STOP, no venue_login_blocked",
+          (holder["api"].logins, emitted))
+    _drop(w.RETRY_PATH)
     # N-C: the stop's P1 goes out even when its snapshot cannot be written
     w._write_snapshot = lambda s: (_ for _ in ()).throw(OSError("disk full"))
     holder["api"] = _FlakyApi([RuntimeError("bad key")])
@@ -1182,8 +1584,7 @@ class _StopApi(FakeApi):
         raise SystemExit(0)  # what the SIGTERM handler raises mid-loop
 
 
-with open(os.path.join(TMP, ".env"), "w") as f:
-    f.write("sinopac_api_key=k\nsinopac_secret_key=s\n")
+_bind_store()
 holder["api"] = _StopApi()
 w.WORKSPACE = TMP
 raises(SystemExit, w.main)

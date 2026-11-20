@@ -27,10 +27,14 @@ state/sinopac_account.json (lib/sinopac_futures_account.py only reads that file)
 places the futures orders lib/order_sinopac.py hands it as request files in
 state/sinopac_orders/.
 
-A login that never reached an answer (timeout, connection, 503 maintenance, 451 too many
-connections) is tried again for good — spaced (LOGIN_RETRY_S, then LOGIN_RETRY_LONG_S), persisted
-across restarts, 451 waits LOGIN_451_WAIT_S — with a `waiting` snapshot the reconciler skips the
-round on, and exchange_unreachable as its P1 (Wei 11-17, as 群益). Any other failed login —
+A login that never reached an answer (timeout, connection, network down, 503 maintenance, 451 too
+many connections) is tried again for good — spaced (LOGIN_RETRY_S, then LOGIN_RETRY_LONG_S),
+persisted across restarts, 451 waits LOGIN_451_WAIT_S — with a `waiting` snapshot the reconciler
+skips the round on, and exchange_unreachable as the streak's notice (Wei 11-17, as 群益). Every
+login is recorded as failed BEFORE it is tried and the record stays until the session has held
+LOGIN_STABLE_S: a process killed mid-login, or crashing soon after one, restarts on the same ladder
+— never an immediate login (the national id's 1000 logins a day and its 451 lock are shared). Any
+other failed login —
 credentials, certificate, not signed, no futures account, the SDK version, anything unidentified —
 stops the worker (exit LOGIN_STOPPED_EXIT, written to state/sinopac_login_stopped.json). Only `--once` (the user
 confirming a login) clears it. The stop is the user's P1 venue_login_blocked, sent once; it stops
@@ -52,8 +56,23 @@ UnicodeEncodeError), and a process that exits without api.logout() never exits
 errors replaced, SIGTERM / SIGBREAK become a normal exit through the finally
 that logs out, and the entry point ends with os._exit.
 
+The futures-enabled marker (ENABLED_PATH) is what makes flatten and the account reader treat 永豐
+as bound: a worker that cannot write it does not log in (exit STATE_EXIT), or the reconciler would
+trade a venue a close-all skips. The login record above fails the same way.
+
+Credentials come from lib/sinopac_vault.resolve, never from .env values (it holds sentinels): a
+machine not bound through the connect flow, or a desktop whose app has not handed them over, exits
+NOT_BOUND_EXIT with no STOP and no notice. An unbind or rebind seen in .env logs out and exits the
+same way — the cloud's unbind has no right to stop this service.
+
+Desktop (runtime/sinopac_local.py): the credentials are the first line on stdin, then STOP_ON_EOF=1 in the environment makes the closing of stdin the
+stop request — Windows has no signal that reaches the finally — taken between requests, never
+mid-order.
+
 Run: python lib/sinopac_worker.py          (daemon)
      python lib/sinopac_worker.py --once   (one login + read → state/sinopac_probe.json)
+     python lib/sinopac_worker.py --sim-test   (the signing review's simulation order → state/sinopac_sim_test.json)
+     python lib/sinopac_worker.py --install / --uninstall   (Windows cloud: NSSM blave-agent-sinopac)
 """
 import os
 import sys
@@ -72,11 +91,13 @@ if __name__ == "__main__" and not __package__:
     _imports["install"](_WS, _imports["SCRIPT_SIBLINGS"])
 
 import contextlib
+import errno
 import hashlib
 import json
 import re
 import signal
 import socket
+import ssl
 import threading
 import time
 
@@ -101,17 +122,25 @@ RETRY_PATH = os.path.join(STATE, "sinopac_login_retry.json")
 # past the gate, never removed (an unbind keeps it), so a lost snapshot reads as an error, not as
 # a machine that never had futures (Wei 11-17)
 ENABLED_PATH = os.path.join(STATE, "sinopac_futures_enabled.json")
+# = runtime/sinopac_service.WANTED: written by the connect flow's last step, removed on rebind / unbind
+WANTED_PATH = os.path.join(STATE, "sinopac_worker_wanted.json")
 
 POLL_S = 60
 # waits after the 1st..5th unanswered login in a row, then LOGIN_RETRY_LONG_S for good (Wei 11-17:
 # retry like 群益, never a STOP). Each failed login logs out, so no connection is held meanwhile.
-# The P1 is exchange_unreachable UNREACHABLE_AFTER_S into the streak (the 6th failure, 25 min), then every
+# The streak's notice is exchange_unreachable UNREACHABLE_AFTER_S in (the 6th failure, 25 min), then every
 # UNREACHABLE_REPEAT_S; the reconciler skips those rounds (`waiting` snapshot), so it sends none.
 LOGIN_RETRY_S = (60, 120, 240, 480, 600)
 LOGIN_RETRY_LONG_S = 1800
 UNREACHABLE_AFTER_S = 1500
 UNREACHABLE_REPEAT_S = 7200
+# = api agent_events.CAPITAL_UNREADABLE_P1_MIN: the platform raises the notice to P1 from here on (Wei
+# 11-17, as 群益). The 30-minute retries alone would land at 145 and 175: one retry is moved onto it
+UNREACHABLE_P1_AT_S = 150 * 60
 LOGIN_451_WAIT_S = 600  # resume plan §4: after a 451, wait 10 minutes
+# a session that held this long was not a crash loop: its login record is dropped. A crash before
+# it climbs the ladder — at most ~48 logins a day, under the national id's 1000
+LOGIN_STABLE_S = 1800
 REQUEST_CHECK_S = 0.5
 CONFIRM_POLL_S = 1.0
 CONTRACTS_WAIT_S = 60.0
@@ -119,6 +148,10 @@ CONTRACTS_POLL_S = 1.0
 SEND_MARGIN_S = 5.0  # a request waits out the settle window only when this much is left to confirm
 LOGIN_STOPPED_EXIT = 3
 UNVERIFIED_EXIT = 4
+STATE_EXIT = 5  # the futures-enabled marker or the login record not written: no login, try again later
+NOT_BOUND_EXIT = 6  # not bound through the connect flow, credentials not handed over, or unbound: no STOP
+STOP_ON_EOF = "BLAVE_SINOPAC_STOP_ON_EOF"
+_STOP = threading.Event()  # set by _watch_stdin; read only between requests
 VERIFIED = "futures" in venue_traits.verified_modes("sinopac")
 SDK_VERSION = "1.7.11"  # the version M0 ran; any other is refused before a login
 ROOTS = contracts.ROOTS
@@ -273,16 +306,18 @@ def _read_env(path):
     return env
 
 
-def creds(env):
-    """Names locked by already-bound machines (web CX_VENUES): lowercase sinopac_*."""
-    c = {k: env.get(k, "") for k in ("sinopac_api_key", "sinopac_secret_key", "sinopac_ca_path",
-                                     "sinopac_ca_passwd", "sinopac_person_id")}
-    c["live"] = str(env.get("SINOPAC_LIVE", "")).lower() == "true"
-    if not c["sinopac_api_key"] or not c["sinopac_secret_key"]:
-        raise ValueError("sinopac_api_key / sinopac_secret_key missing from .env")
-    if c["live"] and (not c["sinopac_ca_path"] or not c["sinopac_ca_passwd"]):
-        raise ValueError("SINOPAC_LIVE=true but sinopac_ca_path / sinopac_ca_passwd missing")
-    return c
+def creds():
+    """This machine's 永豐 login, from the credential store (lib/sinopac_vault.resolve): .env holds
+    sentinels under the locked lowercase names, never the values."""
+    return sinopac_vault.resolve(_read_env(os.path.join(WORKSPACE, ".env")))
+
+
+def _bound_key():
+    """.env's sinopac_api_key sentinel now: changes on an unbind (gone) or a rebind (another key)."""
+    try:
+        return _read_env(os.path.join(WORKSPACE, ".env")).get("sinopac_api_key", "")
+    except OSError:
+        return None  # unreadable this time (Windows mid-replace): not taken as an unbind
 
 
 class LoginError(RuntimeError):
@@ -308,15 +343,16 @@ def null_sdk_log():
     os.environ["SJ_LOG_PATH"] = os.devnull
 
 
-def login(c):
-    """(api, futures account). Logs out on every failure path."""
+def login(c, require_signed=True):
+    """(api, futures account). Logs out on every failure path. require_signed=False: the signing
+    review's simulation test only (run_sim_test), on an account that is not signed yet."""
     null_sdk_log()
     import shioaji as sj
 
     version = str(getattr(sj, "__version__", "") or "")
     if version != SDK_VERSION:
         raise LoginError(f"shioaji {version or '(unknown version)'} installed — the 永豐 futures "
-                         f"worker runs on {SDK_VERSION} only; nothing logged in")
+                         f"worker runs on {SDK_VERSION} only; nothing logged in", "VERSION")
     api = sj.Shioaji(simulation=not c["live"])
     try:
         accounts = api.login(api_key=c["sinopac_api_key"], secret_key=c["sinopac_secret_key"],
@@ -333,8 +369,8 @@ def login(c):
                 raise LoginError("activate_ca returned falsy — certificate not usable", "CERT")
         acct = _futures_account(sj, api, accounts)
         if acct is None:
-            raise LoginError("login returned no futures account (期貨戶未開或 API 未勾期貨)")
-        if getattr(acct, "signed", True) is False:
+            raise LoginError("login returned no futures account (期貨戶未開或 API 未勾期貨)", "NO_FUTURES")
+        if require_signed and getattr(acct, "signed", True) is False:
             raise LoginError("futures account not signed (期貨 API 聲明書未簽或審核中)", "NOT_SIGNED")
         if not wait_contracts(api):
             # not a failed login (no STOP, no P1): every read fails until the list is there
@@ -363,18 +399,57 @@ def too_many_connections(e):
     return bool(re.search(r"\b451\b", str(e))) or "too many connection" in str(e).lower()
 
 
+# A machine whose network is not up yet (boot) or just dropped: these stay plain OSError — unlike
+# ETIMEDOUT / ECONNREFUSED / ECONNRESET, Python maps them to no TimeoutError / ConnectionError
+# subclass. By number only: FileNotFoundError / PermissionError on the certificate are OSErrors too
+# and must stay a CERT stop. Windows sockets report the WSA numbers.
+_NETWORK_ERRNOS = frozenset(v for v in (getattr(errno, n, None) for n in (
+    "ENETUNREACH", "EHOSTUNREACH", "ENETDOWN", "EHOSTDOWN", "ENETRESET",
+    "WSAENETUNREACH", "WSAEHOSTUNREACH", "WSAENETDOWN", "WSAEHOSTDOWN", "WSAENETRESET")) if v is not None)
+
+
+_OS_STOPS = (FileNotFoundError, PermissionError, IsADirectoryError, NotADirectoryError,
+             ssl.SSLCertVerificationError)
+
+
 def retryable(e):
     """The login never got an answer: a timeout, a connection error (ShioajiTimeoutError /
-    ShioajiConnectionError subclass the builtins), DNS while the network comes up, 503
-    maintenance, 451 too many connections. Never one of this module's own LoginErrors."""
+    ShioajiConnectionError subclass the builtins), the network down or unreachable, DNS while the
+    network comes up, 503 maintenance, 451 too many connections. Never one of this module's own
+    LoginErrors."""
     if isinstance(e, LoginError):
         return False
     if isinstance(e, (TimeoutError, ConnectionError, socket.gaierror)):
         return True
+    if isinstance(e, OSError) and (e.errno in _NETWORK_ERRNOS
+                                   or getattr(e, "winerror", None) in _NETWORK_ERRNOS):
+        return True
+    # any other OSError is the connection too (EADDRNOTAVAIL at boot, a TLS handshake cut short) —
+    # except a file the login could not read and a server certificate that did not verify
+    if isinstance(e, OSError) and not isinstance(e, _OS_STOPS):
+        return True
     return "SystemMaintenance" in _sdk_classes(e) or too_many_connections(e)
 
 
+# login(receive_window=) at the SDK default, 30000 ms: a request stamped further off is refused
+RECEIVE_WINDOW_S = 30
+
+
+def _clock_off():
+    """lib/tw_clock's measured skew past the receive window; False when not measured."""
+    try:
+        s = tw_clock.gross_skew()
+    except Exception:
+        return False
+    return s is not None and abs(s) > RECEIVE_WINDOW_S
+
+
 def _login_reason(e):
+    """The venue_login_blocked class (api notify._LOGIN_BLOCK_REASON; the connect screen reads it
+    from the probe and STOP files). TOO_MANY and TIMEOUT are retried, never a stop. KEY and CLOCK
+    are unmeasured: which exception 1.7.11 raises for a wrong key or a skewed clock was never seen —
+    KEY is the stubs' AuthError family (HTTP 401), CLOCK a refusal while this machine's clock is
+    measured off past RECEIVE_WINDOW_S (checked first: such a refusal may also come back as a 401)."""
     if isinstance(e, LoginError):
         return e.reason
     names = _sdk_classes(e)
@@ -382,8 +457,16 @@ def _login_reason(e):
         return "NOT_SIGNED"
     if "CaError" in names:
         return "CERT"
+    if too_many_connections(e):
+        return "TOO_MANY"
     if retryable(e):
         return "TIMEOUT"
+    if isinstance(e, ImportError):
+        return "VERSION"  # shioaji missing or broken: the connect step reinstalls it
+    if "ShioajiError" in names and _clock_off():  # the broker refused, not one of our own checks
+        return "CLOCK"
+    if "AuthError" in names:
+        return "KEY"
     return "UNKNOWN"
 
 
@@ -405,7 +488,7 @@ def wait_contracts(api, wait_s=None):
                 futures_bases(api, root)
             return True
         except Exception:
-            if time.time() >= deadline:
+            if time.time() >= deadline or _STOP.is_set():
                 return False
         _beat()
         time.sleep(CONTRACTS_POLL_S)
@@ -509,7 +592,14 @@ def read_account(api, acct):
     snap["listed"] = listed_contracts(api)
     snap["account_fp"] = hashlib.sha256(
         f"sinopac-account-v1\0{getattr(acct, 'account_id', '')}".encode()).hexdigest()[:16]
+    snap["account_masked"] = mask_account(getattr(acct, "account_id", ""))
     return snap
+
+
+def mask_account(account_id):
+    """The done page's account line: the last 4 characters only (`****1234`); "" when none."""
+    a = str(account_id or "").strip()
+    return "****" + a[-4:] if len(a) > 4 else ("****" if a else "")
 
 
 def _write_snapshot(snap):
@@ -874,20 +964,54 @@ def _last_positions():
         return []
 
 
-def _wait_retry(retry_at, failures, err, positions):
+def _wait_retry(retry_at, failures, err, positions, st=None):
     """Logged out until retry_at, the snapshot restamped every POLL_S (lib/sinopac_futures_account
     reads it as `waiting`: the reconciler skips the round instead of counting a failed read). It
     carries the last read's rows, never read as positions (ok false), for a later stop's P1. No
-    heartbeat meanwhile: lib/order_sinopac refuses an order before writing its request."""
-    while time.time() < retry_at:
+    heartbeat meanwhile: lib/order_sinopac refuses an order before writing its request.
+    `st` = the streak: a notice that falls due inside the wait goes out then, not at the next
+    login — a 451's 10-minute spacing would otherwise push the 25-minute one to 30."""
+    while time.time() < retry_at and not _STOP.is_set():
+        if st is not None:
+            _announce_if_due(st, time.time())
         at = time.strftime("%H:%M", time.gmtime(retry_at + 8 * 3600))
+        text = (f"永豐登入失敗 {failures} 次（{err}），{at} 再試" if err
+                else f"永豐上一次登入沒有結果（程序中斷），{at} 再試")
         try:
             _write_snapshot({"ok": False, "waiting": "login_retry", "retry_at": retry_at,
-                             "positions": positions,
-                             "error": f"永豐登入失敗 {failures} 次（{err}），{at} 再試"})
+                             "positions": positions, "error": text})
         except OSError as e:
             _log(f"waiting snapshot not written ({type(e).__name__})")
-        time.sleep(max(0.0, min(POLL_S, retry_at - time.time())))
+        until = retry_at
+        if st is not None:
+            due = next_announce_at(st["since"], st["announced_at"])
+            if due is not None and due > time.time():
+                until = min(until, due)
+        _STOP.wait(max(0.0, min(POLL_S, until - time.time())))
+
+
+def next_announce_at(since, announced_at):
+    """When announce_due next turns true for this streak (None: no streak)."""
+    if since is None:
+        return None
+    if announced_at is None:
+        return since + UNREACHABLE_AFTER_S
+    if _p1_pending(since, announced_at):
+        return since + UNREACHABLE_P1_AT_S
+    return announced_at + UNREACHABLE_REPEAT_S
+
+
+def _announce_if_due(st, now):
+    """exchange_unreachable for this streak when due (never while HALT is set); the time it went
+    out is kept in st and on disk, so a restart does not send it twice."""
+    if not announce_due(st["since"], st["announced_at"], now) or guard.halted():
+        return
+    events.emit("exchange_unreachable", venue="sinopac", minutes=int((now - st["since"]) // 60), code="login")
+    st["announced_at"] = now
+    try:
+        _atomic_write(RETRY_PATH, st)
+    except OSError as e:
+        _log(f"login retry state not written ({type(e).__name__})")
 
 
 def retry_wait_s(failures, e=None):
@@ -897,19 +1021,66 @@ def retry_wait_s(failures, e=None):
     return max(wait, LOGIN_451_WAIT_S) if e is not None and too_many_connections(e) else wait
 
 
+def _p1_pending(since, announced_at):
+    """No notice sent yet at or past the P1 mark of this streak."""
+    return announced_at is None or announced_at - since < UNREACHABLE_P1_AT_S
+
+
 def announce_due(since, announced_at, now):
-    """exchange_unreachable is due: the streak is UNREACHABLE_AFTER_S old and none was sent, or the
-    last one is UNREACHABLE_REPEAT_S old (群益's cadence, manager/reconciler UNREACHABLE_REPEAT_S)."""
+    """exchange_unreachable is due: the streak is UNREACHABLE_AFTER_S old and none was sent, it
+    reached UNREACHABLE_P1_AT_S with none sent there yet, or the last one is UNREACHABLE_REPEAT_S
+    old — 25, 150, 270, 390 … minutes (群益: 30, 150, 270)."""
     if since is None or now - since < UNREACHABLE_AFTER_S:
         return False
-    return announced_at is None or now - announced_at >= UNREACHABLE_REPEAT_S
+    if announced_at is None:
+        return True
+    if now - since < UNREACHABLE_P1_AT_S:
+        return False  # the second one waits for the mark: a 145-minute repeat would be P2 again
+    if _p1_pending(since, announced_at):
+        return True
+    return now - announced_at >= UNREACHABLE_REPEAT_S
 
 
-def _login_with_retry(c):
+def p1_aligned_wait(wait, since, announced_at, now, floor=0.0):
+    """`wait`, cut so the next login lands on the streak's P1 mark when it would otherwise step
+    over it with no notice there yet (never below `floor`: a 451's wait stays)."""
+    mark = since + UNREACHABLE_P1_AT_S
+    if since is not None and now < mark < now + wait and _p1_pending(since, announced_at):
+        return max(mark - now, floor)
+    return wait
+
+
+def _note_attempt(st):
+    """The login about to run, written down as already failed (failures + 1, the wait that follows
+    it, a 451 wait kept): a process that dies inside it — killed mid-login, the native layer
+    hanging — or crashes soon after it restarts on the ladder. Raises OSError when it cannot be
+    written: the caller does not log in."""
+    now = time.time()
+    failures = st["failures"] + 1
+    wait = retry_wait_s(failures)
+    if st["error"] and too_many_connections(st["error"]):
+        wait = max(wait, LOGIN_451_WAIT_S)
+    st = dict(st, failures=failures, since=st["since"] or now, retry_at=now + wait)
+    _atomic_write(RETRY_PATH, st)
+    return st
+
+
+def _note_logout():
+    """A session that ended on request (signal, the desktop's stop): the next start is not a crash
+    — no climb — but still waits the first spacing."""
+    try:
+        _atomic_write(RETRY_PATH, {"failures": 0, "retry_at": time.time() + LOGIN_RETRY_S[0],
+                                   "error": None, "since": None, "announced_at": None})
+    except OSError as e:
+        _log(f"logout record not written ({type(e).__name__})")
+
+
+def _login_with_retry(c, bound_key=None):
     """login(c). An unanswered login (retryable) is tried again for good, spaced by retry_wait_s;
-    the streak survives a restart (RETRY_PATH). Its P1 is exchange_unreachable, UNREACHABLE_AFTER_S
-    in and every UNREACHABLE_REPEAT_S after, never while HALT is set (as the reconciler's: that
-    event says trading resumes by itself). Any other failure stops (_login_stopped)."""
+    the streak survives a restart (RETRY_PATH). Its notice is exchange_unreachable (announce_due:
+    25, 150, then every 2 h; one retry is moved onto the 150-min P1 mark), never while HALT is set (as the
+    reconciler's: that event says trading resumes by itself). Any other failure stops
+    (_login_stopped). The record of the good login stays: _serve drops it after LOGIN_STABLE_S."""
     st = _retry_state()
     positions = _last_positions()
     # the reconciler reads a missing or stale snapshot as a failed read (three in a row HALT): a
@@ -919,7 +1090,17 @@ def _login_with_retry(c):
     except OSError as e:
         _log(f"logging-in snapshot not written ({type(e).__name__})")
     while True:
-        _wait_retry(st["retry_at"], st["failures"], st["error"], positions)
+        _wait_retry(st["retry_at"], st["failures"], st["error"], positions, st)
+        if _STOP.is_set():
+            sys.exit(0)  # nothing held: no session yet
+        if bound_key is not None and _bound_key() not in (None, bound_key):
+            _log("永豐 unbound or rebound while waiting to log in — not logging in")
+            sys.exit(NOT_BOUND_EXIT)
+        try:
+            st = _note_attempt(st)
+        except OSError as e:
+            _log(f"login record not written ({type(e).__name__}) — not logging in")
+            sys.exit(STATE_EXIT)
         try:
             out = login(c)
         except Exception as e:
@@ -927,31 +1108,38 @@ def _login_with_retry(c):
             if not retryable(e):
                 _login_stopped(err, _login_reason(e))
             now = time.time()
-            st["failures"] += 1
-            st["since"] = st["since"] or now
-            wait = retry_wait_s(st["failures"], e)
-            st.update(retry_at=now + wait, error=err)
             if announce_due(st["since"], st["announced_at"], now) and not guard.halted():
                 events.emit("exchange_unreachable", venue="sinopac", minutes=int((now - st["since"]) // 60),
                             code="login")
                 st["announced_at"] = now
+            wait = p1_aligned_wait(retry_wait_s(st["failures"], e), st["since"], st["announced_at"], now,
+                                   LOGIN_451_WAIT_S if too_many_connections(e) else 0.0)
+            st.update(retry_at=now + wait, error=err)
             try:
                 _atomic_write(RETRY_PATH, st)
             except OSError as e2:
-                _log(f"login retry state not written ({type(e2).__name__}) — a restart retries sooner")
+                _log(f"login retry state not written ({type(e2).__name__}) — the attempt's own record stands")
             _log(f"login failed ({err}) — try {st['failures'] + 1} in {wait:.0f}s")
             continue
-        _clear_retry()
+        # the streak is over: a crash later in this session restarts on the ladder (failures,
+        # retry_at kept) but must not date an unreachable notice from this streak's start
+        try:
+            _atomic_write(RETRY_PATH, dict(st, error=None, since=None, announced_at=None))
+        except OSError as e:
+            _log(f"login retry state not reset ({type(e).__name__})")
         return out
 
 
 def _mark_enabled():
+    """True once the marker is on disk. False = it could not be written: no login (audit F4)."""
     if os.path.exists(ENABLED_PATH):
-        return
+        return True
     try:
         _atomic_write(ENABLED_PATH, {"at": time.time()})
+        return True
     except OSError as e:
-        _log(f"futures-enabled marker not written ({type(e).__name__})")
+        _log(f"futures-enabled marker not written ({type(e).__name__}) — not logging in")
+        return False
 
 
 def run_once():
@@ -960,22 +1148,40 @@ def run_once():
         _atomic_write(PROBE_PATH, {"ok": False, "error": "unverified", "read_at": time.time()})
         _log("永豐 futures is not live-verified yet — no login")
         return UNVERIFIED_EXIT
-    _mark_enabled()
+    try:
+        c = creds()
+    except sinopac_vault.NotBound as e:  # nothing was logged in with: no marker, no STOP touched
+        _atomic_write(PROBE_PATH, {"ok": False, "error": "not bound", "read_at": time.time()})
+        _log(f"probe not run: {e}")
+        return NOT_BOUND_EXIT
+    except Exception as e:
+        c = e  # bound, but the store fails: the probe file says so below
+    if not _mark_enabled():
+        try:
+            _atomic_write(PROBE_PATH, {"ok": False, "error": "state not writable", "read_at": time.time()})
+        except OSError:
+            pass
+        return STATE_EXIT
     with quiet_sdk():
-        return _run_once()
+        return _run_once(c)
 
 
-def _run_once():
+def _run_once(c):
     api = None
     try:
-        c = creds(_read_env(os.path.join(WORKSPACE, ".env")))
+        if isinstance(c, Exception):
+            raise c
         api, acct = login(c)
         snap = read_account(api, acct)
         _atomic_write(PROBE_PATH, dict(snap, read_at=time.time(), simulation=not c["live"]))
+        was_stopped = os.path.exists(STOP_PATH)
         try:
             os.remove(STOP_PATH)
         except OSError:
             pass
+        if was_stopped:
+            # canon notifications.md venue_login_recovered: the user's confirmed login lifted the stop
+            events.emit("venue_login_recovered", venue="sinopac")
         _clear_retry()
         _log(f"probe ok equity={snap['equity']} positions="
              f"{[(r['productid'], r['net']) for r in snap['positions']]}")
@@ -992,6 +1198,57 @@ def _run_once():
             api.logout()
 
 
+SIM_PATH = os.path.join(STATE, "sinopac_sim_test.json")
+SIM_CONFIRM_S = 15.0
+
+
+def run_sim_test():
+    """`--sim-test` (runtime/sinopac_connect sinopac_sim_test): the test 永豐's signing review wants
+    — one simulation-mode login and one futures order (TMF near month, 1 lot, market IOC: the
+    shape the live path sends; UNMEASURED in simulation). Never production, never the bot's book,
+    no last-order marker. → SIM_PATH {ok, broker_status | reason, read_at}; exit 0 when 永豐 took it."""
+    if not VERIFIED:
+        _atomic_write(SIM_PATH, {"ok": False, "error": "unverified", "read_at": time.time()})
+        return UNVERIFIED_EXIT
+    try:
+        c = dict(creds(), live=False)
+    except sinopac_vault.NotBound as e:
+        _atomic_write(SIM_PATH, {"ok": False, "error": "not bound", "read_at": time.time()})
+        _log(f"simulation test not run: {e}")
+        return NOT_BOUND_EXIT
+    # a simulation order still goes through the restart stop and the HALT freeze: while trading is
+    # stopped on this machine nothing is sent, test orders included
+    try:
+        guard.check_restart_stop("entry", {"venue": "sinopac", "market": "futures", "symbol": "TMF",
+                                           "action": "buy", "qty": 1, "unit": "lots", "simulation": True})
+    except guard.Halted as e:
+        _atomic_write(SIM_PATH, {"ok": False, "error": "trading stopped on this machine", "read_at": time.time()})
+        _log(f"simulation test not run: {e}")
+        return 2
+    with quiet_sdk():
+        api = None
+        try:
+            api, acct = login(c, require_signed=False)
+            import shioaji as sj
+            code, octype = pick_contract([], "TMF", "entry", "buy", 1, listed_contracts(api))
+            trade = api.place_order(contract_for(api, code), sj.FuturesOrder(
+                action=sj.Action.Buy, price=0, quantity=1, price_type=sj.FuturesPriceType.MKT,
+                time_in_force=sj.TimeInForce.IOC, octype=getattr(sj.FuturesOCType, octype), account=acct))
+            status, trade = _confirm(api, acct, trade, time.time() + SIM_CONFIRM_S)
+            ok = status not in FAILED
+            _atomic_write(SIM_PATH, {"ok": ok, "broker_status": status, "read_at": time.time()})
+            _log(f"simulation test order {status}")
+            return 0 if ok else 2
+        except Exception as e:
+            _atomic_write(SIM_PATH, {"ok": False, "error": _sanitize(e), "reason": _login_reason(e),
+                                     "read_at": time.time()})
+            _log(f"simulation test failed: {_sanitize(e)}")
+            return 2
+        finally:
+            if api is not None:
+                api.logout()
+
+
 def main():
     os.chdir(WORKSPACE)  # lib/guard's HALT / audit paths are workspace-relative
     # started from inside an agent turn, its first order would take that turn's order lock and hold
@@ -1002,25 +1259,77 @@ def main():
     if not VERIFIED:
         _log("永豐 futures is not live-verified yet — no login")
         return UNVERIFIED_EXIT
-    _mark_enabled()
+    try:
+        # first: on the desktop this takes the daemon's credentials line off stdin, before the
+        # stop-on-EOF watch drains the pipe
+        c = creds()
+    except sinopac_vault.NotBound as e:
+        _log(f"not started: {e}")
+        return NOT_BOUND_EXIT
+    except Exception as e:
+        c = e  # bound, but the store fails: _serve stops on it, past the marker
+    if not os.path.exists(WANTED_PATH):
+        # the connect flow has not finished (a rebind deletes it): whoever started this daemon — the
+        # Linux shim, the desktop supervisor, or NSSM at a Windows boot — no login before the flow's own
+        _log("not started: the 永豐 connect flow has not finished on this machine")
+        return NOT_BOUND_EXIT
+    if not _mark_enabled():
+        return STATE_EXIT
     if os.path.exists(STOP_PATH):
         _log("a previous login failed — not logging in until the user confirms one (--once)")
         return LOGIN_STOPPED_EXIT
+    _watch_stdin()
     with quiet_sdk():
-        return _serve()
+        return _serve(c)
 
 
-def _serve():
+def _watch_stdin():
+    """STOP_ON_EOF: the parent closing our stdin (or dying) asks for a stop."""
+    if os.environ.get(STOP_ON_EOF) != "1":
+        return
+
+    def watch():
+        try:
+            while os.read(0, 4096):
+                pass
+        except OSError:
+            pass
+        _STOP.set()
+    threading.Thread(target=watch, daemon=True, name="stdin-eof").start()
+
+
+def _serve(c=None):
     _sweep_orders()
     try:
-        c = creds(_read_env(os.path.join(WORKSPACE, ".env")))
+        if c is None:
+            c = creds()
+        if isinstance(c, Exception):
+            raise c
+    except sinopac_vault.NotBound as e:
+        _log(f"not started: {e}")
+        sys.exit(NOT_BOUND_EXIT)
     except Exception as e:
         _login_stopped(_sanitize(e), _login_reason(e))
-    api, acct = _login_with_retry(c)
+    bound_key = sinopac_vault.bound_env(c["sinopac_api_key"], c["sinopac_secret_key"])["sinopac_api_key"]
+    api, acct = _login_with_retry(c, bound_key)
+    login_at = time.time()
+    on_request = False
     _beat()
     simulation = not c["live"]
     try:
         while True:
+            if _STOP.is_set():
+                on_request = True
+                return 0
+            now_key = _bound_key()
+            if now_key is not None and now_key != bound_key:
+                # unbound or bound to another key: the cloud's unbind cannot stop this service, so
+                # it leaves by itself (its shim / NSSM start the next one only if still wanted)
+                _log("永豐 unbound or rebound — logging out")
+                return NOT_BOUND_EXIT  # no logout record: drop() just removed the retry file
+            if login_at is not None and time.time() - login_at >= LOGIN_STABLE_S:
+                _clear_retry()
+                login_at = None
             _beat()
             try:
                 _write_snapshot(read_account(api, acct))
@@ -1032,7 +1341,7 @@ def _serve():
                 except OSError as e2:
                     _log(f"failed-read snapshot not written ({type(e2).__name__})")
             next_read = time.time() + POLL_S
-            while time.time() < next_read:
+            while time.time() < next_read and not _STOP.is_set():
                 time.sleep(REQUEST_CHECK_S)
                 _beat()
                 if serve_requests(api, acct, simulation):
@@ -1043,11 +1352,114 @@ def _serve():
                     except OSError:
                         pass
                     next_read = min(next_read, _settled_read_at())
+    except (SystemExit, KeyboardInterrupt):
+        on_request = True
+        raise
     finally:
         try:
             api.logout()
         except Exception:
             pass
+        if on_request:
+            _note_logout()
+
+
+# ── Windows cloud service (NSSM): lib/president_worker's recipe ─────────────────────────────────
+# Linux runs it from blave-agent-sinopac.service; a Windows cloud box (opened for 群益 / 統一) from
+# this NSSM service, installed by the connect flow's finish step and removed on unbind.
+SERVICE = "blave-agent-sinopac"
+DEPLOYMENTS_PATH = os.path.join(STATE, "deployments.json")
+INSTALL_WAIT_S = 120
+NSSM_RESTART_DELAY_MS = 60000  # = blave-agent-sinopac.service RestartSec; the login record spaces logins
+
+
+def _nssm(*args, timeout=60):
+    import subprocess
+    r = subprocess.run(["nssm", *args], capture_output=True, timeout=timeout)
+    return r.returncode
+
+
+def _deployments(update):
+    try:
+        deps = load_json(DEPLOYMENTS_PATH, encoding="utf-8")
+    except FileNotFoundError:
+        deps = {}
+    except ValueError:
+        deps = None
+    except OSError as e:  # still locked: skip rather than write the others away
+        _log(f"deployments.json not updated ({type(e).__name__})")
+        return
+    if not isinstance(deps, dict):
+        _log("deployments.json does not parse — set aside as .corrupt")
+        atomic_replace(DEPLOYMENTS_PATH, DEPLOYMENTS_PATH + ".corrupt")
+        deps = {}
+    update(deps)
+    _atomic_write(DEPLOYMENTS_PATH, deps)
+
+
+def install():
+    """Install (or re-point) and start the service, LocalSystem (the vault is SYSTEM +
+    Administrators); wait for its first snapshot. Exit 0 when it reads ok, 2 otherwise."""
+    import shutil
+    if os.name != "nt":
+        _log("install: Windows only (Linux runs blave-agent-sinopac.service)")
+        return 2
+    if os.environ.get("BLAVE_AGENT_LOCAL") == "1":
+        # on the user's own PC a LocalSystem service running agent-writable files would hand it SYSTEM
+        _log("install: not on the desktop app — cloud machines only")
+        return 2
+    if not shutil.which("nssm"):
+        _log("install: nssm not found on PATH")
+        return 2
+    started = time.time() - 2
+    if _nssm("status", SERVICE) == 0:
+        _nssm("stop", SERVICE, timeout=90)
+    elif _nssm("install", SERVICE, sys.executable, os.path.abspath(__file__)) != 0:
+        _log("install: nssm install failed")
+        return 2
+    log = os.path.join(STATE, "sinopac_worker.log")
+    os.makedirs(STATE, exist_ok=True)
+    steps = [("set", SERVICE, "Application", sys.executable),
+             ("set", SERVICE, "AppParameters", os.path.abspath(__file__)),
+             ("set", SERVICE, "AppDirectory", WORKSPACE),
+             ("set", SERVICE, "AppStdout", log),
+             ("set", SERVICE, "AppStderr", log),
+             ("set", SERVICE, "AppEnvironmentExtra", "SJ_LOG_PATH=" + os.devnull),
+             ("set", SERVICE, "Start", "SERVICE_AUTO_START"),
+             ("set", SERVICE, "AppRestartDelay", str(NSSM_RESTART_DELAY_MS))]
+    # stopped on purpose: a failed login (STOP), the gate shut, not bound — never restarted into a login
+    steps += [("set", SERVICE, "AppExit", str(code), "Exit")
+              for code in (LOGIN_STOPPED_EXIT, UNVERIFIED_EXIT, NOT_BOUND_EXIT)]
+    steps.append(("start", SERVICE))
+    for step in steps:
+        if _nssm(*step, timeout=90) != 0:
+            _log(f"install: nssm {step[0]} {step[2] if step[0] == 'set' else ''} failed")
+            return 2
+    _deployments(lambda d: d.setdefault("sinopac_worker", {
+        "type": "daemon", "expect_every_minutes": 5,
+        "registered_at": time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime())}))
+    deadline = time.time() + INSTALL_WAIT_S
+    while time.time() < deadline:
+        time.sleep(3)
+        try:
+            snap = load_json(OUT_PATH, encoding="utf-8")
+        except (OSError, ValueError):
+            continue
+        if (snap.get("read_at") or 0) >= started:
+            _log(f"install: service running, first snapshot ok={snap.get('ok')}")
+            return 0 if snap.get("ok") else 2
+    _log("install: service started but wrote no snapshot in time")
+    return 2
+
+
+def uninstall():
+    if os.name != "nt":
+        return 2
+    _nssm("stop", SERVICE, timeout=90)
+    rc = _nssm("remove", SERVICE, "confirm")
+    _deployments(lambda d: d.pop("sinopac_worker", None))
+    _log(f"uninstall: nssm remove rc={rc}")
+    return 0 if rc == 0 else 2
 
 
 def _hard_exit(code):
@@ -1062,11 +1474,16 @@ def _hard_exit(code):
 
 
 if __name__ == "__main__":
+    if "--install" in sys.argv[1:]:
+        sys.exit(install())
+    if "--uninstall" in sys.argv[1:]:
+        sys.exit(uninstall())
     _utf8_console()
     _exit_on_signals()
     rc = 1
     try:
-        rc = run_once() if "--once" in sys.argv[1:] else main()
+        rc = (run_once() if "--once" in sys.argv[1:] else run_sim_test() if "--sim-test" in sys.argv[1:]
+              else main())
     except KeyboardInterrupt:
         rc = 0
     except SystemExit as e:

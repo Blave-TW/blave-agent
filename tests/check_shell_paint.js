@@ -56,6 +56,38 @@ const deep = ">".repeat(20000) + " x\n" + "- ".repeat(5000) + "y"; const t1 = Da
 try { aiParts(deep, false); } catch (_) { deepOk = false; }
 t_("幾萬層的 > 與 - 不會把堆疊撐爆、也不會卡住(< 1s)", deepOk && Date.now() - t1 < 1000);
 
+// ── 歷史裡工具呼叫樣式的建議句(0.1.57 驗收 S4):定稿時剝,語意同 runtime extract_suggestions ──
+const INV = [
+  '回測完成。\n\n<invoke name="suggest">\n<parameter>帶我看怎麼把 Supertrend 趨勢（SOL）加進策略組合</parameter>\n</invoke>',
+  '好。\n<function_calls>\n<invoke name="suggest">\n<parameter name="text">回測 BTC 均線</parameter>\n</invoke>\n</function_calls>',
+  '好。\n<invoke name="suggest">\n<parameter>回測',
+  '好。\n<invoke name=\'suggest\'><parameter>回測 A</parameter></inv',
+  '程式碼:<invoke name="foo">x</invoke>',
+  '好。\n<invoke name="suggest">\n\n後面的正文要留著。',
+  '好。\n<invoke name="suggest">\n<parameter>回測 A</parameter>\n\n後面的正文要留著。',
+  '前段。 <invoke name=suggest><parameter>A</parameter></invoke> 後段還在。',
+  '一。\n<invoke name="suggest"><parameter>A</parameter></invoke>\n二。\n<invoke name="suggest"><parameter>B</parameter></invoke>',
+  '結論。\n<invoke name="suggest"><parameter>A</parameter></invoke>\n<suggest>\nB\n</suggest>',
+];
+const strip = (s) => J(aiParts(s, false).blocks);
+t_("收尾的 invoke 建議句定稿時剝乾淨", textOf(aiParts(INV[0], false)) === "回測完成。" && textOf(aiParts(INV[1], false)) === "好。");
+t_("截斷的 invoke 尾段剝乾淨", textOf(aiParts(INV[2], false)) === "好。" && textOf(aiParts(INV[3], false)) === "好。");
+t_("別的 invoke 不動", textOf(aiParts(INV[4], false)) === INV[4]);
+t_("沒閉合的 invoke 後面還有正文:整段不動", textOf(aiParts(INV[5], false)).includes("<invoke") && textOf(aiParts(INV[6], false)).includes("後面的正文要留著。"));
+t_("串流中不動(只管歷史與定稿)", textOf(aiParts(INV[0], true)).includes("<invoke"));
+{ const py = `import sys, types, os, tempfile, json
+sys.path.insert(0, ${JSON.stringify(path.join(__dirname, "..", "runtime"))})
+os.environ.setdefault("BLAVE_AGENT_DB", os.path.join(tempfile.mkdtemp(), "s.db"))
+sys.modules["claude_agent_sdk"] = types.ModuleType("claude_agent_sdk")
+import agent_turn
+print(json.dumps([agent_turn.extract_suggestions(s)[0] for s in json.load(sys.stdin)]))`;
+  const pyOut = JSON.parse(require("child_process").execFileSync("python3", ["-c", py], { input: J(INV), encoding: "utf8" }));
+  const off = INV.filter((s, i) => strip(s) !== strip(pyOut[i]));
+  t_("每條測資顯示結果與 runtime extract_suggestions 剝完的一樣(" + INV.length + " 條)", pyOut.length === INV.length && off.length === 0);
+  if (off.length) console.log(off); }
+const manyInv = '<invoke name="suggest">'.repeat(5000) + "x"; const t2 = Date.now(); aiParts(manyInv, false);
+t_("大量未閉合 invoke 不會卡住(< 1s)", Date.now() - t2 < 1000);
+
 // ── planWatch ──
 var timers = [], now = 1_000_000, said = [], sr = [], painted = 0, checks = 0;
 var running = false, acct = null, planErr = null, planSince = 0, planTimer = null, planWas = null, planDoneSaid = false, planDonePending = false, sessionId = "desktop-p1";
