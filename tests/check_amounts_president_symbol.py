@@ -24,6 +24,14 @@ sys.path.insert(0, os.path.join(ROOT, "runtime"))
 sys.path.insert(0, ROOT)
 os.chdir(WS)
 import command_listener as cl  # noqa: E402
+import lib.order_binance as ob  # noqa: E402
+import lib.order_okx as okx  # noqa: E402
+
+# the venue's own listing (VENUE_SYMBOL, tests/check_venue_symbol_save_gate.py) is not under test
+# here: these fixtures route TXF / 2330 SYMBOLs to Binance and OKX to test the market checks
+# alone, offline
+ob.get_contract_rules = okx.get_contract_rules = lambda env, sym: {"active": True}
+ob.get_spot_rules = okx.get_spot_rules = lambda env, sym: {"active": True}
 
 fails = 0
 CONFIG = os.path.join(WS, "manager", "portfolio_config.json")

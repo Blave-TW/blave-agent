@@ -399,8 +399,12 @@ def _public(env, path, params):
     r.raise_for_status()
     body = r.json()
     if body.get("retCode") != 0:
+        # 10001 is every parameter error; only its "symbol invalid" reply (measured 2026-11-21 on
+        # the public linear tickers, AMZN / an unlisted name) means the venue has no such symbol
+        unknown = str(body.get("retCode")) == "10001" and "symbol invalid" in str(body.get("retMsg") or "")
         raise BybitError(f"bybit {path} retCode={body.get('retCode')}: {body.get('retMsg')}",
-                         code=body.get("retCode"), http_status=r.status_code)
+                         code=body.get("retCode"), http_status=r.status_code,
+                         kind=reject_token.SYMBOL_UNAVAILABLE if unknown else None)
     return body.get("result") or {}
 
 

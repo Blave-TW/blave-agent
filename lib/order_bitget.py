@@ -553,7 +553,13 @@ def get_mark_price(env, symbol):
 
 
 def _ticker(vsym):
-    rows = acct.public("/api/v2/mix/market/ticker", {"symbol": vsym, "productType": PRODUCT}) or []
+    try:
+        rows = acct.public("/api/v2/mix/market/ticker", {"symbol": vsym, "productType": PRODUCT}) or []
+    except BitgetError as e:
+        if e.code == UNKNOWN_SYMBOL:   # the ticker answers an unlisted symbol 40034 too (measured 2026-11-21)
+            raise BitgetError(f"Bitget 沒有 {vsym} 這個 USDT 永續合約（{e}）",
+                              code=e.code, kind=reject_token.SYMBOL_UNAVAILABLE) from e
+        raise
     row = rows[0] if isinstance(rows, list) and rows else None
     if not isinstance(row, dict) or row.get("symbol") != vsym:
         raise BitgetError(f"bitget: no ticker for {vsym}", kind=reject_token.SYMBOL_UNAVAILABLE)

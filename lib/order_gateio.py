@@ -97,11 +97,13 @@ class GateioError(Exception):
 # docstring, references/lib.md). INSUFFICIENT_AVAILABLE — "Balance is not enough" — read on
 # 2026-11-16 at https://www.gate.com/docs/developers/apiv4/en/ › Error Handling › "Futures
 # related label list" (label and meaning read verbatim from the rendered page). Rejected keys:
-# account_gateio._CREDENTIAL. That table also lists SIZE_TOO_SMALL, CONTRACT_NOT_FOUND and
-# POSITION_EMPTY, not classified here yet; ORDER_SIZE_TOO_SMALL and REDUCE_ONLY_FAIL from the
-# order-copy spec are not on it.
+# account_gateio._CREDENTIAL. That table also lists SIZE_TOO_SMALL and POSITION_EMPTY, not
+# classified here yet; ORDER_SIZE_TOO_SMALL and REDUCE_ONLY_FAIL from the order-copy spec are not
+# on it. CONTRACT_NOT_FOUND: on that table, and measured 2026-11-21 on the public futures ticker
+# and contract endpoints for a contract Gate.io does not list.
 _REJECT_CODES = {"BALANCE_NOT_ENOUGH": reject_token.INSUFFICIENT_MARGIN,
-                 "INSUFFICIENT_AVAILABLE": reject_token.INSUFFICIENT_MARGIN}
+                 "INSUFFICIENT_AVAILABLE": reject_token.INSUFFICIENT_MARGIN,
+                 "CONTRACT_NOT_FOUND": reject_token.SYMBOL_UNAVAILABLE}
 
 
 # A market order whose worst fill would land too far from the mark price is

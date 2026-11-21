@@ -91,6 +91,8 @@ POST_ONLY_REJECT_CODES = {101215}
 SWAP_ORDER_GONE_CODES = {80016, 80017, 109421}
 SPOT_ORDER_GONE_CODES = {100404}
 
+_REJECT_CODES = {"109425": reject_token.SYMBOL_UNAVAILABLE}
+
 _rules_cache = {}  # symbol -> contract rules (per-process)
 _position_mode_cache = {}  # api_key -> "hedge" | "oneway"
 
@@ -101,9 +103,10 @@ class BingXError(Exception):
     def __init__(self, code, msg, path="", kind=None):
         self.code = code
         self.msg = msg
-        # lib/reject_token: only rejected keys (account_bingx._CREDENTIAL) — BingX's margin and
+        # lib/reject_token: rejected keys (account_bingx._CREDENTIAL) and 109425 "<symbol> not
+        # exist" (measured 2026-11-21 on the public premiumIndex and contracts). BingX's margin and
         # reduce-only codes could not be verified from its docs, so they stay unclassified
-        kind = kind or reject_token.from_code(code, {}, reject_token.credential_codes("bingx"))
+        kind = kind or reject_token.from_code(code, _REJECT_CODES, reject_token.credential_codes("bingx"))
         super().__init__(reject_token.tag(kind, f"BingX error {code}: {msg or '(empty msg)'} | {path}"))
 
 

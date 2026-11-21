@@ -83,8 +83,10 @@ class OKXError(Exception):
 # lib/reject_token kinds: 51008 insufficient margin (measured live 2026-08, references/manager.md
 # "Order-qty UNITS pitfall"), 51020 below the minimum (references/okx-skill.md). Rejected keys:
 # account_okx._CREDENTIAL. A reduce-only rejection code could not be verified from OKX's docs —
-# not classified (the message shows as is).
-_REJECT_CODES = {"51008": reject_token.INSUFFICIENT_MARGIN, "51020": reject_token.BELOW_MIN_SIZE}
+# not classified (the message shows as is). 51001 "Instrument ID … doesn't exist": measured live
+# on /market/ticker (XAUT-USDT-SWAP, 2026-11-12/21) — the price read comes before any rules read.
+_REJECT_CODES = {"51008": reject_token.INSUFFICIENT_MARGIN, "51020": reject_token.BELOW_MIN_SIZE,
+                 "51001": reject_token.SYMBOL_UNAVAILABLE}
 
 
 # Same pair as lib/account_okx.py — the token is what the desktop and web match on.

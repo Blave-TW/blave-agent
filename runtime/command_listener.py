@@ -3992,6 +3992,108 @@ def _us_signal_refusal(name, venue):
     return None
 
 
+# lib/portfolio._MARKET_RE / strategy_market: the reconciler's spot-or-swap, off the source
+_MARKET_CONST_RE = re.compile(r'^\s*MARKET\s*=\s*["\']([a-z]+)["\']', re.M)
+# lib/stock_perps renames Binance stock perps on these; with Binance unreadable their lib falls
+# back to the plain name, which they do not list — a refusal there would be a false one
+_STOCK_RENAMING_VENUES = ("bybit", "bingx", "bitget")
+# one budget for the whole save, every newly funded strategy together: the desktop waits 20 s and
+# the web 18 s for the ack, and the refusal reaches the user only through it
+_VENUE_SYMBOL_BUDGET_S = 5
+_VENUE_SYMBOL_SHOWN = 5
+
+
+def _venue_symbols(name):
+    """(symbols, 'swap' | 'spot') the strategy orders, read off disk: a Type C's latest weight
+    keys (state.json, else backtest_state.json), every key — a 0 weight today is a later entry
+    — or a Type A's SYMBOL. Dashless upper, as the reconciler orders them (lib/portfolio).
+    ((), None) = nothing to judge."""
+    src = _strategy_source(name)
+    if src is None:
+        return (), None
+    m = _MARKET_CONST_RE.search(src)
+    market = m.group(1) if m else "swap"
+    if not _strategy_is_portfolio(name):
+        sym = (_strategy_futures_symbol(name) or "").replace("-", "")
+        return ((sym,), market) if sym else ((), None)
+    for fname in ("state.json", "backtest_state.json"):
+        try:
+            doc = atomic_file.load_json(os.path.join(WORKSPACE, "strategies", name, fname), encoding="utf-8")
+        except (OSError, ValueError):
+            continue
+        w = doc.get("weights") if isinstance(doc, dict) else None
+        if isinstance(w, dict) and w:
+            keys = {str(s).strip().replace("-", "").upper() for s in w}
+            return sorted(keys - {""}), market
+    return (), None
+
+
+def _venue_symbol_refusal(name, venue, deadline):
+    """A newly funded strategy whose symbols the bound crypto exchange does not list — the
+    refusal sentence, or None. Only the lib's own [order_reject:symbol_unavailable] refuses;
+    paper, no route, no symbols yet, a list that cannot be read, Binance unreadable on a
+    renaming venue, or the save's shared deadline (time.monotonic()) passing are not judged (the
+    tick's instrument checks and backoff still stand). No other name is suggested: XAUT and XAU
+    are different instruments."""
+    if not venue or venue == "paper" or not venue_traits.get(venue, "perp"):
+        return None
+    syms, market = _venue_symbols(name)
+    if not syms or market not in ("swap", "spot") or time.monotonic() >= deadline:
+        return None
+    import importlib
+
+    def prepare():
+        lib = importlib.import_module(f"lib.order_{venue}")
+        rules = getattr(lib, "get_contract_rules" if market == "swap" else "get_spot_rules", None)
+        perps = importlib.import_module("lib.stock_perps") \
+            if market == "swap" and venue in _STOCK_RENAMING_VENUES else None
+        return rules, perps, importlib.import_module("lib.venue_wiring").read_env()
+    try:
+        rules, perps, env = _in_workspace(prepare)
+    except Exception as e:
+        _log(f"amounts: {name} on {venue} not judged ({type(e).__name__}: {str(e)[:120]})")
+        return None
+    if rules is None:
+        return None
+    found = {"bad": [], "done": False}
+
+    def lookups():
+        # network only: the cwd stays the bridge's (_in_workspace is not thread-safe)
+        try:
+            if perps is not None and perps.binance_rows() is None:
+                _log(f"amounts: {name} on {venue} not judged (Binance list unreadable)")
+                return
+            for sym in syms:
+                if time.monotonic() >= deadline:
+                    return
+                try:
+                    rules(env, sym)
+                except Exception as e:
+                    if "[order_reject:symbol_unavailable]" in str(e):
+                        found["bad"].append(sym)
+                    else:
+                        _log(f"amounts: {sym} on {venue} not judged ({type(e).__name__}: {str(e)[:120]})")
+            found["done"] = True
+        except Exception as e:
+            _log(f"amounts: {name} on {venue} not judged ({type(e).__name__}: {str(e)[:120]})")
+
+    worker = threading.Thread(target=lookups, name=f"venue-symbol-{name}", daemon=True)
+    worker.start()
+    worker.join(max(0.0, deadline - time.monotonic()))
+    if not found["done"]:
+        if worker.is_alive():
+            _log(f"amounts: {name} on {venue} not judged (time budget)")
+        return None
+    bad = list(found["bad"])
+    if not bad:
+        return None
+    label = _VENUE_NAMES.get(venue, venue)
+    shown = "、".join(bad[:_VENUE_SYMBOL_SHOWN]) + (f" 等 {len(bad)} 檔" if len(bad) > _VENUE_SYMBOL_SHOWN else "")
+    what = "現貨" if market == "spot" else "合約"
+    return (f"VENUE_SYMBOL: 「{name}」的下單標的 {shown} 在 {label} 沒有可下單的{what}。"
+            f"請 agent 改成 {label} 上有的標的，或取消勾選後再儲存。")
+
+
 def _strategy_market_of(name):
     """strategy_reporter.strategy_market of the strategy's file (folder or single-file layout),
     None when unreadable or not decidable."""
@@ -4430,6 +4532,13 @@ def _cmd_amounts(args):
                     "——請改綁台灣期貨商,或取消勾選後再儲存")
     for k in clean:
         why = _us_signal_refusal(k, cfg["exchanges"].get(k))
+        if why:
+            raise ValueError(why)
+    # only on unfunded→funded: a venue delisting a running member must not lock its config out of
+    # the save button (the tick's instrument_gate and backoff handle that one)
+    listing_deadline = time.monotonic() + _VENUE_SYMBOL_BUDGET_S
+    for k in sorted(newly_funded):
+        why = _venue_symbol_refusal(k, cfg["exchanges"].get(k), listing_deadline)
         if why:
             raise ValueError(why)
     prev_contracts = _saved_contracts(cfg)

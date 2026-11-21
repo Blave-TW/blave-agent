@@ -121,9 +121,11 @@ class BinanceError(Exception):
 # requested action." message counts). Rejected keys: account_binance._CREDENTIAL.
 # -4411 "Please sign TradFi-Perps agreement contract" is not on the error page; measured on the
 # demo account 2026-10-19/20 placing NVDAUSDT / AMZNUSDT. Only the user signs it (in the app).
+# -1121 BAD_SYMBOL "Invalid symbol." (error page; measured live on /fapi/v1/premiumIndex with TSLA).
 _STOCK_AGREEMENT = getattr(reject_token, "STOCK_AGREEMENT", "stock_agreement")
 _REJECT_CODES = {"-2019": reject_token.INSUFFICIENT_MARGIN, "-2022": reject_token.REDUCE_ONLY_REJECTED,
-                 "-4118": reject_token.REDUCE_ONLY_REJECTED, "-4411": _STOCK_AGREEMENT}
+                 "-4118": reject_token.REDUCE_ONLY_REJECTED, "-4411": _STOCK_AGREEMENT,
+                 "-1121": reject_token.SYMBOL_UNAVAILABLE}
 
 
 def _reject_kind(code, msg):

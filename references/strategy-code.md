@@ -20,6 +20,7 @@ CRITICAL: Every Type A strategy MUST be based on `strategies/TEMPLATE_A.py`. Cop
 
 1. Copy `strategies/TEMPLATE_A.py` to `strategies/[strategy_name]/strategy.py`
 2. Set config at the top: `STRATEGY_NAME`, `DISPLAY_NAME`, `DESCRIPTION`, `LOGIC`, `SYMBOL`, `EXCHANGE`, `INTERVAL`, `START` (see *Naming & description* below)
+   - `SYMBOL` is also the name orders go out under: write the name the bound exchange trades (`AMZNUSDT`, not `AMZN`; `references/exchange-connect.md` rule 7) — funding a strategy whose `SYMBOL` that exchange does not list is refused at save (`VENUE_SYMBOL`; relay its sentence).
 3. Fill in the three marked sections:
    - `_add_indicators(df, p1, p2)` — add indicator columns, parameterized for scan
    - `fetch_data(hdrs)` — fetch kline, call `_add_indicators` with module params
@@ -939,6 +940,8 @@ do not change, and the bot's book does not trade on price drift. An asset that l
 never touched (`references/manager.md` › *self_ledger*). Not traded: a portfolio whose
 `asset_specs` entry is lots/shares (skipped with a warning). `resume_wait` (「等新訊號」) waits for
 the portfolio's next rebalance.
+
+The `close` column names are the names orders go out under: write the name the bound exchange trades (`AMZNUSDT`, not `AMZN`; `references/exchange-connect.md` rule 7) — funding a strategy with a key that exchange does not list is refused at save (`VENUE_SYMBOL`; relay its sentence).
 
 Weights must be computed only from data up to each bar (the rebalance mask is the FIRST bar of
 each period, as in the template) — otherwise the live row differs from the backtest's.

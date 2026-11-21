@@ -74,6 +74,10 @@ cases = {
     "Bybit 110007": (by.BybitError("bybit /v5/order/create retCode=110007: Available balance is insufficient", code=110007), "insufficient_margin"),
     "Bybit 110017": (by.BybitError("bybit /v5/order/create retCode=110017: orderQty will be truncated to zero", code=110017), "reduce_only_rejected"),
     "Bybit 10003 (key)": (by.BybitError("bybit /v5/order/create retCode=10003: API key is invalid.", code=10003), "key_permission"),
+    "OKX 51001 (no such instrument)": (okx.OKXError("51001", "Instrument ID doesn't exist.", "/api/v5/market/ticker"), "symbol_unavailable"),
+    "Binance -1121 (invalid symbol)": (bn.BinanceError(-1121, "Invalid symbol.", "/fapi/v1/premiumIndex"), "symbol_unavailable"),
+    "Gate.io CONTRACT_NOT_FOUND": (gt.GateioError("CONTRACT_NOT_FOUND", "", "/futures/usdt/tickers"), "symbol_unavailable"),
+    "BingX 109425 (symbol not exist)": (bx.BingXError(109425, "X-USDT not exist", "/openApi/swap/v2/quote/premiumIndex"), "symbol_unavailable"),
 }
 for name, (e, want) in cases.items():
     check(kind(e) == want and (want is not None or not str(e).startswith("[order_reject:")), f"{name} → {want} ({str(e)[:70]})")
@@ -116,7 +120,8 @@ e = raises(lambda: pp.place_spot_limit_order(PENV, "BTCUSDT", "buy", 10, 50000))
 check(kind(e) == "insufficient_margin", f"paper spot limit buy past the cash stays insufficient_margin ({e})")
 
 # enumeration: every code a lib classifies maps to a real kind; every credential code tags as a key rejection
-tables = {"binance": bn._REJECT_CODES, "okx": okx._REJECT_CODES, "gateio": gt._REJECT_CODES, "bybit": by._REJECT_CODES}
+tables = {"binance": bn._REJECT_CODES, "okx": okx._REJECT_CODES, "gateio": gt._REJECT_CODES, "bybit": by._REJECT_CODES,
+          "bingx": bx._REJECT_CODES}
 check(all(k in R.KINDS for t in tables.values() for k in t.values()), "every classified code maps to one of the six kinds")
 check(all(R.credential_codes(v) and all(R.from_code(c, {}, R.credential_codes(v)) == R.KEY_PERMISSION for c in R.credential_codes(v))
           for v in ("binance", "okx", "gateio", "bingx", "bybit")), "each venue's account-lib credential codes → key_permission")

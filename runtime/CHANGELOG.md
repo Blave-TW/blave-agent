@@ -8,6 +8,11 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+## 1.1.168 — 2026-11-21(交易所沒有的下單標的:存檔擋＋拒單分類)
+
+- **下單設定存檔擋綁定交易所沒有的標的(`command_listener._venue_symbol_refusal`,電腦版與雲端同一條)**:這次才從沒金額變成有金額、綁加密交易所(不含模擬帳戶)的策略,逐一用該家 `get_contract_rules`(`MARKET = 'spot'` 用 `get_spot_rules`)查它會下單的標的——Type C 讀最新 `state.json` 的 `weights` 全部鍵(含權重 0),沒有就讀 `backtest_state.json`;Type A 讀 `SYMBOL`;都先拿掉 `-`(同 reconciler 下單的名字,Bybit 的 lib 不會自己拿)。只有 lib 回 `[order_reject:symbol_unavailable]` 才拒 `VENUE_SYMBOL: 「名」的下單標的 X 在 OKX 沒有可下單的合約。請 agent 改成 OKX 上有的標的，或取消勾選後再儲存。`,不建議別的名字(XAUT 與 XAU 是不同商品)。不判、照存:沒有標的可讀、清單讀不到或其他錯誤、沒綁交易所、Bybit／BingX／Bitget 在 Binance 清單讀不到時(股票永續換名會退回原名、被誤擋)、整次存檔共用的 5 秒預算用完(查詢在 worker thread 跑、`join` 封頂,Binance 清單的讀取也算在內;電腦版等 ack 20 秒、網頁 18 秒,拒絕只走 ack)。已經有金額的成員不重查(交易所下架不能把已在跑的設定鎖在存檔鈕外;那條交給 tick 端的 `instrument_gate` 與退避)。網頁與電腦版不認得 `VENUE_SYMBOL` 時照原句顯示(中文)。舊 workspace 的 OKX lib 不把 51001 標成 `symbol_unavailable`,這時 OKX 的「名字合法但沒上架」(XAUTUSDT)不判、照存,所以兩邊誰先到都不會誤擋。測試 `tests/check_venue_symbol_save_gate.py`(新);`tests/check_amounts_president_symbol.py` 把 Binance 與 OKX 的合約查詢 stub 掉(它的 TXF 標的綁 Binance 只為測市場閘,原本會連網)。
+- **(workspace,隨根 VERSION)交易所「沒有這個標的」的回覆標上 `symbol_unavailable`**:標價(`get_mark_price`)在合約規則之前跑,之前 OKX 51001、Binance -1121 在這一步直接拿到交易所原文、退避也要多送 3 次才開始。現在 OKX `51001`、Binance `-1121`、Gate.io `CONTRACT_NOT_FOUND`、BingX `109425`、Bitget 標價的 `40034`、Bybit `10001`(只限 retMsg 是 `symbol invalid`;10001 是所有參數錯誤共用)都帶 token(2026-11-21 各家公開端點實測);StockCoin 本來就有 -1121／-1157。測試 `tests/check_venue_symbol_unavailable.py`(新)、`tests/check_reject_token.py`。
+
 ## 1.1.167 — 2026-11-20(desktop 0.1.58:實盤下單第 2 批、換合約擋三家停放單、永豐期貨(閘門關著))
 
 - **(實盤下單第 2 批,與 workspace 同批)手動平倉列不再把停放列與全部平倉失敗列擠掉(`command_listener._record_manual_close_row`)**:原本寫完照位置留最後 5 列(`rows[-5:]`),前面有 5 列拒單時,停放列與全部平倉失敗列會被擠掉。改成跟 workspace 共用 `lib/portfolio._keep_order_error_rows`(呼叫當下經 `_ws_portfolio()` 取、`getattr`;取不到就 reload 一次再取——行程先用一般 import 載了舊模組時 `_ws_portfolio` 認不出更新——還是沒有才算舊 workspace):reconcile 的拒單列(帶 `leg`)一個 5 列額度,停放、全部平倉失敗、手動平倉與其他列一個 5 列額度,互不擠掉,檔案最多 10 列。workspace 還沒有那個函式(或匯入失敗)時照舊留最後 5 列。這版要跟 workspace 更新同時或先出。測試 `tests/check_order_errors_budgets_runtime.py`。
