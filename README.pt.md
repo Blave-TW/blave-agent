@@ -4,7 +4,7 @@
 
 # Blave Agent
 
-**Espaço de trabalho quant para agentes de IA**<br>
+**De ideias de trading a estratégias quant com IA**<br>
 Crie, faça backtest e opere estratégias ao vivo com Claude Code ou Codex. Grátis e de código aberto.
 
 <a href="https://github.com/Blave-TW/blave-agent/releases"><img src="https://img.shields.io/github/v/release/Blave-TW/blave-agent?filter=desktop-*&label=latest&color=555" alt="Versão mais recente"></a>
@@ -15,7 +15,7 @@ Crie, faça backtest e opere estratégias ao vivo com Claude Code ou Codex. Grá
 
 </div>
 
-> Traduzido do README em inglês no commit [`3550319`](https://github.com/Blave-TW/blave-agent/blob/3550319/README.md). Se algo divergir, vale o original em inglês.
+> Traduzido do README em inglês no commit [`767dbb8`](https://github.com/Blave-TW/blave-agent/blob/767dbb8/README.md). Se algo divergir, vale o original em inglês.
 
 https://github.com/user-attachments/assets/7b33edb7-9c65-4e19-854a-40295c6e8b74
 

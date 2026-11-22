@@ -4,7 +4,7 @@
 
 # Blave Agent
 
-**给 AI Agent 的量化工作台**<br>
+**用 AI 把交易想法做成量化策略**<br>
 用 Claude Code 或 Codex 写策略、跑回测、上线自动交易。免费开源。
 
 <a href="https://github.com/Blave-TW/blave-agent/releases"><img src="https://img.shields.io/github/v/release/Blave-TW/blave-agent?filter=desktop-*&label=latest&color=555" alt="最新版本"></a>
@@ -15,7 +15,7 @@
 
 </div>
 
-> 本文译自英文版 README 的 commit [`3550319`](https://github.com/Blave-TW/blave-agent/blob/3550319/README.md)。内容有出入时，以英文原文为准。
+> 本文译自英文版 README 的 commit [`767dbb8`](https://github.com/Blave-TW/blave-agent/blob/767dbb8/README.md)。内容有出入时，以英文原文为准。
 
 https://github.com/user-attachments/assets/66c747e9-b068-4da9-a372-84d9afa7cb0d
 

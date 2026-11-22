@@ -4,7 +4,7 @@
 
 # Blave Agent
 
-**AI エージェントのためのクオンツ・ワークスペース**<br>
+**AI で取引アイデアをクオンツ戦略に**<br>
 Claude Code や Codex で、戦略を書き、バックテストして自動売買まで動かす。無料・オープンソース。
 
 <a href="https://github.com/Blave-TW/blave-agent/releases"><img src="https://img.shields.io/github/v/release/Blave-TW/blave-agent?filter=desktop-*&label=latest&color=555" alt="最新リリース"></a>
@@ -15,7 +15,7 @@ Claude Code や Codex で、戦略を書き、バックテストして自動売�
 
 </div>
 
-> この文書は英語版 README の commit [`3550319`](https://github.com/Blave-TW/blave-agent/blob/3550319/README.md) から翻訳したものです。食い違いがある場合は英語の原文が優先されます。
+> この文書は英語版 README の commit [`767dbb8`](https://github.com/Blave-TW/blave-agent/blob/767dbb8/README.md) から翻訳したものです。食い違いがある場合は英語の原文が優先されます。
 
 https://github.com/user-attachments/assets/7b33edb7-9c65-4e19-854a-40295c6e8b74
 

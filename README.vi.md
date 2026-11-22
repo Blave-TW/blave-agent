@@ -4,7 +4,7 @@
 
 # Blave Agent
 
-**Không gian làm việc quant cho AI agent**<br>
+**Từ ý tưởng giao dịch đến chiến lược định lượng bằng AI**<br>
 Xây dựng chiến lược, backtest và giao dịch thật với Claude Code hoặc Codex. Miễn phí, mã nguồn mở.
 
 <a href="https://github.com/Blave-TW/blave-agent/releases"><img src="https://img.shields.io/github/v/release/Blave-TW/blave-agent?filter=desktop-*&label=latest&color=555" alt="Phiên bản mới nhất"></a>
@@ -15,7 +15,7 @@ Xây dựng chiến lược, backtest và giao dịch thật với Claude Code h
 
 </div>
 
-> Bản dịch từ README tiếng Anh tại commit [`3550319`](https://github.com/Blave-TW/blave-agent/blob/3550319/README.md). Nếu có chỗ khác nhau, bản gốc tiếng Anh là chuẩn.
+> Bản dịch từ README tiếng Anh tại commit [`767dbb8`](https://github.com/Blave-TW/blave-agent/blob/767dbb8/README.md). Nếu có chỗ khác nhau, bản gốc tiếng Anh là chuẩn.
 
 https://github.com/user-attachments/assets/7b33edb7-9c65-4e19-854a-40295c6e8b74
 
