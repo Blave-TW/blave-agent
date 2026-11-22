@@ -4,7 +4,7 @@
 
 # Blave Agent
 
-**給 AI Agent 的量化工作台**<br>
+**用 AI 把交易想法做成量化策略**<br>
 用 Claude Code 或 Codex 寫策略、跑回測、上線自動交易。免費開源。
 
 <a href="https://github.com/Blave-TW/blave-agent/releases"><img src="https://img.shields.io/github/v/release/Blave-TW/blave-agent?filter=desktop-*&label=latest&color=555" alt="最新版本"></a>

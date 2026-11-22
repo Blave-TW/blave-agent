@@ -4,7 +4,7 @@
 
 # Blave Agent
 
-**Quant Workspace for AI Agents**<br>
+**Turn Trading Ideas Into Quant Strategies with AI**<br>
 Build, backtest and trade strategies live with Claude Code or Codex. Free and open source.
 
 <a href="https://github.com/Blave-TW/blave-agent/releases"><img src="https://img.shields.io/github/v/release/Blave-TW/blave-agent?filter=desktop-*&label=latest&color=555" alt="Latest release"></a>
