@@ -194,6 +194,13 @@ check(p is not None and p.poll() is None
       "3 …handed over → started; SJ_LOG_PATH = the null device, STOP_ON_EOF set, credentials as the first "
       "stdin line", lines())
 check(open(os.path.join(WS, "state", "sinopac_worker.pid")).read().strip() == str(p.pid), "3 pid file written")
+_real_W, sl._W = sl._W, w
+_info = sl.local_info()
+sl._W = _real_W
+check(_info.get("worker_running") is True and isinstance(_info.get("worker_started_at"), float)
+      and abs(_info["worker_started_at"] - time.time()) < 30 and sl.local_info().get("worker_started_at") is None,
+      "3 the status doc carries the running worker's spawn time (the app's 連接中… grace after a reopen); none when "
+      "no worker runs", _info)
 w.tick(now + 1)
 check(w.proc is p, "3 a running worker is not started twice")
 with open(ENV, "wb") as f:

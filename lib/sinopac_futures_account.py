@@ -42,6 +42,7 @@ except ImportError:
 _SNAPSHOT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                          "state", "sinopac_account.json")
 _STALE_S = 300  # worker cadence is 60 s; 5 misses = stale
+WORKER_DOWN = "[sinopac_worker_down]"
 ROOTS = _contracts.ROOTS
 VERIFIED = "futures" in _traits.verified_modes("sinopac")
 _manual_logged = set()  # (productid, net) already logged by this process
@@ -50,14 +51,15 @@ _manual_logged = set()  # (productid, net) already logged by this process
 def _read_snapshot():
     if not VERIFIED:
         raise RuntimeError("永豐期貨帳戶讀取還沒通過真帳驗證 — not read")
+    # WORKER_DOWN: the desktop's account line words these two itself (shell renderer/sinopac.js spAcctErrKey)
     try:
         snap = load_json(_SNAPSHOT, encoding="utf-8")
     except FileNotFoundError:
-        raise RuntimeError("sinopac snapshot missing — is the 永豐 futures worker "
+        raise RuntimeError(f"{WORKER_DOWN} sinopac snapshot missing — is the 永豐 futures worker "
                            "(lib/sinopac_worker.py) running?")
     age = time.time() - snap.get("read_at", 0)
     if age > _STALE_S:
-        raise RuntimeError(f"sinopac snapshot stale ({int(age)}s old) — 永豐 worker down?")
+        raise RuntimeError(f"{WORKER_DOWN} sinopac snapshot stale ({int(age)}s old) — 永豐 worker down?")
     if not snap.get("ok"):
         raise RuntimeError(f"sinopac worker error: {snap.get('error')}")
     return snap

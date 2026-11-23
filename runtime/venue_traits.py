@@ -96,7 +96,7 @@ TRAITS = {
         "perp": False,
         "close_needs_fill": True,
         # M0-b 2026-11-16: list_positions right after a Filled order still read []; the wait
-        # (lib/sinopac_vault.ORDER_SETTLE_S, 20 s) is borrowed, the lag itself was not timed
+        # (lib/sinopac_vault.ORDER_SETTLE_S, 20 s) held on 11-23; the lag itself is not timed yet
         "snapshot_settle_wait": True,
         "verified_modes": _SINOPAC_MODES,
         # lib/sinopac_worker.ENABLED_PATH, written by its first start (only a futures bind starts it)

@@ -94,9 +94,8 @@ One TMF lot bought and closed with market IOC orders on a real account, run by t
 16. **The position read lags the fill.** `list_positions` right after the buy was `Filled` still
     returned `[]`. Never read an empty position right after an order as flat: a fill is the order's
     deals, and a position read counts only once it started `ORDER_SETTLE_S` after the last send
-    (`lib/sinopac_vault`; borrowed from 統一's measured 12 s, SinoPac's own lag is not timed yet —
-    the gate-flip live run must time it). The `[]` after the close was confirmed flat in the SinoPac
-    app.
+    (`lib/sinopac_vault`, 20 s; lesson 22). The `[]` after the close was confirmed flat in the
+    SinoPac app.
 17. **Contracts load in the background after `login()`.** Calling `fetch_contracts()` then raised
     `ShioajiTimeoutError: exclusive access lost (concurrent API call started)` (twice; not caused by
     `subscribe_trade=True`). Never call it.
@@ -116,6 +115,30 @@ One TMF lot bought and closed with market IOC orders on a real account, run by t
     11-16). `SJ_LOG_PATH` is the file the SDK opens instead: the null device leaves no file
     (macOS, import only — Linux, Windows and a logged-in session with it set are not measured), and
     a path it cannot open falls back to stdout.
+
+### Real futures orders through Blave, measured 2026-11-23 (macOS arm64 desktop, Shioaji 1.7.11, day session)
+
+One TMF lot bought and closed by the reconciler on a real account (the account owner pressed every
+button; Blave takes no hand-typed order, so the buy was a strategy holding 1 lot, the close was
+pause-and-close):
+
+22. **Buy and close, each `MKT` + `IOC`, each sent once.** `TMF` 202612 1 lot new → `Filled` at
+    36,760; the close → `Filled` at 36,748. Two sends, two fills, no resend; `MKT` was not refused, so
+    the `MKP` fallback was not exercised. The position showed in the snapshot ≤ about 20 s after the
+    buy's exchange time, and the flat book ≤ about 20 s after the close's — that includes the
+    worker's own wait (the snapshot is held until `ORDER_SETTLE_S`, 20 s, after the send), so the
+    real lag is not measured. `ORDER_SETTLE_S` stays 20 s (the runbook's 30 s is void). Since then
+    the worker reads the position every 2 s after an entry's fill, counting from the send, up to
+    60 s, and writes when it showed to `state/sinopac_settle_lag.json` (and one log line); closes
+    are not timed (an early empty read looks like flat). The next live entry times it.
+23. **`update_status(account, trade=…)` is refused.** Every fill logged `ShioajiValueError: Cannot
+    specify both account and trade`: 1.7.11 takes one or the other. The worker refreshes one order
+    with `update_status(trade=trade)`.
+24. **A wrong API secret is `BadRequestError`, not an auth error.** Login with a mistyped secret
+    raised `BadRequestError: StatusCode: 400, Detail: key: <the API key> not match signature.` —
+    read as `KEY`. The text carries the API key in full: every 永豐 error the worker writes (state
+    files, its log, the order response) goes through `sinopac_worker._sanitize`, which masks the
+    keys, the national ID and the futures account number.
 
 How the libs answer these (tested with a faked SDK): `lib/order_sinopac.py` never logs in and never
 imports `shioaji`; `lib/sinopac_worker.py` runs on 1.7.11 only (any other

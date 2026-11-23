@@ -123,6 +123,9 @@ function spFormReady(ui, info) {
 function spNextOpen(sc, ms) { const n = spSec(sc, "sim").next_open_at; return typeof n === "number" && isFinite(n) && n * 1000 > ms ? n * 1000 : spSimNext(ms); }
 // 台北 HH:MM(spec §5 {time})
 function spHm(sec) { if (typeof sec !== "number" || !isFinite(sec)) return null; const x = spTpe(sec * 1000); return String(x.h).padStart(2, "0") + ":" + String(x.m).padStart(2, "0"); }
+// 讀帳失敗那一行(不是登入停了、不是重試中):lib 在 worker 沒寫快照時標 [sinopac_worker_down],其他一律講讀不到帳戶,不出原文。
+// cloud = 雲端視角:重開電腦版救不了主機上的 worker,講主機那一句(不承諾自動重啟)
+const spAcctErrKey = (msg, cloud) => (/\[sinopac_worker_down\]/.test(String(msg || "")) ? (cloud ? "sp.acct.downCloud" : "sp.acct.down") : "sp.acct.readFail");
 /* ── 純邏輯到此 ── */
 
 /* 兩個視角(spec §1.2):這台電腦看本機 daemon 的回報、指令走 sinopac_local;雲端看主機的回報、指令走雲端那組(cloud_sinopac.js)。
