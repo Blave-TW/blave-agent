@@ -2248,10 +2248,10 @@ msgid "tr.typeCHost"
 msgstr "主機程式要先更新"
 
 msgid "tr.typeCNext"
-msgstr "投資組合策略要等這台電腦的 Blave 更新後，才能自動下單。"
+msgstr "多標的策略要等這台電腦的 Blave 更新後，才能自動下單。"
 
 msgid "tr.typeCNextHost"
-msgstr "投資組合策略要等主機的程式更新後，才能自動下單。"
+msgstr "多標的策略要等主機的程式更新後，才能自動下單。"
 
 msgid "tr.pick.twd"
 msgstr "模擬交易要等主機的程式更新後，才能下台股"
@@ -2446,6 +2446,10 @@ msgstr "跟單"
 
 msgid "tr.acct.spot"
 msgstr "現貨"
+
+# 資產頁錢包名:模擬帳戶等回報的 cash 錢包(沒翻譯會原樣印英文小寫 cash,QA 0159 #4)
+msgid "tr.acct.cash"
+msgstr "現金"
 
 msgid "tr.acct.fund"
 msgstr "資金"
@@ -3169,7 +3173,7 @@ msgid "env.open.tagPlan"
 msgstr "方案有效到 {u}"
 
 msgid "env.open.pend"
-msgstr "{id} 等著上雲端。"
+msgstr "「{id}」等著上雲端。"
 
 msgid "env.open.trialOffer"
 msgstr "首次綁卡試用 {t} 天，期間取消不扣。"
@@ -4221,7 +4225,7 @@ msgid "sg.headAria"
 msgstr "{name}，{n} 支"
 
 msgid "sg.headLive"
-msgstr "，{m} 支上線中"
+msgstr "，{m} 支已配置"
 
 msgid "sg.more"
 msgstr "{name}選項"
@@ -6034,6 +6038,10 @@ msgstr "讀不到這份報告。"
 msgid "rpt.note.pending"
 msgstr "進度在右邊的對話。"
 
+# 報告頁訊息槽:框送出的那一輪沒寫出報告、知道是哪一條對話時,後面接〔查看〕(busy.fix.view)切回那一條,不寫位置詞
+msgid "rpt.err.noNewView"
+msgstr "這一輪沒有產出新報告。"
+
 msgid "rpt.err.noNew"
 msgstr "這一輪沒有產出新報告，原因在右邊的對話。"
 
@@ -6597,7 +6605,7 @@ msgid "idea.cost"
 msgstr "這一輪按 Blave AI 的用量從餘額扣，讀的網頁越多用量越大。"
 
 msgid "idea.msg"
-msgstr "上網幫我找 3 個{mkt}可以回測的策略點子{topic}。每個用一兩句講邏輯，標出會影響我挑選的提醒，並附來源網址；所有點子共通的事開頭講一次就好。進出場細節等我挑了再給。最後推薦一個，告訴我回數字就開始回測。先不要寫程式，也不要給今天的多空判斷。"
+msgstr "上網幫我找 3 個{mkt}可以回測的策略點子{topic}。每個用一兩句講邏輯，標出會影響我挑選的提醒，並附來源網址；所有點子共通的事開頭講一次就好。進出場細節等我挑了再給。最後推薦一個，讓我挑一個開始回測。先不要寫程式，也不要給今天的多空判斷。"
 
 # en 的 {mkt} 尾端帶一個空白、{topic} 前面帶一個空白(句子本身不留空白)
 msgid "idea.mkt.crypto"
@@ -7250,14 +7258,26 @@ msgstr "轉出的程式碼請先在 {platform} 編譯並回測，確認無誤再
 msgid "xp.cf.ok"
 msgstr "轉出"
 
+# 轉出句在對話泡泡與對話名的顯示(FIXED_PROMPTS):{name} 換成策略名稱,不顯示資料夾代號
+msgid "xp.msgLabel.xq"
+msgstr "把「{name}」轉成 XQ XS 版"
+
 msgid "xp.msg.xq"
-msgstr "把策略 {id} 轉成 XQ XS 版，存成 workspace 檔案。"
+msgstr "把策略「{display_name}」（{name}）轉成 XQ XS 版，存成 workspace 檔案。"
+
+# 轉出句在對話泡泡與對話名的顯示(FIXED_PROMPTS):{name} 換成策略名稱,不顯示資料夾代號
+msgid "xp.msgLabel.mc"
+msgstr "把「{name}」轉成 MultiCharts PowerLanguage 版"
 
 msgid "xp.msg.mc"
-msgstr "把策略 {id} 轉成 MultiCharts PowerLanguage 版，存成 workspace 檔案。"
+msgstr "把策略「{display_name}」（{name}）轉成 MultiCharts PowerLanguage 版，存成 workspace 檔案。"
+
+# 轉出句在對話泡泡與對話名的顯示(FIXED_PROMPTS):{name} 換成策略名稱,不顯示資料夾代號
+msgid "xp.msgLabel.pine"
+msgstr "把「{name}」轉成 TradingView Pine Script 版"
 
 msgid "xp.msg.pine"
-msgstr "把策略 {id} 轉成 TradingView Pine Script 版，存成 workspace 檔案。"
+msgstr "把策略「{display_name}」（{name}）轉成 TradingView Pine Script 版，存成 workspace 檔案。"
 
 msgid "xp.dl"
 msgstr "下載"
@@ -7364,11 +7384,12 @@ msgstr "版本"
 msgid "ver.current"
 msgstr "目前"
 
+# 版本選單目前版的徽章(目前版且有下單金額;暫停中、只有模擬也會出)。只講設定、不暗示真錢在跑;內部名詞「上線中」不改(spec p3-0160 §4a,web 同改)
 msgid "ver.live"
-msgstr "上線中"
+msgstr "已配置"
 
 msgid "ver.drift"
-msgstr "上線中 · 檔案已改"
+msgstr "已配置 · 檔案已改"
 
 msgid "ver.driftLocal"
 msgstr "strategy.py 已經和這一版不同：檔案被直接改過、卻沒有重跑回測。"
@@ -8899,6 +8920,10 @@ msgstr "這一步要到網站做：你的方案是別的階，或主機要在網
 msgid "cf.m.okTrial"
 msgstr "開通，{d}起扣 {x} TWD"
 
+# 帳號選單「帳號與方案」列尾:試用已取消的短字(spec sidebar-row-0160 §2.1);完整那句 pv.st.trialCancelled 進 title
+msgid "am.st.ends"
+msgstr "{d}結束"
+
 msgid "pv.st.trialCancelled"
 msgstr "已取消試用 · {d}結束"
 
@@ -9066,9 +9091,6 @@ msgstr "優化"
 msgid "po.secAmounts"
 msgstr "策略與金額"
 
-msgid "po.help"
-msgstr "看教學"
-
 msgid "po.signalsPaused"
 msgstr "訊號暫停更新"
 
@@ -9184,8 +9206,9 @@ msgstr "{prod}平倉"
 msgid "mg.apply"
 msgstr "套用金額"
 
+# 優化這組跟配置不是同一組時〔套用金額〕下的原因句(spec p3-0160 §3,取代舊的兩條檔數句);句尾是連結字 mg.why.alloc,要原樣出現在句中
 msgid "mg.applyDiffSet"
-msgstr "配置 {a} 檔、這裡 {b} 檔"
+msgstr "這組策略跟配置不同，把配置改成這組"
 
 msgid "mg.askAgent"
 msgstr "跟 agent 討論"
@@ -9548,8 +9571,9 @@ msgstr "等「{name}」等 {n} 支更新績效…"
 msgid "mg.runNow"
 msgstr "先用目前數字跑"
 
+# 設定 › 一般的顯示幣別:只管雲端視角,本機的策略組合與自動下單不跟著換,label 講出範圍(QA 0159 R3-8;spec p3-0160 §11)。選項 = api 列的＋帳號目前的值(ccyOptions);預設 USDT 選不回是 api _BASE_CURRENCY_OPTIONS 的事
 msgid "set.ccy"
-msgstr "顯示幣別"
+msgstr "雲端顯示幣別"
 
 msgid "set.ccyFail"
 msgstr "切換失敗，稍後再試。"
@@ -9806,17 +9830,15 @@ msgstr "資料不足，到〔方法〕縮短回看天數"
 msgid "mg.needTarget"
 msgstr "先填{t}"
 
-msgid "mg.applyDiffSetN"
-msgstr "配置有 {n} 檔不在這裡"
-
 msgid "mg.applyWhyUnread"
 msgstr "讀不到金額設定，更新後就能套用"
 
 msgid "sz.noVol"
 msgstr "近 90 天沒有波動資料，不能用目標波動"
 
+# 原因句裡的連結字:開配置的選擇策略框、預勾優化這組;方向寫進字(改的是配置那一邊)。是句中連結,不受鈕 6 字上限
 msgid "mg.why.alloc"
-msgstr "改配置"
+msgstr "把配置改成這組"
 
 msgid "mg.why.tbMethod"
 msgstr "〔方法〕"
@@ -9841,8 +9863,9 @@ msgstr "登入 Blave"
 msgid "mg.why.signinUpd"
 msgstr "登入 Blave 更新"
 
+# 從 mg.why.alloc 打開的選擇策略框標題:講明按確定改的是配置
 msgid "mg.why.pickTitle"
-msgstr "配置的策略"
+msgstr "改配置的策略"
 
 msgid "mg.sizeNoHist"
 msgstr "這份結果算不出目標波動"
@@ -10039,9 +10062,9 @@ msgstr "連上真實帳戶會取代模擬交易。"
 msgid "cx.replacePaperRun"
 msgstr "連上後模擬交易停止，自動下單先暫停。"
 
-# Mac 不出期貨磚,「台灣期貨」標籤下這一句
+# Mac 不出期貨磚,「台灣期貨」標籤下這一句,後面接文字鈕 cx.macTwGo(spec p3-0160 §11)
 msgid "cx.macTw"
-msgstr "群益、統一需要 Windows，可以改用 Windows 雲端主機。"
+msgstr "群益、統一需要 Windows。"
 
 # 期貨商(統一／群益)的第一行事實:期貨商用的是憑證、不是 API 金鑰
 msgid "cx.fact.cert"
@@ -12189,13 +12212,6 @@ msgstr "試用結束扣第一期"
 msgid "p3.set.firstV"
 msgstr "{d} · {p} TWD"
 
-# 試用格鈕上方兩行的第一行(第二行是 p3.f.trialConvertNoNum);{pd} 跟著下一期的週期(年繳 365)
-msgid "p3.f.renew"
-msgstr "之後每 {pd} 天自動續扣。錢包夠就扣錢包，不夠就整筆刷卡。"
-
-msgid "p3.f.renewNoNum"
-msgstr "之後每期自動續扣。錢包夠就扣錢包，不夠就整筆刷卡。"
-
 # 「Blave 餘額」標籤的 tooltip(收掉原本餘額下面那句「AI 超額時自動儲值」)。第一句與網頁 bc_plan_wallet_fact 逐字相同(tests/check_web_desktop_parity.js)
 msgid "p3.set.balTip"
 msgstr "錢包用來付 Blave AI，也用來付方案費。"
@@ -12203,4 +12219,57 @@ msgstr "錢包用來付 Blave AI，也用來付方案費。"
 # 第二句:有卡、沒關自動儲值、門檻讀得到才接在後面;{lo} {a} 讀公開價目 ai_credit
 msgid "p3.set.topupTip"
 msgstr "錢包低於 {lo} TWD 時，刷綁定的卡補 {a} TWD。"
+
+# v3 試用格〔開雲端主機〕上方唯一一行(Wei 11-23 Q1):金額與續扣交給加購框講(p3.h.next／p3.h.trialEnd),卡上不重複
+msgid "p3.f.trialEnds"
+msgstr "開雲端主機會結束試用。"
+
+# 策略頁〔自動下單〕金額框、這支還沒在策略組合裡、存了會送單時的標題＝主鈕(不送單時用 po.add「加到策略組合」;canon confirm-modal)
+msgid "sp.cf.addFire"
+msgstr "加入並下單"
+
+# 策略頁金額框輸入格下:這支目前版的樣本外效率落在門檻下才出(沒跑過、過時不出)。只講事實、不寫建議(canon confirm-modal)
+msgid "sp.oosFail"
+msgstr "樣本外驗證沒過。"
+
+# 策略頁頁首狀態詞「不能自動下單」(tr.mkt.noAuto)的 tooltip 原因句;配置表那一列同一個標籤掛同一句。講法同 tr.usSymbol.rejected(spec p3-0160 R3-1;web SP_HEAD.us 同改)
+msgid "sp.usWhy"
+msgstr "用美股訊號，現在還不能自動下單。"
+
+# 膠捲裡沒有說明字的圖的 alt(＝按鈕名稱);{n} 是在那條膠捲裡的第幾張(spec chat-image-strip-0160 a11y)
+msgid "chat.imageN"
+msgstr "圖 {n}"
+
+# 膠捲 role=group 的 aria-label,只給讀屏;畫面上不寫張數(Wei 11-23 選 A)
+msgid "chat.imageCount"
+msgstr "{n} 張圖"
+
+# 放大檢視左右切換鈕的可及名稱
+msgid "chat.imagePrev"
+msgstr "上一張"
+
+msgid "chat.imageNext"
+msgstr "下一張"
+
+# 策略組合區段標籤旁的外連文字鈕(會開瀏覽器,不用 ?;canon strategy-report › 說明文章外連)
+msgid "po.guide"
+msgstr "說明"
+
+msgid "po.guideAria"
+msgstr "說明（在瀏覽器開啟）"
+
+# 選單「顯示」⌘1–⌘8 那幾列(主行程 appMenuTemplate 自己代 {n});⌘9 是 menu.tabLast
+msgid "menu.tabN"
+msgstr "對話分頁 {n}"
+
+msgid "menu.tabLast"
+msgstr "最後一個對話分頁"
+
+# 雲端開通卡在有一支等著上雲端(pid)時、〔開雲端主機〕下的文字鈕:取消這支的待送、切回本機視角、焦點回這支的策略頁頭(spec p3-0160 R5-5)
+msgid "env.open.stayLocal"
+msgstr "留在這台電腦"
+
+# 接在 cx.macTw 後的文字鈕:關連接框、開雲端主機加購框並預選 Windows
+msgid "cx.macTwGo"
+msgstr "改用雲端主機"
 

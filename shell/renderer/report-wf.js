@@ -457,10 +457,13 @@
     tbl.setAttribute("aria-label", w.single ? tplText(t("wf.driftAria1"), { rp: w.rowParam }) : tplText(t("wf.driftAria"), { rp: w.rowParam, cp: w.colParam }));
     // 每欄 32px:格內只有一位數,可讀下限比熱圖低。fixed layout 先扣掉 border-spacing 再分欄,欄數 +2 個間隙一起算
     tbl.style.minWidth = 84 + w.cols.length * 32 + (w.cols.length + 2) * 4 + "px";
+    // 軸名同參數掃描熱圖(QA 0159 R3-2):橫軸名在網格上方跨所有欄、直軸名直排在左側,放不下才截尾、全名在 title
     const thead = el("thead"), hr = el("tr"), corner = el("th", "corner");
-    corner.scope = "col";
-    corner.appendChild(el("span", "r mono", w.rowParam + " ↓"));
-    if (!w.single) corner.appendChild(el("span", "mono", w.colParam + " →"));
+    if (!w.single) {
+      const ar = el("tr", "rob-ax-row"), ac = el("th", "rob-ax-c"), cs = el("span", "mono", w.colParam + " →");
+      ar.appendChild(el("th", "corner")); ac.colSpan = w.cols.length; ac.scope = "colgroup"; cs.title = w.colParam; ac.appendChild(cs);
+      ar.appendChild(ac); thead.appendChild(ar);
+    }
     hr.appendChild(corner);
     w.cols.forEach((c) => { const th = el("th", null, w.single ? "" : pv(c, w.cd)); th.scope = "col"; hr.appendChild(th); });
     thead.appendChild(hr);
@@ -496,7 +499,11 @@
     });
     tbl.appendChild(tbody);
     frame.appendChild(tbl);
-    wrap.appendChild(frame);
+    const body = el("div", "rob-heat-body"), axR = el("div", "rob-ax-r mono", w.rowParam + " →");   // 直排時「→」轉成朝下
+    axR.title = w.rowParam; axR.setAttribute("aria-hidden", "true");   // 讀屏從表與每格的 aria-label 拿參數名
+    const BR = window.BlaveReport || {};
+    body.append(axR, BR.scrollFade ? BR.scrollFade(frame, t("rp.tab.wf")) : frame);
+    wrap.appendChild(body);
 
     // 事實行:漂移幅度用數字講一次(不進判斷句)
     const picked = w.runs.filter((f) => !!f.params);

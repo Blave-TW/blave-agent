@@ -40,11 +40,11 @@ function hoFreeName(id, taken) {
 }
 /* 策略頁頭的動作槽(spec strategy-page-autotrade §4):「狀態 → 鈕態」常數表,web 工作頁照同一張表做(cross-surface-parity 規則三)。
    btn = 主鈕 { key, kind: 填色 fill／描邊 out, act, off: 真 disabled }:key "$base" = 看市場(加密、台指期「自動下單」,台股「加到策略組合」),
-   "$go" = 自動下單頁 #tr-go 同一個鈕字(trGoView:啟動下單／確認帳戶…);word = 鈕旁 ≤6 字的狀態詞;note = 說明下一行的整句原因;
+   "$go" = 自動下單頁 #tr-go 同一個鈕字(trGoView:啟動下單／確認帳戶…);word = 鈕旁 ≤6 字的狀態詞;tip = 狀態詞沒有補救動作、用戶會問為什麼時的原因句(掛在狀態詞上,canon strategy-report);note = 說明下一行的整句原因;
    mark = 只放「自動下單中・模擬／真錢」記號。態的名字與 web 工作頁 workspace.html 的 SP_HEAD 同一份(tests/check_web_desktop_parity.js 逐態比對)。act:amt 開金額框、pick 到選擇策略框、cx 開連接框、go 走 trGoClick、route 〔儲存〕直送、po 到策略組合、pres 統一的〔繼續〕 */
 const SP_HEAD = {
   none: { btn: null },
-  us: { btn: null, word: "tr.mkt.noAuto" },
+  us: { btn: null, word: "tr.mkt.noAuto", tip: "sp.usWhy" },
   unread: { btn: { key: "$base", kind: "fill", act: null, off: true } },
   fail: { btn: { key: "$base", kind: "fill", act: null, off: true }, note: "$fail" },
   locked: { btn: { key: "$base", kind: "fill", act: "pick" } },
@@ -74,7 +74,7 @@ function spHead(x) {
   if (b && b.key === "$go") b.key = x.goKey || "tr.start";
   if (b && (st === "start" || st === "acct") && x.goOff) b.off = true;   // 指令通道不通(同 #tr-go 的 usable)
   const note = d.note === "$fail" ? x.failNote || null : d.note === "$off" ? x.offNote || null : d.note === "$go" ? x.goNote || null : d.note ? { key: d.note } : null;
-  return { st, btn: b, word: d.word || null, note, mark: !!d.mark };
+  return { st, btn: b, word: d.word || null, tip: d.tip || null, note, mark: !!d.mark };
 }
 /* 並排比較的狀態(references/cloud-handoff.md §7 的機械規則,不經 agent):src／dst = 兩邊的 stats(回測結果)。
    match = Trades、start、end 都相同;differs = 有一個不同(period:start 或 end 不同,要先講);none = 目的地沒有新的回測;
@@ -186,6 +186,7 @@ function hoPaint() {
   const keep = { go: $("rp-go"), ho: ho0 && ho0.dataset.dir === dir ? ho0 : null };   // 換了視角(送上雲端 ↔ 拉回)就重建,不沿用另一個方向的節點
   act.hidden = !has || verHide; act.textContent = "";
   if (typeof spPaintNote === "function") spPaintNote(act.hidden ? null : sv && sv.note);
+  if (typeof spPaintSaved === "function") spPaintSaved(!act.hidden && !!(sv && sv.saved));
   // 搬家那一行最後畫:那一格的優先序是搬家 ＞ 主鈕原因句(spPaintNote 剛寫的)＞ 停機句
   if (act.hidden) { hoJobPaint(); if (had) $("rp-name").focus(); return; }
   if (sv && typeof spPaintAct === "function") spPaintAct(act, sv, keep.go);

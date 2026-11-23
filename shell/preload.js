@@ -50,6 +50,7 @@ contextBridge.exposeInMainWorld("blave", {
   mgSizingCloudSet: (v) => ipcRenderer.invoke("mg-sizing-cloud-set", v),
   mgOptCloudSet: (v) => ipcRenderer.invoke("mg-opt-cloud-set", v),
   loadStrategy: (name) => ipcRenderer.invoke("load-strategy", name),
+  strategyLogicI18n: (id, lang) => ipcRenderer.invoke("strategy-logic-i18n", id, lang),
   // 轉出檔「下載…」:主行程讀檔 + 開存檔框。ref = { session, id }(對話裡那張卡的快照)或 { strategy, target }(程式碼分頁);不過內容、不過路徑
   saveExport: (ref) => ipcRenderer.invoke("save-export", ref ? { session: ref.session, id: ref.id, strategy: ref.strategy, target: ref.target } : null),
   revealExport: (token) => ipcRenderer.invoke("reveal-export", token),   // 只收 saveExport 回的 token
@@ -248,6 +249,7 @@ contextBridge.exposeInMainWorld("blave", {
   tabsPrefsSet: (p) => ipcRenderer.invoke("tabs-prefs-set", p && typeof p === "object" ? { tabs: Array.isArray(p.tabs) ? p.tabs.filter((x) => typeof x === "string") : [], sel: typeof p.sel === "string" ? p.sel : null } : null),
   onTabNew: (fn) => ipcRenderer.on("tab-new", () => fn()),
   onTabClose: (fn) => ipcRenderer.on("tab-close", () => fn()),
+  onTabGo: (fn) => ipcRenderer.on("tab-go", (_e, n) => fn(n)),
   onTabOpen: (fn) => ipcRenderer.on("tab-open", (_e, o) => fn(o && typeof o === "object" ? { sid: typeof o.sid === "string" ? o.sid : "", origin: o.origin === "mobile" ? "mobile" : "desktop", focus: o.focus !== false, echo: typeof o.echo === "string" ? o.echo : "", since: Number.isFinite(o.since) ? o.since : 0 } : null)),
   windowClose: () => ipcRenderer.send("window-close"),
   // 安裝進度(renderer/engine.js):主行程那一份快照,拉一次 + 之後每次變動推過來

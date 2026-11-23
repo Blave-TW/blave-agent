@@ -46,13 +46,13 @@ Every strategy (Type A, B, and C) sets four name/label fields at the top of the 
 
 - `STRATEGY_NAME` — the **technical id**: lowercase, snake_case, used for the directory, files, and reporting key. Keep it stable; nothing user-facing depends on it. (e.g. `doge_holder_conc`)
 - `DISPLAY_NAME` — the **human-facing name** shown in the workspace strategy list. Write it in plain language: *what it trades + what it does*, NOT the engineer id or a raw indicator name. Use the language the user is conversing in (Chinese users → Chinese). It is also how you refer to the strategy in replies (AGENTS.md › Response Style). Examples: `doge_holder_conc` → `"DOGE 大戶持倉集中度"`, `rsi_bb_reversal` → `"RSI＋布林通道反轉"`, `supertrend_sol` → `"SOL SuperTrend 順勢"`.
-- `DESCRIPTION` — **one plain sentence** the user could read months later and remember what this strategy does, e.g. `"追蹤 DOGE 大戶持倉集中度,集中度升高時進場做多"`. One line, no jargon dump.
+- `DESCRIPTION` — **one plain sentence** the user could read months later and remember what this strategy does, e.g. `"追蹤 DOGE 大戶持倉集中度，集中度升高時進場做多"`. One line, no jargon dump. Chinese text in `DESCRIPTION` and `LOGIC` uses full-width punctuation (，：（）); numbers, English and code like `ATR(14)` stay half-width. `DISPLAY_NAME` takes none of `、；：「」;:` (the platform rejects such a name and shows the folder id instead); join parts with a space or ＋ as in the examples.
 - `LOGIC` — **the rules**, shown under the name when the user opens 策略邏輯 on the strategy page (web and desktop). A plain string constant (triple-quoted for several lines; not an f-string, dict or list — the platform reads it without running the file). One rule per line, each starting with `entry:`, `exit:` or `stop:` — English, lowercase, half- or full-width colon; the rule after it in the user's language with the real numbers from the code. Several lines with the same prefix are several rules, in order; a line without a prefix continues the rule above it. Use `stop:` for stop-loss / take-profit / trailing / time stops, `exit:` for signal exits. Display caps: 300 characters per rule, 12 rules per prefix — write short rules, not paragraphs.
 
 ```python
 STRATEGY_NAME = "doge_holder_conc"
 DISPLAY_NAME  = "DOGE 大戶持倉集中度"
-DESCRIPTION   = "追蹤 DOGE 大戶持倉集中度,集中度升高時進場做多"
+DESCRIPTION   = "追蹤 DOGE 大戶持倉集中度，集中度升高時進場做多"
 LOGIC = """
 entry: 大戶持倉集中度高於過去 30 天的 80 百分位
 entry: 4h 收盤價在 50 根均線之上

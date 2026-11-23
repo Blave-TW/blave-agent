@@ -27,13 +27,13 @@
 /* 清單列的掃讀寬上限 1200、靠左:2560 時名字到報酬不再隔 1400(設計稽核 0.1.59 寬螢幕 #2);1920 碰不到 */
 .lib-rows, #lib-grps { max-width: 1200px; }
 .lib-rows:empty { border-top: 0; }
-.lib-row { width: 100%; min-height: 56px; display: grid; grid-template-columns: minmax(0, 1fr) 88px var(--lib-num-w) var(--lib-num-w) 12px; gap: var(--space-12); align-items: center; padding: var(--space-8); border-bottom: 1px solid var(--border-hairline); text-align: left; border-radius: 0; transition: background var(--motion-fast) var(--ease-standard); }
+.lib-row { width: 100%; height: 56px; display: grid; grid-template-columns: minmax(0, 1fr) 88px var(--lib-num-w) var(--lib-num-w) 12px; gap: var(--space-12); align-items: center; padding: var(--space-8); border-bottom: 1px solid var(--border-hairline); text-align: left; border-radius: 0; transition: background var(--motion-fast) var(--ease-standard); }
 .lib-row:hover { background: var(--surface-card); }
 .lib-row:focus-visible { outline-offset: -2px; }
 .lib-row-l { min-width: 0; }
-/* 標題最多兩行、tag 接在後面(放不下就換到下一行),不讓 tag 把標題擠成省略號(設計稽核 library-sort-review 第 2 條) */
-.lib-row .l1 { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-4) var(--space-6); min-width: 0; }
-.lib-row .t { min-width: 0; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow-wrap: anywhere; font-size: 13px; line-height: 1.4; font-weight: 600; color: var(--ink); }
+/* 標題單行截尾、全名在 title;價格等 tag 固定接在名稱右邊不換行,列高一律 56,清單一眼掃完(QA 0158 P3-4;spec p3-0160 §7) */
+.lib-row .l1 { display: flex; flex-wrap: nowrap; align-items: center; gap: var(--space-6); min-width: 0; }
+.lib-row .t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; line-height: 1.4; font-weight: 600; color: var(--ink); }
 .lib-row .l2 { margin-top: var(--space-2); font-size: 12px; color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* 兩格數字(§4.1):label 在上(11px ink-3)、數字在下;欄寬固定,各列才對得齊。en 的 label(Annual Return / Max Drawdown)比 zh 寬 */
 .lib { --lib-num-w: 64px; }

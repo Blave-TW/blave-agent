@@ -571,10 +571,15 @@ const draft = (o) => Object.assign({ picked: ["btc", "tw", "n5"], edits: { n5: 2
     const go = (o) => { bag(Object.assign({ list: [EC], noPv: true }, o)); vm.runInContext("trCfOpen({ from: 'sp', input: { name: 'ec', initial: '300', kind: 'amount', oneLeg: true }, stored: trBase(), opener: null })", ctx); return ctx.BOX; };
     const notes = (b) => flat(b.extra).filter((n) => n.className === "cf-note").map((n) => n.textContent), inField = (b) => flat(flat(b.extra).find((n) => /cf-in-fld/.test(n.className))).some((n) => n.textContent === "tr.cf.nextRound");
     let b = go({ firing: true, paper: true });
-    ok("⑤ 新策略沒有預覽、在跑:一開框主鈕可按、「儲存並下單」+ 模擬;下一輪那句在表下、不在輸入格裡", b.title === "tr.cf.titleFire" && b.ok === "tr.cf.titleFire" && !b.okDisabled && b.mark === "tr.mode.paper"
+    // 0.1.60(spec p3-0160 §4b):從策略頁開、這支還沒在策略組合裡 → 標題＝主鈕「加入並下單」/「加到策略組合」;已在組合裡的照舊(上面 btc 那兩條)
+    ok("⑤ 新策略沒有預覽、在跑:一開框主鈕可按、「加入並下單」+ 模擬;下一輪那句在表下、不在輸入格裡", b.title === "sp.cf.addFire" && b.ok === "sp.cf.addFire" && !b.okDisabled && b.mark === "tr.mode.paper"
       && J(notes(b)) === J(["tr.cf.nextRound"]) && !inField(b) && !flat(b.extra).some((n) => n.className === "cf-wait"), J({ t: b.title, dis: b.okDisabled, n: notes(b) }));
     b = go({});
-    ok("⑤ …不在跑:「儲存金額」、主鈕可按、沒有那句", b.title === "tr.cf.title" && !b.okDisabled && notes(b).length === 0, J({ t: b.title, n: notes(b) })); }
+    ok("⑤ …不在跑:「加到策略組合」(標題＝主鈕)、主鈕可按、沒有那句", b.title === "po.add" && b.ok === "po.add" && !b.okDisabled && notes(b).length === 0, J({ t: b.title, n: notes(b) }));
+    b = go({}); ctx.BOX = null;
+    vm.runInContext("trCfOpen({ from: 'sp', oosFail: true, input: { name: 'ec', initial: '300', kind: 'amount', oneLeg: true }, stored: trBase(), opener: null })", ctx);
+    const oos = flat(ctx.BOX.extra).filter((n) => /\bcf-oos\b/.test(n.className));
+    ok("⑤ 樣本外沒過(oosFail):輸入格下一行 sp.oosFail;沒帶就沒有", oos.length === 1 && oos[0].textContent === "sp.oosFail" && !flat(b.extra).some((n) => /\bcf-oos\b/.test(n.className)), J(oos.map((n) => n.textContent))); }
   { const S = bag({ edits: {}, picked: ["btc", "tw", "tw2"], list: [{ name: "tw2", displayName: "TW2", hasBacktest: true, symbol: "2603", market: "spot", twd: true, twdAll: true }] });
     // 沒有 picker 草稿的那一種(前置已保證:策略頁那一態有草稿時不出〔儲存〕):直送整份已存的
     S.picked = null; S.ct.edits = { other: "MXF" };

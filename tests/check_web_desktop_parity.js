@@ -380,7 +380,7 @@ for (const lang of ["zh", "en"]) {
 { const ctS = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "chattabs.js"), "utf8"), appS = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "app.js"), "utf8");
   ok("排隊行同 web csShowQueued:一行 tabs.queue、行內不放鈕;取消靠送出鍵(排隊時 aria-label tabs.queueCancel、title tabs.queueCancelTitle,同 web sendBtnSync)",
     /q\.textContent = t\("tabs\.queue"\);/.test(ctS) && !/tabs\.queueCancel/.test(ctS.slice(ctS.indexOf("function tabsQueued("), ctS.indexOf("function tabsTrackParallel(")))
-    && /b\.dataset\.i18nAria = queued \? "tabs\.queueCancel" : running \? "ws\.stop" : "ws\.send";/.test(appS) && /if \(queued\) b\.title = t\("tabs\.queueCancelTitle"\); else b\.removeAttribute\("title"\);/.test(appS)); }
+    && /b\.dataset\.i18nAria = queued \? "tabs\.queueCancel" : stop \? "ws\.stop" : "ws\.send";/.test(appS) && /if \(queued\) b\.title = t\("tabs\.queueCancelTitle"\); else b\.removeAttribute\("title"\);/.test(appS)); }
 // 交易歷史口數單的合約月份與口數(0.1.45):電腦版 trOrderContract／trOrderLotsQty 與網頁 pfOrderContract／pfOrderLotsQty 跑同一組測資
 { const cutD = (n) => { const i = desk.indexOf("function " + n + "("); let d = 0, k = desk.indexOf("{", desk.indexOf(")", i)); for (; i >= 0 && k < desk.length; k++) { if (desk[k] === "{") d++; else if (desk[k] === "}" && --d === 0) break; } return i < 0 ? "" : desk.slice(i, k + 1); };
   const cutW = (n) => { const i = web.indexOf("        function " + n + "("); return i < 0 ? "" : web.slice(i, web.indexOf("\n        }\n", i) + 10); };
@@ -948,7 +948,7 @@ for (const lang of ["zh", "en"]) {
       const w = wF(f), dk = dF({ ...f, gap: gap && "mg.needFund" }), d = dk === "UNK" ? "pfUnknownWhy" : dk === "mg.needFund" ? "mgNeedFund" : WHY_KEY[dk] || dk;
       if (w !== d) bad.push(JSON.stringify(f) + " web=" + w + " 電腦版=" + dk); }
     ok("〔套用金額〕原因優先序兩邊同一份(7 個條件全組合 × 有無 gap)", bad.length === 0, bad.slice(0, 3).join(";")); }
-  const WHY_STR = { "mg.applyDiffSet": "workspace_mg_apply_diff_set", "mg.applyDiffSetN": "workspace_mg_apply_diff_set_n", "mg.applyWhyUnread": "workspace_mg_apply_why_unread", "mg.applyWhyQuote": "workspace_mg_apply_why_quote", "mg.applyWhyFx": "workspace_mg_apply_why_fx", "mg.applyWhySame": "workspace_mg_apply_why_same",
+  const WHY_STR = { "mg.applyDiffSet": "workspace_mg_apply_diff_set", "mg.applyWhyUnread": "workspace_mg_apply_why_unread", "mg.applyWhyQuote": "workspace_mg_apply_why_quote", "mg.applyWhyFx": "workspace_mg_apply_why_fx", "mg.applyWhySame": "workspace_mg_apply_why_same",
     "mg.needFund": "workspace_mg_need_fund", "mg.needStrat": "workspace_mg_need_strat", "mg.busy": "workspace_mg_busy", "mg.shortOpt": "workspace_mg_short_opt", "mg.optDoneToast": "workspace_mg_opt_done_toast", "mg.needMethod": "workspace_mg_need_method", "mg.needTarget": "workspace_mg_need_target", "mg.sizeNoHist": "workspace_mg_size_no_hist", "mg.sizeNoSolve": "workspace_mg_size_no_solve",
     "sz.shortMdd": "workspace_sz_short_mdd", "sz.staleMdd": "workspace_sz_stale_mdd", "sz.oldMdd": "workspace_sz_old_mdd", "sz.noVol": "workspace_sz_no_vol",
     "mg.why.alloc": "workspace_mg_why_alloc", "mg.why.tbMethod": "workspace_mg_why_tb_method", "mg.why.rerun": "workspace_mg_why_rerun", "mg.why.replaced": "workspace_mg_why_replaced", "mg.why.updCloud": "workspace_mg_why_upd_cloud", "mg.why.pickTitle": "workspace_mg_why_pick_title",

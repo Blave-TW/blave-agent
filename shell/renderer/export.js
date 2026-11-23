@@ -37,10 +37,12 @@ function xpOff(target, d) { return xpIsPortfolio(d) ? "portfolio" : xpIsTypeB(d)
 function xpOffAll(d) { const r = XP_ORDER.map((k) => xpOff(k, d)); return r[0] && r.every((x) => x === r[0]) ? r[0] : null; }
 function xpAvail(target, d) { return xpOff(target, d) === null; }
 // 送給 agent 的那句。壞 id / 壞 target / 範本不是恰好一個 {id} → null
-function xpMsg(target, id, tpl) {
+/* 送出的句子帶名稱與資料夾代號(同 web workspace_xp_msg_*,agent 靠代號找資料夾);對話裡由 FIXED_PROMPTS 換成不帶代號的一行
+   (xp.msgLabel.*,QA 0159 R5-3)。id 要合規才送;名稱沒有就用代號 */
+function xpMsg(target, id, tpl, label) {
   if (!XP_PLATFORM[target] || typeof id !== "string" || !/^[A-Za-z0-9_-]{1,64}$/.test(id)) return null;
-  const s = tpl && typeof tpl[target] === "string" ? tpl[target] : null;
-  return s && s.split("{id}").length === 2 ? s.split("{id}").join(id) : null;
+  const s = tpl && typeof tpl[target] === "string" ? tpl[target] : null, dn = typeof label === "string" && label.trim() ? label.trim() : id;
+  return s && s.split("{name}").length === 2 && s.split("{display_name}").length === 2 ? s.split("{display_name}").join(dn).split("{name}").join(id) : null;
 }
 // runtime 的 export chunk 是不是我們畫得出來的形狀(內容是 workspace 來的,只當文字用)
 function xpChunkOk(c) {
@@ -177,7 +179,7 @@ function xpAsk(target, opener) {
   const platform = XP_PLATFORM[target], title = xpTitle(target);
   confirmBox({ title, lines: [t("xp.cf.body", { platform })], ok: t("xp.cf.ok"), opener,
     onOk: () => {
-      const msg = xpMsg(target, id, xpTpl()); if (!msg) return;
+      const msg = xpMsg(target, id, xpTpl(), typeof fixedName === "function" ? fixedName(id) : id); if (!msg) return;
       const again = csOnceLive(onceKey); if (again) { onceTell(again); return; }   // 框開著的期間另一條已經送了
       if (paneSt.chat.off) paneToggle("chat", false);                     // 聊天欄收著就先展開:轉的過程在那裡
       const sending = csSendAway(msg); csOnceMark(onceKey);

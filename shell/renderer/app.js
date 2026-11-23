@@ -737,6 +737,8 @@ function setCat(cat) {
     if (b.dataset.setCat === cat) b.setAttribute("aria-current", "true"); else b.removeAttribute("aria-current");
   });
   $("set-modal").querySelectorAll(".set-pane").forEach((p) => { p.hidden = p.dataset.setCat !== cat; });
+  // 換類或重開都從頂端看起:捲動框是共用的,不歸零會停在上一頁捲到的位置(QA 0159 #13「外觀」被捲掉)
+  const scr = $("set-modal").querySelector(".set-content"); if (scr) scr.scrollTop = 0;
   // 開到這一類就拿最新的狀態;沒登入的人要的是公開數字
   if (cat !== "model" && typeof akClear === "function") akClear();   // API 金鑰子頁:離開這一類就把沒存的金鑰從輸入框清掉
   if (cat === "model") mdlPaint();
@@ -847,6 +849,7 @@ function applyLangChoice(v) {
   if (lastDetect) paintRows(lastDetect); else detectingRows();
   stratRefresh(false).then(() => { if (RP.name) stratSelect(RP.name, true); });
   trRepaint();   // 自動下單頁、狀態帶、設定 › 連線(trade.js)
+  if (typeof rpPaintLogic === "function" && !$("rp").hidden) rpPaintLogic();   // 策略庫那支的策略邏輯照新語言重抓(雲端視角不走 stratSelect)
 }
 // radiogroup 的鍵盤慣例:左右鍵換格並套用(只有兩格,不繞圈也夠)
 $("cn-lang").addEventListener("keydown", (e) => {
@@ -1640,6 +1643,13 @@ function upPillClick(btn) {
   if (!p.show || p.kind === "restarting") return;
   const anchor = $("foot-why");   // 原因句出在列的上方:插在列前面那個錨點後面,列本身不動
   if (busyLocked(btn)) {   // 回合中是鎖:講原因(lock_update)。細軌 44 寬寫不下一句:先把側欄展開,句子出在列上方
+    // 雲端沒主機、系統代收的細軌展不開:原因走細軌既有的 tooltip(title)＋ aria-describedby 指到同一句,不寫進藏著的列(複稽 b)
+    if (btn.id === "up-rail" && typeof paneSideAuto !== "undefined" && paneSideAuto) {
+      let d = $("up-rail-why"); if (!d) { d = document.createElement("span"); d.id = "up-rail-why"; d.className = "sr-only"; btn.after(d); }
+      d.textContent = t("busy.update"); btn.title = t("busy.update"); btn.setAttribute("aria-describedby", "up-rail-why");
+      srSay(t("busy.update")); busyHit("update");
+      return;
+    }
     const opened = btn.id === "up-rail" && typeof paneSt !== "undefined" && paneSt.side.off;
     if (opened) paneToggle("side", false);
     busyTell(busySlot("up-pill-why", anchor), "update");
@@ -2458,8 +2468,28 @@ function rpPaintHead(B) {
    沒有邏輯(舊策略、舊快取)或看舊版(versions.js 把 #rp-desc 收起:說明與邏輯寫的都是目前版)時那顆字不出,頁首跟今天一樣 */
 const RP_LOGIC_KEY = "ws_logic_open";
 const RP_LOGIC_LABEL = { entry: "rp.logic.entry", exit: "rp.logic.exit", stop: "rp.logic.stop" };
+/* 策略庫裝的那支:依介面語言換成上架時寫的說明(spec strategy-logic-i18n-0159 §7.4)。只有安裝檔解出的邏輯跟上架碼解出的一模一樣時才換——
+   用戶或 agent 改過策略就繼續顯示自己的字。api 沒部署、沒譯文、讀不到都照舊讀碼。結果依 (id, 語言) 收在 RP_LOGIC_I18N,拿到就重畫 */
+const RP_LOGIC_I18N = new Map();   // `${id}:${LANG}` → { logic, logicCode } | null(問過、沒有)
+function rpSameLogic(a, b) {
+  if (!a || !b) return !a && !b;
+  if (typeof a.text === "string" || typeof b.text === "string") return a.text === b.text;
+  const same = (x, y) => (x || []).length === (y || []).length && (x || []).every((r, i) => r === y[i]);
+  return same(a.entry, b.entry) && same(a.exit, b.exit) && same(a.stop, b.stop);
+}
+function rpLogicOf(d) {
+  if (!Number.isInteger(d.sourceId) || d.sourceId <= 0) return d.logic;
+  const k = d.sourceId + ":" + LANG;
+  if (!RP_LOGIC_I18N.has(k)) {
+    RP_LOGIC_I18N.set(k, null);
+    Promise.resolve(window.blave.strategyLogicI18n(d.sourceId, LANG)).then((v) => { RP_LOGIC_I18N.set(k, v || null); if (v && v.logic) rpPaintLogic(); }, () => {});
+    return d.logic;
+  }
+  const v = RP_LOGIC_I18N.get(k);
+  return v && v.logic && rpSameLogic(d.logic, v.logicCode) ? v.logic : d.logic;
+}
 function rpPaintLogic() {
-  const B = rpBag(), d = (B && B.data) || {}, lg = d.logic, tog = $("rp-logic-tog"), body = $("rp-logic");
+  const B = rpBag(), d = (B && B.data) || {}, lg = rpLogicOf(d), tog = $("rp-logic-tog"), body = $("rp-logic");
   const show = !!lg && !$("rp-desc").hidden, open = show && lsGet(RP_LOGIC_KEY) === "1";
   tog.hidden = !show; tog.setAttribute("aria-expanded", String(open));
   $("rp").classList.toggle("is-logic-open", open);
@@ -2835,6 +2865,9 @@ function tabsMoreWire(box, more, tabSel) {
     // 捷徑一冒出來分頁段就少它的寬:開報告時先捲好的那顆會被切一半,要照新寬度再捲一次
     if (was !== more.hidden) rpTabReveal(box.querySelector(tabSel + '[aria-selected="true"]'));
     if (over) more.classList.toggle("is-back", box.scrollLeft >= box.scrollWidth - box.clientWidth - 1);
+    // 右緣淡出(canon navigation › 放不下時的右緣):切一半的分頁名會被讀成另一個字。可捲寬度不到 24 不出、捲到底收掉;淡出貼在捷徑左邊
+    const span = box.scrollWidth - box.clientWidth;
+    box.classList.toggle("is-fade", span >= 24 && box.scrollLeft < span - 1);
   };
   more.addEventListener("click", () => {
     const back = more.classList.contains("is-back");
@@ -2900,7 +2933,7 @@ function csStartNew(o) {
    比對:用模板字串本身組出前後錨定的 regex(不另抄一份模板),{name} = 最短的任意字串、{lookback}/{step} = 數字,整則吻合才算;
    zh / en 兩種模板都試(舊對話、送出後換了介面語言都認得),摘要照現在的語言。用戶自己逐字打出同一整句也會顯示摘要——
    那句要 agent 做的就是這件事,可以接受。fixedMatch 是純函式(tests/check_shell_wf.js 從原文切出來跑) */
-const FIXED_PROMPTS = [["wf.msgRun", "wf.msgRunLabel", "wf.msgRunTitle"], ["rob.msgScan", "rob.msgScanLabel", "rob.msgScanTitle"], ["rob.msgRescan", "rob.msgRescanLabel", "rob.msgScanTitle"], ["rob.msgRescan1", "rob.msgRescanLabel", "rob.msgScanTitle"], ["lib.msgLocal", "lib.msgTitle", "lib.msgTitle"], ["lib.msg", "lib.msgTitle", "lib.msgTitle"], ["lib.msgPaid", "lib.msgTitle", "lib.msgTitle"]];   // 策略庫的安裝句:對話名與泡泡走「{名稱} · 安裝並回測」
+const FIXED_PROMPTS = [["wf.msgRun", "wf.msgRunLabel", "wf.msgRunTitle"], ["rob.msgScan", "rob.msgScanLabel", "rob.msgScanTitle"], ["rob.msgRescan", "rob.msgRescanLabel", "rob.msgScanTitle"], ["rob.msgRescan1", "rob.msgRescanLabel", "rob.msgScanTitle"], ["lib.msgLocal", "lib.msgTitle", "lib.msgTitle"], ["lib.msg", "lib.msgTitle", "lib.msgTitle"], ["lib.msgPaid", "lib.msgTitle", "lib.msgTitle"], ["xp.msg.xq", "xp.msgLabel.xq", "xp.msgLabel.xq"], ["xp.msg.mc", "xp.msgLabel.mc", "xp.msgLabel.mc"], ["xp.msg.pine", "xp.msgLabel.pine", "xp.msgLabel.pine"]];   // 策略庫的安裝句:對話名與泡泡走「{名稱} · 安裝並回測」
 function fixedMatch(text, strings) {
   if (typeof text !== "string" || !text) return null;
   for (const [src, label, title] of FIXED_PROMPTS) for (const l of ["zh", "en"]) for (const legacy of [false, true]) {
@@ -3529,42 +3562,113 @@ function chatCopy(e) {
 $("chat-scroll").addEventListener("copy", chatCopy);
 
 /* 圖片放大(lightbox):點圖開、點任何地方 / Esc / ✕ 關。焦點關掉後回到原本那張圖。 */
-let lbOpener = null;
-function lbOpen(src, alt, opener) {
-  lbOpener = opener;
-  $("lb-img").src = src; $("lb-img").alt = alt;
+/* 放大檢視(canon chat-shell › agent 貼的圖;spec chat-image-strip-0160 §5):序列是這條對話畫面上所有 agent 圖,打開時照 DOM 順序收,不另存;
+   ← → 與兩顆鈕切換、走到頭停用不循環;Tab 只在關閉／上一張／下一張之間轉;關掉後焦點回到當下看的那張 */
+const LB = { list: [], i: 0 };
+function lbItems() { return [...chatEl().querySelectorAll(".msg.img .img-zoom, .img-strip .img-zoom")]; }
+function lbOpen(opener) {
+  LB.list = lbItems(); LB.i = Math.max(0, LB.list.indexOf(opener));
+  if (!LB.list.length) LB.list = [opener];
+  lbShow();
   $("view-ws").inert = true;
   const sc = $("lb-scrim"); sc.hidden = false;
   requestAnimationFrame(() => sc.classList.add("open"));
   $("lb-close").focus();
+  trackFeature("chat_img_zoom");
+}
+function lbShow() {
+  const b = LB.list[LB.i], im = b.querySelector("img"), n = LB.list.length, cap = b.dataset.cap || "";
+  $("lb-img").src = im.src; $("lb-img").alt = im.alt;
+  $("lb-n").hidden = n < 2; $("lb-n").textContent = LB.i + 1 + " / " + n;
+  $("lb-prev").hidden = $("lb-next").hidden = n < 2;
+  $("lb-prev").disabled = LB.i === 0; $("lb-next").disabled = LB.i === n - 1;
+  $("lb-cap").hidden = !cap; $("lb-cap").textContent = cap;
+}
+function lbStep(d) {
+  const j = LB.i + d; if (j < 0 || j >= LB.list.length) return;
+  LB.i = j; lbShow();
+  const a = document.activeElement;   // 走到頭那顆鈕停用了:焦點移到另一顆,沒有就回關閉,不掉到 BODY
+  if (a && a.disabled) { const o = $(a.id === "lb-prev" ? "lb-next" : "lb-prev"); (o.hidden || o.disabled ? $("lb-close") : o).focus(); }
 }
 function lbClose() {
   const sc = $("lb-scrim"); if (sc.hidden) return;
   sc.classList.remove("open"); sc.hidden = true; $("lb-img").removeAttribute("src");
   $("view-ws").inert = false;
-  if (lbOpener && lbOpener.isConnected) lbOpener.focus();
-  lbOpener = null;
+  const cur = LB.list[LB.i];
+  if (cur && cur.isConnected) { cur.focus(); cur.scrollIntoView({ block: "nearest", inline: "nearest" }); }
+  LB.list = [];
 }
 $("lb-scrim").addEventListener("click", lbClose);
+["lb-img", "lb-cap", "lb-n"].forEach((id) => $(id).addEventListener("click", (e) => e.stopPropagation()));   // 點圖以外的地方才關
+$("lb-prev").addEventListener("click", (e) => { e.stopPropagation(); lbStep(-1); });
+$("lb-next").addEventListener("click", (e) => { e.stopPropagation(); lbStep(1); });
 $("lb-scrim").addEventListener("keydown", (e) => {
-  if (e.key === "Tab") e.preventDefault();      // 裡面只有一顆鈕,焦點不離開
+  if (e.key === "ArrowLeft" || e.key === "ArrowRight") { e.preventDefault(); lbStep(e.key === "ArrowLeft" ? -1 : 1); return; }
+  if (e.key !== "Tab") return;
+  e.preventDefault();
+  const ring = ["lb-close", "lb-prev", "lb-next"].map($).filter((b) => !b.hidden && !b.disabled);
+  const k = ring.indexOf(document.activeElement);
+  ring[(k + (e.shiftKey ? -1 : 1) + ring.length) % ring.length].focus();
 });
 
-/* agent 送來的圖(回測權益圖、熱圖、它自己畫的)。src 一律是主行程給的 data: URL。 */
-function addImage(src, caption) {
-  const el = document.createElement("figure");
-  el.className = "msg img";
-  const im = document.createElement("img");
-  im.src = src; im.alt = caption || t("chat.imageAlt");
-  im.addEventListener("load", scrollChat);       // 解碼完才知道高度
-  // 聊天欄最窄 320,圖上的軸字看不清楚——點一下放大看原尺寸。包成 button 才有鍵盤可達
-  const zb = document.createElement("button");
-  zb.type = "button"; zb.className = "img-zoom"; zb.setAttribute("aria-label", t("chat.imageZoom"));
+/* agent 送來的圖(回測權益圖、熱圖、它自己畫的)。src 一律是主行程給的 data: URL。
+   一張:限高 280。相鄰(中間沒有文字)兩張以上:併成一條橫向膠捲,第二張進來時第一張就地換成膠捲的一格、不動畫、不自動往右捲;
+   重載照同一套(canon chat-shell › agent 貼的圖;spec chat-image-strip-0160)。說明字只進 alt 與放大檢視 */
+function chatImgPrev() { let n = chatEl().lastElementChild; while (n && busy && n === busy.el) n = n.previousElementSibling; return n; }
+function chatImgBtn(src, caption) {
+  const zb = document.createElement("button"), im = document.createElement("img");
+  zb.type = "button"; zb.className = "img-zoom"; zb.setAttribute("aria-haspopup", "dialog"); zb.dataset.cap = caption || "";
+  im.src = src; im.alt = caption || t("chat.imageAlt"); im.draggable = false;
+  im.addEventListener("load", () => { scrollChat(); const st = zb.closest(".img-strip"); if (st && st.blaveSync) st.blaveSync(); });   // 解碼完才知道高度與寬
   zb.appendChild(im);
-  zb.addEventListener("click", () => lbOpen(src, im.alt, zb));
-  el.appendChild(zb);
-  if (caption) { const c = document.createElement("figcaption"); c.textContent = caption; el.appendChild(c); }
-  chatEl().appendChild(el);
+  zb.addEventListener("click", () => { if (zb.closest(".img-strip") && zb.closest(".img-strip").blaveDragged) return; lbOpen(zb); });
+  return zb;
+}
+const IMG_DRAG_PX = 8;
+function chatImgStrip() {
+  const el = document.createElement("div"), sc = document.createElement("div"), fade = document.createElement("div");
+  el.className = "msg img-strip"; el.setAttribute("role", "group");
+  sc.className = "img-strip-sc"; fade.className = "img-strip-fade"; fade.setAttribute("aria-hidden", "true"); fade.hidden = true;
+  el.append(sc, fade);
+  let told = false;
+  const sync = () => { const span = sc.scrollWidth - sc.clientWidth; fade.hidden = span < 24 || sc.scrollLeft >= span - 1; };
+  el.blaveSync = sync;
+  sc.addEventListener("scroll", () => { sync(); if (!told && !el.blaveSilent) { told = true; trackFeature("chat_img_scroll"); } }, { passive: true });
+  // Tab 走到露一半的那張:整張捲進來(扣掉右緣淡出),框不落在淡出底下
+  sc.addEventListener("focusin", (e) => { const b = e.target.closest(".img-zoom"); if (b) b.scrollIntoView({ block: "nearest", inline: "nearest" }); });
+  // 滑鼠按住拖(Scroll row):超過 8px 才算拖,拖曳中暫停 snap,放開後那一下不開放大
+  let drag = null;
+  sc.addEventListener("pointerdown", (e) => { if (e.pointerType !== "mouse" || e.button !== 0) return; drag = { x: e.clientX, left: sc.scrollLeft, on: false }; el.blaveDragged = false; });
+  sc.addEventListener("pointermove", (e) => {
+    if (!drag) return;
+    if (!drag.on && Math.abs(e.clientX - drag.x) > IMG_DRAG_PX) { drag.on = true; sc.style.scrollSnapType = "none"; try { sc.setPointerCapture(e.pointerId); } catch (_) { } }
+    if (drag.on) sc.scrollLeft = drag.left - (e.clientX - drag.x);
+  });
+  const end = () => { if (!drag) return; if (drag.on) { el.blaveDragged = true; sc.style.scrollSnapType = ""; setTimeout(() => { el.blaveDragged = false; }, 0); } drag = null; };
+  sc.addEventListener("pointerup", end); sc.addEventListener("pointercancel", end);
+  if (typeof ResizeObserver === "function") new ResizeObserver(sync).observe(sc);
+  return el;
+}
+function chatImgRelabel(strip) {
+  const bs = [...strip.querySelectorAll(".img-zoom")];
+  bs.forEach((b, i) => { if (!b.dataset.cap) b.querySelector("img").alt = t("chat.imageN", { n: i + 1 }); });
+  strip.setAttribute("aria-label", t("chat.imageCount", { n: bs.length }));
+}
+function addImage(src, caption) {
+  const prev = chatImgPrev(), zb = chatImgBtn(src, caption);
+  let el;
+  if (prev && prev.classList.contains("img-strip")) { el = prev; el.querySelector(".img-strip-sc").appendChild(zb); }
+  else if (prev && prev.classList.contains("img") && prev.tagName === "FIGURE") {
+    el = chatImgStrip(); el.blaveSilent = true;
+    const first = prev.querySelector(".img-zoom"), had = document.activeElement === first;
+    el.querySelector(".img-strip-sc").append(first, zb); prev.replaceWith(el);
+    if (had) first.focus({ preventScroll: true });
+    requestAnimationFrame(() => { el.blaveSilent = false; });
+  } else {
+    el = document.createElement("figure"); el.className = "msg img"; el.appendChild(zb);
+    chatEl().appendChild(el);
+  }
+  if (el.classList.contains("img-strip")) { chatImgRelabel(el); el.blaveSync(); }
   busyPin(); scrollChat();
   return el;
 }
@@ -4049,7 +4153,7 @@ function busyEnd(faulted, stopped) {
     b.el.hidden = false;
     b.el.classList.add("is-done");
     b.live.removeAttribute("role"); b.live.removeAttribute("aria-live");
-    b.verb.textContent = t("turn.process"); b.obj.textContent = ""; b.obj.hidden = true;
+    b.verb.dataset.i18n = "turn.process"; b.verb.textContent = t("turn.process"); b.obj.textContent = ""; b.obj.hidden = true;   // 掛 data-i18n:切語言時跟收據那顆一起重畫(QA 0159 R4-7)
     b.elapsed.textContent = fmtDur((Date.now() - b.start) / 1000);
     b.elapsed.removeAttribute("aria-hidden");   // 結束了不再每秒跳:按鈕名稱才會是「思考過程 4m 12s」
     busyHasFoldOf(b);
@@ -4070,7 +4174,7 @@ function busyHoldReason(b) {
   if (b.held || !b.reason.textContent.trim()) return;
   b.held = true; b.el.classList.add("reason-held");
   const show = document.createElement("button");
-  show.type = "button"; show.className = "btn-quiet think-reason-show"; show.textContent = t("turn.showReason");
+  show.type = "button"; show.className = "btn-quiet hit44 think-reason-show"; show.textContent = t("turn.showReason");
   show.addEventListener("click", () => { b.el.classList.remove("reason-held"); show.remove(); b.reason.setAttribute("tabindex", "-1"); b.reason.focus(); });   // 鈕消失,焦點接到剛出來的字
   b.reason.before(show);
 }
@@ -4096,14 +4200,17 @@ function taWaitShow(on) {
 function sendBtnSync() {
   if (tabBg()) { CS.dirtyUi = true; return; }   // 送出鈕是眼前分頁的:背景那條換回時重畫
   const b = $("btn-send");
-  b.classList.toggle("is-stop", running);
-  b.classList.toggle("is-stopping", running && turnStopping);
+  /* 雲端視角沒開好(輸入框停用)時不出本機回合的停止鈕:用戶看不出停的是哪一邊;送出鈕跟輸入框一起真 disabled(QA 0159 #7、0158 P2-5)。
+     回合照跑,切回這台電腦就看得到、停得了 */
+  const gated = !!$("ta").disabled, stop = running && !gated;
+  b.classList.toggle("is-stop", stop);
+  b.classList.toggle("is-stopping", stop && turnStopping);
   // 排隊中的停止 = 取消排隊(同 web sendBtnSync):句子撤回、放回輸入框;排隊行本身不放鈕
-  const queued = running && !!(CS.loaded && CS.loaded.queued);
-  b.dataset.i18nAria = queued ? "tabs.queueCancel" : running ? "ws.stop" : "ws.send";
+  const queued = stop && !!(CS.loaded && CS.loaded.queued);
+  b.dataset.i18nAria = queued ? "tabs.queueCancel" : stop ? "ws.stop" : "ws.send";
   b.setAttribute("aria-label", t(b.dataset.i18nAria));
   if (queued) b.title = t("tabs.queueCancelTitle"); else b.removeAttribute("title");
-  b.disabled = $("ta").disabled && !b.classList.contains("is-stop");   // 雲端沒開好才停用;這顆是停止鈕時照常能按
+  b.disabled = gated;
   if (!running) taWaitShow(false);
 }
 async function stopTurn() {
@@ -5151,6 +5258,15 @@ function planStateText() {
   if (view === "running") return planTrialCx(v) ? t("pv.st.trialCancelled", v) : planTrialOn(v) ? t("pv.st.trial", v) : t("pv.st.planOn");
   const s = planStateOf(view, v); return s ? s[1] : "";
 }
+// 選單列尾的短字(spec sidebar-row-0160 §2.1):選單 240 寬放得下;完整那句(planStateText)進 title
+function planStateShort() {
+  if (!sideBooted) return "";
+  const view = planView(), v = planVars();
+  if (view === "trial") return t(acct && acct.trial_cancel_at_end === true ? "am.st.ends" : "side.trial", v);
+  if (view === "running") return planTrialCx(v) ? t("am.st.ends", v) : planTrialOn(v) ? t("side.trial", v) : t("pv.st.planOn");
+  if (view === "stopped") return t("side.stopped");
+  return planStateText();
+}
 let planLoginBusy = false, planLastView = null;
 let planLoginOut = false;   // 這次 planLogin 是從設定外面開始的(planSignIn 沒帶 inSettings):關設定不取消它
 function planPaint() {
@@ -5206,11 +5322,12 @@ function planPaint() {
   const trialBtn = () => (tCx ? btn("btn-quiet", t("plan.trialResume"), () => { trackFeature("trial_resume_web"); window.blave.openExternal(planPayUrl()); })
     : pl.no_auto_payment || pl.next_charge_source === "free" || pl.next_charge_source === "none" ? null
     : btn("btn-quiet", t("plan.trialCancel"), () => { trackFeature("trial_cancel_web"); window.blave.openExternal(planPayUrl()); }));
-  /* v3 試用格(spec host-card-relayout D1;Wei 11-20):頭是方案名＋試用徽章＋扣款那一列(p3TrialHead),鈕上方最多兩行(續扣、開主機會結束試用),
+  /* v3 試用格(spec host-card-relayout D1;Wei 11-20):頭是方案名＋試用徽章＋扣款那一列(p3TrialHead),鈕上方只一行「開雲端主機會結束試用」
+     (Wei 11-23 Q1:續扣與今天付多少交給加購框,框裡 p3.h.next／p3.h.trialEnd 已經寫了),
      〔到網站取消／恢復試用〕緊接在倒數徽章後面,鈕列只剩〔開雲端主機〕。到期不會扣的人(trialBtn 為 null)沒有扣款列與續扣句 */
   const t3 = view === "trial" && typeof p3TrialV3 === "function" && p3TrialV3() ? trialBtn() : null;
   if (t3) t3.dataset.k = "trial:head";   // 重畫後焦點還得回來(planPaint 底下照 dataset.k 找)
-  const t3Charge = !!t3 && !tCx, t3pd = (pl.next_cycle || pl.cycle) === "annual" ? v.yd : v.pd;
+  const t3Charge = !!t3 && !tCx;
   const V = {
     out:      { h: offerH, lead: mo ? "" : hasNum ? offerLead() : t(pvK("pv.d.noPrice")), list: mo ? offerList() : null, rule: hasNum && pvPriced(pvK("pv.f.out"), v) ? t(pvK("pv.f.out"), v) : "",
                 wait: planLoginBusy ? t("pv.w.waiting") : t(mo && cur !== "blave" ? "pv.w.out.cli" : "pv.w.out"),
@@ -5225,7 +5342,7 @@ function planPaint() {
     /* 試用中:取消／恢復試用在網站用量頁(電腦版沒有寫入端點,外開)。已取消(api trial_cancel_at_end):狀態講哪天結束;
        方案制講到期不收第一期,切換前講到期不轉成方案、之後照目前的計費——兩種時期各自是真話 */
     trial:    typeof p3TrialV3 === "function" && p3TrialV3() ? { head: p3TrialHead(v, tCx, t3Charge, t3), say: t("p3.a.title") + " · " + v.c,
-                          rules: (t3Charge ? [t3pd ? t("p3.f.renew", { pd: t3pd }) : t("p3.f.renewNoNum")] : []).concat(t("p3.f.trialConvertNoNum")),
+                          rules: [t("p3.f.trialEnds")],
                           acts: [btn("btn-out", t("p3.h.title"), cloudWebGo)] }
             : trialCx ? { h: "pv.h.ready", lead: trialLead(), rule: t(mo ? "pv.f.trialCancelled.m" : "pv.f.trialCancelled", v),
                           acts: [btn("btn-quiet", t("plan.trialResume"), () => { trackFeature("trial_resume_web"); window.blave.openExternal(planPayUrl()); }), mo ? btn("btn-out", t((typeof p3Live === "function" && p3Live()) ? "p3.h.title" : "plan.cloudWeb"), cloudWebGo) : btn("btn-out", t("plan.start"), planAsk, !planPriceOk(v))] }
@@ -5576,8 +5693,8 @@ function amPaint() {
   if (typeof rptBag === "function" && rptBag().open && !$("rpt").hidden) rpt.setAttribute("aria-current", "page");
   kids.push(rpt, gap(), item("ws.settings", () => { trackFeature("side_menu_set"); setOpen(); }));
   if (inn) {
-    const st = planStateText(); let v = null;
-    if (st) { v = mk("span", "v", st); v.title = st; }
+    const st = planStateShort(), full = planStateText(); let v = null;
+    if (st) { v = mk("span", "v", st); if (full && full !== st) v.title = full; }
     kids.push(item("set.cat.plan", () => { trackFeature("side_menu_plan"); planOpen(); }, v),
       item("pv.usage", () => { trackFeature("side_menu_usage"); window.blave.openExternal(usageUrl()); }, libExtIcon()));
   }
@@ -5950,8 +6067,19 @@ const PANES = {
 };
 const MAIN_MIN = 480;
 const paneSt = { side: { w: PANES.side.def, want: PANES.side.def, off: false }, chat: { w: PANES.chat.def, want: PANES.chat.def, off: false } };
+/* 系統代收側欄(設計師裁定 0.1.60 #7):雲端視角沒有主機時左欄沒有東西可列,收成細軌(齒輪、帳號留著)。
+   不寫進用戶的收合偏好(paneSt.side.off 不動、不存);切回本機或主機開好就回到他原本的樣子 */
+let paneSideAuto = false;
+function paneOff(key) { return paneSt[key].off || (key === "side" && paneSideAuto); }
+/* 狀態一換就照新的側欄寬把兩欄各夾一次:代收時視窗縮過,結束時側欄回原寬,中欄不能被擠到 480 以下(複稽 c) */
+function paneSideForce(on) {
+  if (paneSideAuto === !!on) return;
+  paneSideAuto = !!on;
+  Object.keys(PANES).forEach((k) => { if (!paneOff(k)) paneSt[k].w = paneClamp(k, paneSt[k].want); });
+  panesRender(false);
+}
 
-function paneEdge(key) { return paneSt[key].off ? PANES[key].off : paneSt[key].w; }
+function paneEdge(key) { return paneOff(key) ? PANES[key].off : paneSt[key].w; }
 function paneClamp(key, w) {
   const p = PANES[key];
   const room = window.innerWidth - paneEdge(key === "side" ? "chat" : "side") - MAIN_MIN;
@@ -5959,14 +6087,18 @@ function paneClamp(key, w) {
 }
 function panesRender(save) {
   Object.keys(PANES).forEach((key) => {
-    const p = PANES[key], st = paneSt[key], d = $(p.div);
-    document.documentElement.classList.toggle(p.cls, st.off);
+    const p = PANES[key], st = paneSt[key], d = $(p.div), off = paneOff(key);
+    document.documentElement.classList.toggle(p.cls, off);
     document.documentElement.style.setProperty(p.prop, st.w + "px");
-    d.classList.toggle("pane-off", st.off);
-    d.setAttribute("aria-valuenow", st.off ? 0 : st.w);
+    d.classList.toggle("pane-off", off);
+    d.setAttribute("aria-valuenow", off ? 0 : st.w);
+    // 系統代收時分隔線不可操作(拖、鍵盤、雙擊都不改用戶的寬度與收合偏好;複稽 a)
+    const locked = key === "side" && paneSideAuto;
+    d.tabIndex = locked ? -1 : 0; if (locked) d.setAttribute("aria-disabled", "true"); else d.removeAttribute("aria-disabled");
     d.setAttribute("aria-valuemin", p.min);
     d.setAttribute("aria-valuemax", p.max);
   });
+  document.documentElement.classList.toggle("ws-sc-auto", paneSideAuto);   // 系統代收時細軌不給〔展開〕:展開了也沒東西
   if (save) { try { localStorage.setItem("ws_layout", JSON.stringify(paneSt)); } catch (_) {} }
 }
 function paneToggle(key, off) {
@@ -5993,8 +6125,9 @@ function panesInit() {
     const p = PANES[key], st = paneSt[key], d = $(p.div);
     let down = false, dragging = false, fromHandle = false, x0 = 0, w0 = 0;
     const begin = () => { dragging = true; d.classList.add("active"); document.body.classList.add("resizing"); };
+    const locked = () => key === "side" && paneSideAuto;
     d.addEventListener("pointerdown", (e) => {
-      if (e.button !== 0) return;
+      if (e.button !== 0 || locked()) return;
       e.preventDefault();
       d.setPointerCapture(e.pointerId);
       down = true; dragging = false;
@@ -6031,11 +6164,12 @@ function panesInit() {
     d.addEventListener("pointerup", end);
     d.addEventListener("pointercancel", end);
     d.addEventListener("dblclick", () => {
-      if (Date.now() - handleAt < 500) return;
+      if (Date.now() - handleAt < 500 || locked()) return;
       st.off = false; st.want = p.def; st.w = paneClamp(key, p.def);
       panesRender(true);
     });
     d.addEventListener("keydown", (e) => {
+      if (locked()) return;
       if (e.key === "Enter" || e.key === " ") { e.preventDefault(); paneToggle(key, !st.off); return; }
       const step = e.key === "ArrowRight" ? 16 : e.key === "ArrowLeft" ? -16 : 0;
       if (!step) return;

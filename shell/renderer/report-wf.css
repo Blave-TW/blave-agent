@@ -147,13 +147,10 @@
   font-size: 11px;
   line-height: 1.3;
 }
-.wf-grid th.corner span {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;   /* 參數名比 84px 長就截尾 */
-}
-.wf-grid th.corner .r,
 .wf-grid tbody th { color: var(--ink-2); }
+/* 軸名(同 .rob-tbl,QA 0159 R3-2;直排那一欄的樣式在 report-robust.css .rob-ax-r) */
+.wf-grid th.rob-ax-c { color: var(--ink-2); }
+.wf-grid th.rob-ax-c span { display: block; overflow: hidden; text-overflow: ellipsis; }
 /* 橫捲時列標釘住(同 .rob-tbl) */
 .wf-grid tbody th,
 .wf-grid thead th.corner {
@@ -334,16 +331,14 @@
 .wf-go.btn-quiet { height: 32px; }
 .wf-go.btn-quiet::before { inset: -6px -8px; }
 .wf-bar > .wf-est { grid-column: 1 / -1; }
-/* 空狀態:一句 + 旋鈕組 + 描邊動作,無插圖。旋鈕組不另包排版,子元素直接吃 .wf-empty 的 gap */
+/* 空狀態:一句 + 旋鈕組 + 描邊動作,無插圖。旋鈕組不另包排版,子元素直接吃 .wf-empty 的 gap。
+   靠左、跟其他分頁同一條左緣(0.1.59 版面 A;QA 0159 #11),不置中 */
 .wf-empty {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
+  align-items: flex-start;
   gap: var(--space-12);
   min-height: 200px;
-  padding: var(--space-24);
-  text-align: center;
 }
 .wf-kbox { display: contents; }
 .wf-empty p.lead {
@@ -351,7 +346,7 @@
   font-size: 13px;
   color: var(--ink-3);
 }
-.wf-empty .wf-knobs { justify-content: center; }
+.wf-empty .wf-knobs { justify-content: flex-start; }
 .wf-empty .wf-est { margin-top: 0; }
 /* 迷你時間軸(只在空狀態):第 1、2、3 輪、⋮、第 N 輪;灰 = 訓練窗、橘 = 測試窗。
    第 1 輪兩段合佔軌道 60%、照輸入比例分,測試段最窄 10px;每列往右推一個測試段,第 N 輪貼右緣 */

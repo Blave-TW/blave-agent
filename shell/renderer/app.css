@@ -222,6 +222,8 @@
   transition: border-color var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard);
 }
 .wc-chip:hover { border-color: var(--ink-3); color: var(--ink); }
+.wc-chip { position: relative; }
+.wc-chip::before { content: ""; position: absolute; inset: -7px 0; }   /* 32 → 44 熱區(框 1px 不在 padding box 內,所以 -7):兩列之間重疊 4,同列左右不擴 */
 
 /* RIGHT — .pane-chat:452 寬、卡面底 */
 .pane-chat {
@@ -522,6 +524,8 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
 /* 32 高的鈕補到 44:兩種鈕都有 1px 邊框(填色那顆是透明的),pseudo 錨的是
    padding box、邊框不算在內,所以是 -7;-6 只得到 42。 */
 .btn-fill, .btn-out { position: relative; }
+/* 單獨一行、上下有空的文字鈕補到 44 高(QA 0158 P3-5;spec p3-0160 §7):只掛在點名的那幾顆,句中、表內緊鄰別的控件的文字鈕不擴,免得蓋到鄰居 */
+.btn-quiet.hit44::before { inset: calc(50% - 22px) -4px; }
 .btn-fill::before, .btn-out::before { content: ""; position: absolute; inset: -7px; }
 
 /* 聊天欄的空狀態:只有一句話。起手範例鈕在中欄(.main-empty)。 */
@@ -687,12 +691,14 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
 .rp { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .rp-head { flex: none; min-width: 0; padding: var(--space-16) var(--space-24) var(--space-12); display: flex; flex-wrap: wrap; align-items: flex-start; gap: 0 var(--space-16); }
 /* 說明下一行那一格與搬家的鈕列、並排表:橫跨整個頁首(動作槽那一列下面) */
-.rp-head > .rp-ho-note, .rp-head > .rp-ho-acts, .rp-head > .rp-ho-cmp { flex: 0 0 100%; min-width: 0; }
+.rp-head > .rp-saved, .rp-head > .rp-ho-note, .rp-head > .rp-ho-acts, .rp-head > .rp-ho-cmp { flex: 0 0 100%; min-width: 0; }
 .rp-head .txt { flex: 1; min-width: 0; }
 /* 狀態詞／記號／主鈕／雲朵 icon 鈕共用一條中線(記號 20、狀態詞 12px 不貼頂;spec strategy-page-autotrade 附錄 A.3-2) */
 .rp-head .act { flex: none; display: flex; align-items: center; gap: var(--space-8); }
 /* 鈕旁的狀態詞(還沒連接帳戶、不能自動下單、開通中):6 字以內,整句原因放說明下一行(#rp-ho-note) */
 .rp-status { flex: none; font-size: 12px; line-height: 1.5; color: var(--ink-2); white-space: nowrap; }
+.rp-status.has-tip { cursor: help; text-decoration: underline dotted var(--color-greyLightMedium); text-underline-offset: 3px; }
+[data-theme="dark"] .rp-status.has-tip { text-decoration-color: var(--ink-3); }
 /* 頁首送上雲端／拉回這台電腦的 icon 鈕:視覺 32、icon 20、熱區 44(透明 ::before);無底無框,hover／focus 才有底。跟同列 32 高的主鈕同高,不照頂列的 28 */
 .rp-icw { position: relative; flex: none; display: inline-flex; }
 .rp-ic { position: relative; width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; padding: 0; border: 0; border-radius: var(--radius-sm);
@@ -784,6 +790,11 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
   transition: color var(--motion-fast) var(--ease-standard);
 }
 .tabs-more[hidden] { display: none; }
+/* 分頁段右緣 24px 淡出:mask 不擋滑鼠,淡到的就是所在表面色(canon navigation;spec p3-0160 P2 R3-5) */
+:is(.rp-tabs-scroll, .main-tabs-scroll).is-fade {
+  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent);
+          mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent);
+}
 .tabs-more:hover { color: var(--ink); }
 .tabs-more-cv {
   width: 7px; height: 7px; border-right: 1.6px solid currentColor; border-bottom: 1.6px solid currentColor;
@@ -890,6 +901,8 @@ body.resizing .pane-strategies, body.resizing .pane-chat { transition: none; }
 html.ws-sc .pane-strategies { width: 44px; padding: 52px var(--space-8) var(--space-16); }   /* 寬度那個 44 是細軌的寬,跟頂列無關 */
 html.ws-sc .strat-head, html.ws-sc .strat-list, html.ws-sc .ws-foot { display: none; }
 /* padding-top 2:按鈕中心對到字標原本的中心(y=54),收合/展開時左上角不跳 */
+html.ws-sc-auto #rail-open { display: none; }
+.pane-div[aria-disabled="true"] { cursor: default; }   /* 系統代收側欄時分隔線不可操作 */
 html.ws-sc .side-rail { display: flex; flex-direction: column; align-items: center; padding-top: var(--space-12); }   /* 收合鈕的上緣跟展開時第一列(自動下單)的上緣同一條線 */
 .rail-btn {
   width: 28px; height: 28px; min-height: 0; padding: 0; position: relative;
@@ -996,7 +1009,7 @@ html.ws-sc .side-rail { flex: 1 1 auto; }
 .ic-btn.av:hover, .ic-btn.av[aria-expanded="true"], #rail-set[aria-expanded="true"] { background: var(--surface-muted); color: var(--ink); }
 .av .ic { width: 16px; height: 16px; stroke-width: 1.75; }
 .am-dot { position: absolute; top: -1px; right: -1px; width: 6px; height: 6px; border-radius: var(--radius-pill); background: var(--ink-2); box-shadow: 0 0 0 2px var(--bg-body); pointer-events: none; }
-.side-menu { position: fixed; z-index: 40; width: 208px; padding: var(--space-6); background: var(--surface-card); border-radius: var(--radius-lg); box-shadow: var(--shadow-md); }
+.side-menu { position: fixed; z-index: 40; width: 240px; padding: var(--space-6); background: var(--surface-card); border-radius: var(--radius-lg); box-shadow: var(--shadow-md); }
 .side-menu[hidden] { display: none; }
 .am-who { margin: 0; padding: var(--space-6) calc(var(--space-4) + var(--space-6)); font-size: 12px; color: var(--ink-3); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .am-i { display: flex; align-items: center; gap: var(--space-8); width: 100%; min-height: 44px; padding: var(--space-6) calc(var(--space-4) + var(--space-6)); border: 0; border-radius: var(--radius-xs); background: none; font-size: 13px; color: var(--ink-2); text-align: left;
@@ -1607,6 +1620,8 @@ html.ws-sc .side-rail { flex: 1 1 auto; }
 .tabs-tip { top: 46px; bottom: auto; left: 8px; display: block; pointer-events: none; }   /* 分頁本體(y 12–40)下方 6 */
 .tabs-tip[hidden] { display: none; }
 .tabs-tip b { display: block; color: var(--ink); font-weight: 600; }
+.tabs-tip .tab-key { color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.tabs-tip .tab-key.after { margin-left: var(--space-8); }
 /* 每條對話的容器(全放在 #chat-scroll 裡,同時只顯示一個) */
 .chat-thread[hidden] { display: none; }
 /* 歷史:搜尋格(高 32)、今天／昨天／更早、列上的狀態字(只用灰階與字重,canon › 對話狀態字) */
@@ -1891,27 +1906,53 @@ html[data-platform="win32"] .flag-pop.sg-pick { width: calc(224px + var(--scroll
 .lai-foot { justify-content: flex-start; }
 #lai-rows .btn-quiet::before { inset: calc(50% - 22px) -4px; }   /* 〔怎麼安裝〕熱區補到整列 44 高(.cn-row min-height),視覺不動 */
 
-/* 聊天裡的圖:收進聊天卡的殼,同澄清表單卡(form.css .cform;canon chat-shell.md › 聊天欄表單卡)——light 是 bg-body 地色塊、
-   dark 是 1px 框,框算在內距裡。圖的底色是 lib 出圖時定的(白),這裡不上 filter／opacity:圖裡的顏色是資料。
-   高上限 480 同報告的圖片區塊(report-blocks.css .rb-image img):只夾直式長圖,width:auto 才不變形;靠左、不放大 */
-.msg.img {   /* figure 的 UA 預設 margin 是 1em 40px */
-  margin: 0 0 var(--space-24); padding: calc(var(--space-12) - 1px); border-radius: var(--radius-md);
-  background: var(--cf-bg); border: 1px solid var(--cf-border);
+/* agent 貼的圖(canon chat-shell.md › agent 貼的圖;spec chat-image-strip-0160):圖的底色是 lib 出圖時定的(白),不上 filter／opacity、不跟主題反色。
+   一張:限高 280、不超過欄寬、等比、不放大。相鄰兩張以上:橫向膠捲,每張外框高 160,單張寬上限 = 膠捲寬 − 48(下一張至少露 40),張間 8 */
+.msg.img { margin: 0 0 var(--space-24); }   /* figure 的 UA 預設 margin 是 1em 40px */
+.img-zoom {
+  display: block; max-width: 100%; padding: 0; border: 1px solid var(--border-frame); border-radius: var(--radius-sm); overflow: hidden;
+  cursor: zoom-in; transition: border-color var(--motion-fast) var(--ease-standard);
+}   /* 不寫 width:鈕貼著圖,圖被限高變窄時右邊沒有空的可點區 */
+.img-zoom:focus-visible { outline-offset: 2px; }   /* 畫在圖外:dark 的白框疊在白底圖上看不見 */
+@media (hover: hover) { .img-zoom:hover { border-color: var(--ink-3); } }
+.img-zoom img { display: block; max-width: 100%; max-height: 278px; width: auto; height: auto; }   /* 278 + 上下框 = 280 */
+.img-strip { position: relative; margin: 0 calc(-1 * var(--space-4)) calc(var(--space-24) - var(--space-4)); }   /* 內距 4 留給焦點框,負邊距抵銷:外緣仍對齊正文、下緣仍是 24 */
+.img-strip-sc {
+  display: flex; align-items: flex-start; gap: var(--space-8); padding: var(--space-4);
+  overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x mandatory; scroll-padding-inline: 4px 24px;
+  scrollbar-width: thin; scrollbar-color: var(--border-frame) transparent;
 }
-.msg.img img { display: block; max-width: 100%; max-height: 480px; width: auto; height: auto; border-radius: var(--radius-micro); }
-.msg.img figcaption { margin-top: var(--space-8); font-size: 12px; line-height: 1.5; color: var(--ink-3); }
+.img-strip .img-zoom { flex: none; height: 160px; max-width: calc(100% - var(--space-48)); scroll-snap-align: start; }
+.img-strip .img-zoom img { height: 158px; max-height: none; max-width: 100%; object-fit: contain; }
+/* 右緣淡出(同寬資料表的卡內橫捲):蓋到裁切邊,捲到底或可捲寬度不到 24 時收掉 */
+.img-strip-fade { position: absolute; top: 0; bottom: 0; right: 0; width: 24px; pointer-events: none; background: linear-gradient(90deg, transparent, var(--surface-card)); }
+.img-strip-fade[hidden] { display: none; }
 
-/* 圖片放大:整個遮罩都是「點了就關」,游標照實說 */
-.img-zoom { display: block; max-width: 100%; padding: 0; border-radius: var(--radius-micro); cursor: zoom-in; }   /* 不寫 width:鈕貼著圖,圖被限高變窄時右邊沒有空的可點區 */
+/* 圖片放大:整個遮罩都是「點了就關」,游標照實說;上一張／下一張、張數、說明字點了不關 */
 .lb-scrim { cursor: zoom-out; }
+.lb-fig { margin: 0; max-width: 100%; max-height: 100%; display: flex; flex-direction: column; align-items: center; gap: var(--space-8); min-height: 0; }
 .lb-img {
-  max-width: 100%; max-height: 100%; object-fit: contain;
+  max-width: 100%; max-height: 100%; min-height: 0; object-fit: contain; cursor: default;
   border-radius: var(--radius-md); box-shadow: var(--shadow-overlay);
   transform: scale(.98); transition: transform var(--motion-base) var(--ease-standard);
 }
 .scrim.open .lb-img { transform: scale(1); }
 .lb-close { position: absolute; top: var(--space-12); right: var(--space-12); background: var(--surface-card); }
-@media (prefers-reduced-motion: reduce) { .lb-img { transition: none; } }
+.lb-n, .lb-cap { padding: var(--space-2) var(--space-8); border-radius: var(--radius-xs); background: var(--surface-card); font-size: 13px; line-height: 1.5; color: var(--ink-2); cursor: default; }
+.lb-n { position: absolute; top: var(--space-12); left: var(--space-12); font-variant-numeric: tabular-nums; }
+.lb-n[hidden], .lb-cap[hidden], .lb-nav[hidden] { display: none; }
+.lb-nav {
+  position: absolute; top: 50%; transform: translateY(-50%); width: 44px; height: 44px; display: flex; align-items: center; justify-content: center;
+  border-radius: var(--radius-pill); background: var(--surface-card); color: var(--ink-2); cursor: pointer;
+}
+.lb-nav:hover:not(:disabled) { color: var(--ink); }
+.lb-nav:disabled { color: var(--ink-disabled); cursor: not-allowed; }
+.lb-prev { left: var(--space-16); }
+.lb-next { right: var(--space-16); }
+.lb-cv { width: 9px; height: 9px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; }
+.lb-prev .lb-cv { transform: translateX(2px) rotate(135deg); }
+.lb-next .lb-cv { transform: translateX(-2px) rotate(-45deg); }
+@media (prefers-reduced-motion: reduce) { .lb-img, .img-zoom { transition: none; } .img-strip-sc { scroll-behavior: auto; } }
 
 /* ── 回合失敗卡(照雲端 .chat-notice.is-fault;設計師 M1)──
    不加容器、圖示、紅字:紅只上在 8×2 的記號(錯誤是狀態不是內容);字升到 13px / ink-2,
@@ -1947,7 +1988,7 @@ html[data-platform="win32"] .flag-pop.sg-pick { width: calc(224px + var(--scroll
 /* 回合進行中「點了才講」的鈕(策略庫主鈕、報告「新增報告」;aria-disabled:鍵盤停得上去、點了才把原因寫在鈕下)長相同 :disabled、hover 不給回饋。
    只點名這兩處:datasrc / 下單啟動過場 / 群益開通的 aria-disabled 實心鈕各有自己的長相,不跟著變灰 */
 .btn-fill:disabled, .lib-cta .btn-fill[aria-disabled="true"], .btn-fill.is-lock { background: var(--surface-muted); color: var(--ink-3); border: 1px solid var(--color-greyMedium); cursor: not-allowed; opacity: 1; }
-.btn-out:disabled, #rpt-ask[aria-disabled="true"] { color: var(--ink-3); background: transparent; cursor: not-allowed; }
+.btn-out:disabled, .btn-out:disabled:hover, #rpt-ask[aria-disabled="true"] { color: var(--ink-disabled); background: transparent; border-color: var(--border-hairline); cursor: not-allowed; }   /* 同 .pf-act:disabled:框退一階、hover 不灰填,不然停用的描邊鈕看起來還能按(QA 0159 #1) */
 /* 被鎖的主鈕:長相同上,游標照 canon › Disabled ① */
 .lib-cta .btn-fill[aria-disabled="true"], .btn-fill.is-lock { cursor: not-allowed; }
 .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; border: 0; }

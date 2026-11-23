@@ -71,7 +71,8 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   const rCut = cutFrom(appSrc, "let turnStopping = false, turnStopped = false, engineWait = false, lastUserTyped = false;", "async function sendDraft() {");
   const mkEl = () => { const cls = new Set(), attr = {}; return { cls, attr, dataset: {}, disabled: true, value: "", focused: false,
     classList: { toggle: (c, on) => (on ? cls.add(c) : cls.delete(c)), contains: (c) => cls.has(c) }, setAttribute: (k, v) => { attr[k] = v; }, removeAttribute: (k) => { delete attr[k]; }, focus() { this.focused = true; } }; };
-  const els = { "btn-send": mkEl(), ta: mkEl(), "ta-wait": Object.assign(mkEl(), { textContent: "上一輪還在跑" }) };
+  // 輸入框只有雲端視角沒開好時才停用(trade.js envPaint);一般情況是開著的
+  const els = { "btn-send": mkEl(), ta: Object.assign(mkEl(), { disabled: false }), "ta-wait": Object.assign(mkEl(), { textContent: "上一輪還在跑" }) };
   const tracked = []; let stopReply = true; const calls = [], stopSids = [];
   const R = new Function("$", "t", "trackFeature", "autosize", "window", "state", `
     let running = false;
@@ -84,6 +85,9 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   const b = els["btn-send"];
   R.running = true; R.sendBtnSync();
   ok("回合中:送出鈕換成停止鈕(is-stop)、aria=停止、可按", b.cls.has("is-stop") && b.attr["aria-label"] === "停止" && b.dataset.i18nAria === "ws.stop" && b.disabled === false);
+  els.ta.disabled = true; R.sendBtnSync();
+  ok("回合中、但雲端視角沒開好(輸入框停用):不出本機回合的停止鈕,送出鈕跟輸入框一起真 disabled(QA 0159 #7)", !b.cls.has("is-stop") && b.dataset.i18nAria === "ws.send" && b.disabled === true);
+  els.ta.disabled = false; R.sendBtnSync();
   await R.stopTurn();
   ok("按停止:請主行程停這一條(帶 sid)、記 chat_stop", calls.length === 1 && stopSids[0] === "desktop-stop0001" && tracked.join() === "chat_stop");
   ok("…轉停止中(變淡),仍是停止鈕——不先切回送出", b.cls.has("is-stopping") && b.cls.has("is-stop"));

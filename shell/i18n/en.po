@@ -2230,10 +2230,10 @@ msgid "tr.typeCHost"
 msgstr "The machine needs an update"
 
 msgid "tr.typeCNext"
-msgstr "Portfolio strategies can auto-trade once Blave on this computer is updated."
+msgstr "Multi-asset strategies can auto-trade once Blave on this computer is updated."
 
 msgid "tr.typeCNextHost"
-msgstr "Portfolio strategies can auto-trade once the machine's software is updated."
+msgstr "Multi-asset strategies can auto-trade once the machine's software is updated."
 
 msgid "tr.pick.twd"
 msgstr "Paper trading can trade Taiwan stocks once the machine's software is updated"
@@ -2427,6 +2427,10 @@ msgstr "Copy trading"
 
 msgid "tr.acct.spot"
 msgstr "Spot"
+
+# 資產頁錢包名:模擬帳戶等回報的 cash 錢包(沒翻譯會原樣印英文小寫 cash,QA 0159 #4)
+msgid "tr.acct.cash"
+msgstr "Cash"
 
 msgid "tr.acct.fund"
 msgstr "Fund"
@@ -3150,7 +3154,7 @@ msgid "env.open.tagPlan"
 msgstr "Plan active until {u}"
 
 msgid "env.open.pend"
-msgstr "{id} is waiting to go up."
+msgstr "“{id}” is waiting to go up."
 
 msgid "env.open.trialOffer"
 msgstr "Your first card gets a {t}‑day trial. Cancel during it and nothing is charged."
@@ -4201,7 +4205,7 @@ msgid "sg.headAria"
 msgstr "{name}, strategies: {n}"
 
 msgid "sg.headLive"
-msgstr ", live: {m}"
+msgstr ", allocated: {m}"
 
 msgid "sg.more"
 msgstr "{name} options"
@@ -6013,6 +6017,10 @@ msgstr "Couldn't load this report."
 msgid "rpt.note.pending"
 msgstr "Progress is in the chat on the right."
 
+# 報告頁訊息槽:框送出的那一輪沒寫出報告、知道是哪一條對話時,後面接〔查看〕(busy.fix.view)切回那一條,不寫位置詞
+msgid "rpt.err.noNewView"
+msgstr "This turn didn't produce a report."
+
 msgid "rpt.err.noNew"
 msgstr "This turn didn't produce a report; the reason is in the chat on the right."
 
@@ -6575,7 +6583,7 @@ msgid "idea.cost"
 msgstr "This turn is billed by Blave AI usage from your balance; the more pages it reads, the more it uses."
 
 msgid "idea.msg"
-msgstr "Search the web for 3 backtestable {mkt}strategy ideas{topic}. For each, give the logic in a sentence or two, flag anything that would change my pick, and give the source URL. Say what all three share once, at the top. Save the exact entry and exit rules until I pick one. End by recommending one and telling me that replying with its number starts the backtest. No code yet, and no call on today's direction."
+msgstr "Search the web for 3 backtestable {mkt}strategy ideas{topic}. For each, give the logic in a sentence or two, flag anything that would change my pick, and give the source URL. Say what all three share once, at the top. Save the exact entry and exit rules until I pick one. End by recommending one and letting me pick which one to backtest. No code yet, and no call on today's direction."
 
 # en 的 {mkt} 尾端帶一個空白、{topic} 前面帶一個空白(句子本身不留空白)
 msgid "idea.mkt.crypto"
@@ -7228,14 +7236,26 @@ msgstr "Compile and backtest the exported code in {platform} before using it."
 msgid "xp.cf.ok"
 msgstr "Export"
 
+# 轉出句在對話泡泡與對話名的顯示(FIXED_PROMPTS):{name} 換成策略名稱,不顯示資料夾代號
+msgid "xp.msgLabel.xq"
+msgstr "Convert “{name}” to XQ XS"
+
 msgid "xp.msg.xq"
-msgstr "Convert strategy {id} to XQ XS and save it as a workspace file."
+msgstr "Convert strategy “{display_name}” ({name}) to XQ XS and save it as a workspace file."
+
+# 轉出句在對話泡泡與對話名的顯示(FIXED_PROMPTS):{name} 換成策略名稱,不顯示資料夾代號
+msgid "xp.msgLabel.mc"
+msgstr "Convert “{name}” to MultiCharts PowerLanguage"
 
 msgid "xp.msg.mc"
-msgstr "Convert strategy {id} to MultiCharts PowerLanguage and save it as a workspace file."
+msgstr "Convert strategy “{display_name}” ({name}) to MultiCharts PowerLanguage and save it as a workspace file."
+
+# 轉出句在對話泡泡與對話名的顯示(FIXED_PROMPTS):{name} 換成策略名稱,不顯示資料夾代號
+msgid "xp.msgLabel.pine"
+msgstr "Convert “{name}” to TradingView Pine Script"
 
 msgid "xp.msg.pine"
-msgstr "Convert strategy {id} to TradingView Pine Script and save it as a workspace file."
+msgstr "Convert strategy “{display_name}” ({name}) to TradingView Pine Script and save it as a workspace file."
 
 msgid "xp.dl"
 msgstr "Download"
@@ -7343,10 +7363,10 @@ msgid "ver.current"
 msgstr "Current"
 
 msgid "ver.live"
-msgstr "Live"
+msgstr "Allocated"
 
 msgid "ver.drift"
-msgstr "Live · file changed"
+msgstr "Allocated · file changed"
 
 msgid "ver.driftLocal"
 msgstr "strategy.py no longer matches this version: the file was edited without a new backtest."
@@ -8875,6 +8895,10 @@ msgstr "This one is done on the website: your plan is a different tier, or the m
 msgid "cf.m.okTrial"
 msgstr "Start Now, Pay {x} TWD on {d}"
 
+# 帳號選單「帳號與方案」列尾:試用已取消的短字(spec sidebar-row-0160 §2.1);完整那句 pv.st.trialCancelled 進 title
+msgid "am.st.ends"
+msgstr "Ends {d}"
+
 msgid "pv.st.trialCancelled"
 msgstr "Trial cancelled · ends {d}"
 
@@ -9042,9 +9066,6 @@ msgstr "Optimize"
 msgid "po.secAmounts"
 msgstr "Strategies and Amounts"
 
-msgid "po.help"
-msgstr "View Guide"
-
 msgid "po.signalsPaused"
 msgstr "Signals paused"
 
@@ -9161,7 +9182,7 @@ msgid "mg.apply"
 msgstr "Apply Amounts"
 
 msgid "mg.applyDiffSet"
-msgstr "Allocation {a}, here {b}"
+msgstr "These strategies differ from Allocation. Use These in Allocation"
 
 msgid "mg.askAgent"
 msgstr "Discuss with the agent"
@@ -9524,7 +9545,7 @@ msgid "mg.runNow"
 msgstr "Run with current numbers"
 
 msgid "set.ccy"
-msgstr "Display currency"
+msgstr "Cloud display currency"
 
 msgid "set.ccyFail"
 msgstr "Couldn't switch. Try again later."
@@ -9779,9 +9800,6 @@ msgstr "Not enough history. Shorten the lookback in Method"
 msgid "mg.needTarget"
 msgstr "Enter the target first"
 
-msgid "mg.applyDiffSetN"
-msgstr "Allocation has {n} not listed here"
-
 msgid "mg.applyWhyUnread"
 msgstr "Can’t read the amounts; apply once it updates"
 
@@ -9789,7 +9807,7 @@ msgid "sz.noVol"
 msgstr "No volatility data for the last 90 days"
 
 msgid "mg.why.alloc"
-msgstr "Change Allocation"
+msgstr "Use These in Allocation"
 
 msgid "mg.why.tbMethod"
 msgstr "Method"
@@ -9815,7 +9833,7 @@ msgid "mg.why.signinUpd"
 msgstr "sign in to Blave to update it"
 
 msgid "mg.why.pickTitle"
-msgstr "Allocation strategies"
+msgstr "Change Allocation Strategies"
 
 msgid "mg.sizeNoHist"
 msgstr "This result can’t compute Volatility"
@@ -10014,7 +10032,7 @@ msgstr "Connecting stops paper trading and pauses auto-trading."
 
 # Mac: no futures tiles; this line sits under the "Taiwan futures" label
 msgid "cx.macTw"
-msgstr "Capital and President Futures need Windows. Use a Windows cloud machine instead."
+msgstr "Capital and President Futures need Windows."
 
 # Futures brokers (President / Capital): first fact line — brokers use certificates, not API keys
 msgid "cx.fact.cert"
@@ -12149,15 +12167,51 @@ msgstr "First period after trial"
 msgid "p3.set.firstV"
 msgstr "{d} · {p} TWD"
 
-msgid "p3.f.renew"
-msgstr "Then renews every {pd} days. From your balance if it covers it all, otherwise all on your card."
-
-msgid "p3.f.renewNoNum"
-msgstr "Then renews each period. From your balance if it covers it all, otherwise all on your card."
-
 msgid "p3.set.balTip"
 msgstr "Your balance pays for Blave AI and for your plan."
 
 msgid "p3.set.topupTip"
 msgstr "When your balance drops below {lo} TWD, your card on file adds {a} TWD."
+
+msgid "p3.f.trialEnds"
+msgstr "Starting a cloud machine ends the trial."
+
+msgid "sp.cf.addFire"
+msgstr "Add and Place Orders"
+
+msgid "sp.oosFail"
+msgstr "Failed out-of-sample validation."
+
+msgid "sp.usWhy"
+msgstr "Uses a US-stock signal, so it can’t auto-trade yet."
+
+msgid "chat.imageN"
+msgstr "Image {n}"
+
+msgid "chat.imageCount"
+msgstr "{n} images"
+
+msgid "chat.imagePrev"
+msgstr "Previous Image"
+
+msgid "chat.imageNext"
+msgstr "Next Image"
+
+msgid "po.guide"
+msgstr "Guide"
+
+msgid "po.guideAria"
+msgstr "Guide (opens in browser)"
+
+msgid "menu.tabN"
+msgstr "Chat Tab {n}"
+
+msgid "menu.tabLast"
+msgstr "Last Chat Tab"
+
+msgid "env.open.stayLocal"
+msgstr "Keep It Local"
+
+msgid "cx.macTwGo"
+msgstr "Use a Cloud Machine"
 

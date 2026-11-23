@@ -1192,9 +1192,12 @@ ok("回測卡:btWaiting 時只寫 mg.btWaitPerf + 取消(不畫進度條、不�
   const line = (o, tr) => { const keep = Object.assign({}, st), kt = ctx.TR; Object.assign(st, o || {}); if (tr) ctx.TR = Object.assign({}, kt, tr); try { return vm.runInContext("mgRerunLine({})", ctx); } finally { Object.assign(st, keep); ctx.TR = kt; } };
   const at = new Date(2026, 0, 5, 16, 29).getTime() / 1000, on = line({ prop: { computed_at: at } }), btn = (l) => l.kids[l.kids.length - 1];
   const fresh = new Date(Date.now() - 60000), hm = String(fresh.getHours()).padStart(2, "0") + ":" + String(fresh.getMinutes()).padStart(2, "0"), today = line({ prop: { computed_at: fresh.getTime() / 1000 } });
-  ok("重算權重:有這一組的權重 → 「上次計算 01/05 16:29」(trErrStamp:24 小時內只寫 HH:mm)在前、文字鈕在後(aria-describedby 指到時間);沒有這一組的權重只畫鈕",
+  ok("重算權重:有這一組的權重 → 「上次計算 01/05 16:29」(trErrStamp:同一天只寫 HH:mm)在前、文字鈕在後(aria-describedby 指到時間);沒有這一組的權重只畫鈕",
     on.className === "mg-rerun" && on.kids.length === 2 && on.kids[0].textContent === "上次計算 01/05 16:29" && today.kids[0].textContent === "上次計算 " + hm && on.kids[0].id === "mg-last-run" && btn(on).textContent === "重算權重"
     && btn(on).className === "btn-quiet" && btn(on).attrs["aria-describedby"] === "mg-last-run" && !btn(on).disabled && ((l) => l.kids.length === 1 && !("aria-describedby" in btn(l).attrs))(line()), J(on.kids.map((k) => k.textContent)));
+  { const st = (a, b) => vm.runInContext("trErrStamp(" + a.getTime() / 1000 + ", " + b.getTime() + ")", ctx);
+    const y = st(new Date(2026, 10, 21, 21, 40), new Date(2026, 10, 22, 9, 0)), same = st(new Date(2026, 10, 22, 0, 5), new Date(2026, 10, 22, 23, 50));
+    ok("QA 0159 #2 跨日看日曆日:昨晚 21:40 在今早 09:00 看寫「11/21 21:40」(不到 24 小時也帶日期);同一天只寫時間", y === "11/21 21:40" && same === "00:05", [y, same]); }
   const n0 = sent.length; btn(on).on.click();
   ok("重算權重:按了 = mgRunOptimize() 手動送(不帶 auto／retry,權重簽名沒變也照送;mgRunOptimize 本身不看簽名),焦點留在同一列的〔策略〕",
     sent.length === n0 + 1 && sent[n0].length === 0 && strat.focused === 1 && !/optTried|mgOptSig/.test(cutF(psrc, "mgRunOptimize").split("\n").slice(0, 3).join("\n")), J(sent));
@@ -1250,7 +1253,7 @@ let psPromise = null;
       Object.keys(FIX).length === 5 && !Object.keys(FIX).some((k) => FIX[k].go === "size") && !bad.length, bad.join(";")); }
   ok("Wei 定字:sz.noVol 兩語;接「換一個方法」連結的那幾句(mg.why.noVol／shortMdd／method／changeMethod／changeTarget)拿掉", CAT.zh["sz.noVol"] === "近 90 天沒有波動資料，不能用目標波動" && CAT.en["sz.noVol"] === "No volatility data for the last 90 days"
     && ["mg.why.noVol", "mg.why.shortMdd", "mg.why.method", "mg.why.changeMethod", "mg.why.changeTarget"].every((k) => !(k in CAT.zh) && !(k in CAT.en)));
-  ["mg.applyDiffSetN", "mg.applyWhyUnread", "sz.noVol", "mg.why.pickTitle"].forEach((k) => { if (!CAT.zh[k] || !CAT.en[k] || CAT.zh[k].length > 25) ok("字串 " + k, false); });
+  ["mg.applyWhyUnread", "sz.noVol", "mg.why.pickTitle"].forEach((k) => { if (!CAT.zh[k] || !CAT.en[k] || CAT.zh[k].length > 25) ok("字串 " + k, false); });
   ok("方法不見／缺參數兩句兩語都含〔方法〕連結字(鈕下那句連到方法框);沒選方法那句只講「先選方法」(spec §4)", ["mg.allocGone", "mg.needParams"].every((k) => ["zh", "en"].every((L) => CAT[L][k].indexOf(CAT[L]["mg.why.tbMethod"]) >= 0))
     && CAT.zh["mg.needAlloc"] === "先選方法" && CAT.en["mg.needAlloc"] === "Pick a method first");
   // 每一條帶去哪:點了走對的函式、送 mg_why_fix;整句是連結時沒有前段
@@ -1267,7 +1270,7 @@ let psPromise = null;
       && /if \(!fix \|\| fix\.go === "run" \|\| !mgWhyCan\(fix\)\)/.test(cutF(psrc, "mgWhyFill")) && plainFund.kids.length === 1 && plainFund.kids[0].tag === "span" && plainFund.kids[0].textContent === "先填投入資金");
     ok("開框的連結帶 aria-haspopup,直接做事的(主機更新)不帶", go("mg.applyDiffSet").b.attrs["aria-haspopup"] === "dialog" && !go("sz.oldMdd", { TR: { env: "cloud", st: { alive: true } }, upNow: () => ({ cloud: { link: {} } }) }).b.attrs["aria-haspopup"]);
     ok("按不動就不出連結:選擇策略開不了／優化在跑;句子照出", go("mg.applyDiffSet", { trPickOff: () => true }).b === null && go("sz.staleMdd", { mgBag: () => ({ params: {}, optBusy: true }) }).b === null
-      && flatText(go("mg.applyDiffSet", { trPickOff: () => true }).el) === "配置 2 檔、這裡 3 檔");
+      && flatText(go("mg.applyDiffSet", { trPickOff: () => true }).el) === "這組策略跟配置不同，把配置改成這組");
     const c2 = whyCtx(), plain = mkEl("div"); c2.plain = plain; vm.runInContext("mgWhyFill(plain, '建議金額跟目前一樣', MG_WHY_FIX['mg.applyWhySame'], 'mg-why-fix')", c2);
     ok("等一下就好／好狀態不連:表上沒有這幾個原因", plain.kids.length === 1 && plain.kids[0].tag === "span" && ["mg.applyWhySame", "mg.applyWhyQuote", "mg.applyWhyFx", "mg.applyWhyWait", "mg.applyWhyUnread", "tr.saving", "tr.ccyMixed"].every((k) => !(k in vm.runInContext("MG_WHY_FIX", c2)))); }
   // 登入:原地開瀏覽器登入(planSignIn 帶這顆鈕),不繞去設定;等待中被輪詢重畫,鈕字由 signInLabel 接手
@@ -1291,9 +1294,10 @@ let psPromise = null;
     const a = why({ eff: 1, rows: [] }, false); c.unread = false; c.mgSameAsAmounts = () => true;
     const u = why({ eff: 1, rows: [{ name: "x", spec: null, money: 5, native: null, fxMissing: false }] }, true), q2 = why({ eff: 1, rows: [{ name: "t", spec: {}, money: 5, native: null, fxMissing: false }] }, true);
     ok("讀不到設定優先於成員不同;幣別未定 → 幣別句;台指期缺報價 → 報價句", a === "mg.applyWhyUnread" && u === "unk:x" && q2 === "mg.applyWhyQuote", J([a, u, q2])); }
-  // 成員不同的句子
-  { const c = vm.createContext({ t: (k, a) => k + J(a), trNames: () => ["a", "b", "c"], mgMembers: () => ["a", "b", "d"] }); vm.runInContext(cutF(psrc, "mgDiffText"), c); const same = vm.runInContext("mgDiffText()", c); c.mgMembers = () => ["a"]; const diff = vm.runInContext("mgDiffText()", c);
-    ok("成員不同:同檔數講差幾檔,不同檔數比數字", same === 'mg.applyDiffSetN{"n":1}' && diff === 'mg.applyDiffSet{"a":3,"b":1}', J([same, diff])); }
+  // 成員不同的句子(spec p3-0160 §3):一條句子講「兩邊不同、怎麼補」,不講檔數;連結字寫方向、放句尾,框標題講改的是配置
+  ok("成員不同:mg.applyDiffSet 一句、連結字 mg.why.alloc 在句尾、舊的檔數句 mg.applyDiffSetN 拿掉;框標題 mg.why.pickTitle", !("mg.applyDiffSetN" in CAT.zh) && !("mg.applyDiffSetN" in CAT.en) && !/mgDiffText|applyDiffSetN/.test(psrc)
+    && ["zh", "en"].every((L) => CAT[L]["mg.applyDiffSet"].endsWith(CAT[L]["mg.why.alloc"])) && CAT.zh["mg.applyDiffSet"] === "這組策略跟配置不同，把配置改成這組" && CAT.zh["mg.why.pickTitle"] === "改配置的策略"
+    && CAT.en["mg.why.alloc"] === "Use These in Allocation" && CAT.en["mg.why.pickTitle"] === "Change Allocation Strategies");
   // 真錢:〔改配置〕的預勾不能繞過下單鎖
   { const els = {}, E = (id) => els[id] || (els[id] = Object.assign(mkEl("div", id), { classList: { toggle() {}, add() {}, remove() {} }, querySelector: (q) => (id === "ps-modal" ? E("head") : null) })); E("ps-scrim").hidden = true;
     const rowsSeen = []; const list = ["a", "b", "tx", "kept"].map((name) => ({ name, symbol: name.toUpperCase() + "USDT", hasBacktest: true }));

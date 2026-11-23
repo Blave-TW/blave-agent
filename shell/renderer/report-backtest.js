@@ -751,7 +751,8 @@
     });
     table.appendChild(tbody);
     frame.appendChild(table);
-    wrap.appendChild(frame);
+    // 淡出讓開釘在右邊的年度欄(年度欄寬 + 欄距 + frame 右內距與框線):被蓋住的是年度欄左邊的月份
+    wrap.appendChild(scrollFade(frame, t("bt.monthly"), function () { return g.yr + 2 + 16 + 1; }));
     // 要橫捲時一開始就捲到最右:最新的月份緊貼在釘住的年度欄左邊,不在它底下(0.1.58 驗收:11 月被年度欄壓住、12 月看不到)。
     // 年度欄是最後一欄,捲到底時它就在原位,任何月份都不會被它蓋住
     if (typeof requestAnimationFrame === "function") requestAnimationFrame(function () {
@@ -967,7 +968,31 @@
     }
   }
 
+  /* 卡內橫捲(canon tables.md;spec p3-0160 #12):frame 包進一個定位層,右緣 24px 從透明淡到底色、不擋滑鼠;
+     可捲的寬度不到 24px 不出,捲到底收掉。真的溢出時 frame 才可聚焦、是 region(左右鍵捲),名稱用分頁名。
+     inset() = 淡出右緣離 frame 外框右緣的 px(月報酬熱圖要讓開釘在右邊的年度欄)。回傳包好的那一層,呼叫端拿它取代 frame 放進版面 */
+  const SCROLL_FADE_PX = 24;
+  function scrollFade(frame, label, inset) {
+    const host = el("div", "x-fade-host"), fade = el("div", "x-fade");
+    fade.setAttribute("aria-hidden", "true");
+    fade.hidden = true;
+    if (inset) fade.classList.add("mid");   // 不貼 frame 右緣:不跟著圓角
+    host.appendChild(frame); host.appendChild(fade);
+    function sync() {
+      const span = frame.scrollWidth - frame.clientWidth;
+      const over = span > 1;
+      fade.hidden = span < SCROLL_FADE_PX || frame.scrollLeft >= span - 1;
+      if (!fade.hidden) fade.style.right = (inset ? inset() : 1) + "px";
+      if (over) { frame.tabIndex = 0; frame.setAttribute("role", "region"); frame.setAttribute("aria-label", label); }
+      else { frame.removeAttribute("tabindex"); frame.removeAttribute("role"); frame.removeAttribute("aria-label"); }
+    }
+    frame.addEventListener("scroll", sync, { passive: true });
+    if (typeof ResizeObserver === "function") { const ro = new ResizeObserver(sync); ro.observe(frame); if (frame.firstElementChild) ro.observe(frame.firstElementChild); }
+    return host;
+  }
+
   window.BlaveReport = window.BlaveReport || {};
+  window.BlaveReport.scrollFade = scrollFade;
   window.BlaveReport.renderBacktest = renderBacktest;
   window.BlaveReport.buildMeta = buildMeta;   // 參數掃描分頁的 meta 列沿用同一行(report-robust.js 經 opts.buildMeta 拿,不直接讀這裡)
   window.BlaveReport.fmtSignedPct = fmtSignedPct;   // 聊天結果卡的年化 / 最大回撤(renderer/results.js):跟回測頁同一支格式

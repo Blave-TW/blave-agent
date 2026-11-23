@@ -52,7 +52,7 @@ ok("① 電腦版沒有建市場資料夾的程式(stratgroups / stratflags / tr
   ok("② 用到的 sg.* 字串兩語都齊(" + all.length + " 個)", all.length > 20 && all.every((k) => S.S.zh[k] && S.S.en[k]), all.filter((k) => !S.S.zh[k] || !S.S.en[k]).join());
   ok("② 字照 spec §14", S.S.zh["sg.add"] === "新增資料夾" && S.S.zh["sg.uncat"] === "未分類" && !S.S.zh["sg.auto"] && !S.S.en["sg.auto"] && !Object.keys(S.S.zh).concat(Object.keys(S.S.en)).some((k) => k.startsWith("sg.mkt.")) && S.S.zh["sg.max"] === "最多 20 個資料夾"
     && S.S.zh["sg.delTitle"] === "刪除「{name}」？" && S.S.zh["sg.delBody"] === "裡面 {n} 支移到未分類。" && S.S.zh["sg.moved"] === "已移到{name}" && S.S.zh["sg.headAria"] === "{name}，{n} 支"
-    && S.S.zh["sg.headLive"] === "，{m} 支上線中" && S.S.en["sg.headAria"] === "{name}, strategies: {n}" && S.S.en["sg.headLive"] === ", live: {m}" && S.S.en["sg.delBody"] === "Its strategies ({n}) move to Uncategorized." && S.S.zh["sg.more"] === "{name}選項" && S.S.zh["sg.moveTo"] === "移到{name}" && S.S.zh["sg.moveOut"] === "移出資料夾");
+    && S.S.zh["sg.headLive"] === "，{m} 支已配置" && S.S.en["sg.headAria"] === "{name}, strategies: {n}" && S.S.en["sg.headLive"] === ", allocated: {m}" && S.S.en["sg.delBody"] === "Its strategies ({n}) move to Uncategorized." && S.S.zh["sg.more"] === "{name}選項" && S.S.zh["sg.moveTo"] === "移到{name}" && S.S.zh["sg.moveOut"] === "移出資料夾");
   ok("② 六類各 12 個,分類名照 spec(常用／市場／策略／動物／自然／物品)", cats.length === 6 && cats.map((k) => S.S.zh[k]).join() === "常用,市場,策略,動物,自然,物品");
 }
 

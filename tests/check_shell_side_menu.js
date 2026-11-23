@@ -17,7 +17,7 @@ function paint(o) {
   menu.replaceChildren = (...k) => { menu.children = k; };
   const ctx = { $: (id) => (id === "side-menu" ? menu : { hidden: !o.rptOn }), LANG: o.lang || "zh", t: (k) => STR[o.lang || "zh"][k] || k, document: { createElement: mk },
     amSignedIn: () => !!o.inn, amMark: () => !!o.mark, rptBag: () => ({ open: !!o.rptOn }), libExtIcon: () => mk("svg"), acct: o.acct || null,
-    oauthPending: !!o.pending, planLoginBusy: !!o.busy, planStateText: () => o.st || "", amClose: (r) => log.push("close:" + r), amAnchor: () => "ANCHOR",
+    oauthPending: !!o.pending, planLoginBusy: !!o.busy, planStateText: () => o.full || o.st || "", planStateShort: () => o.st || "", amClose: (r) => log.push("close:" + r), amAnchor: () => "ANCHOR",
     rptMenuGo: () => log.push("rpt"), setOpen: () => log.push("set"), planOpen: () => log.push("plan"), usageUrl: () => "USAGE", docsHomeUrl: () => "DOCS",
     acctOutAsk: (a) => log.push("out:" + a), trackFeature: (n) => log.push("tm:" + n), window: { blave: { openExternal: (u) => log.push("ext:" + u) } } };
   vm.runInNewContext(cutFn(app, "amPaint") + "\namPaint();", ctx);
@@ -29,10 +29,12 @@ function paint(o) {
   t("§A4 email 那一行不能按、不進方向鍵順序(不是 .am-i、沒有 role)", p.menu.children[0].tag === "p" && !p.menu.children[0].attrs.role && p.items.length === 6);
   t("§A6 項目都是 role=menuitem、tabIndex -1、type=button", p.items.every((b) => b.attrs.role === "menuitem" && b.tabIndex === -1 && b.type === "button"));
   const plan = p.items[2], v = plan.children[1];
-  t("§A4 帳號與方案列尾是狀態字(全文放 title);用量、說明文件列尾是外連箭頭", v.className === "v" && v.textContent === "方案有效" && v.title === "方案有效" && p.items[3].children[1].tag === "svg" && p.items[4].children[1].tag === "svg");
+  t("§A4 帳號與方案列尾是狀態字(跟完整那句相同時不掛 title);用量、說明文件列尾是外連箭頭", v.className === "v" && v.textContent === "方案有效" && v.title === "" && p.items[3].children[1].tag === "svg" && p.items[4].children[1].tag === "svg");
   p.items.forEach((b) => b.on.click());
   t("§A4／§10.1 每一項先收選單(焦點回第一格)再做事,埋點各一個字面名字;登出開確認框(opener = 第一格)", p.log.join() === ["close:true", "rpt", "close:true", "tm:side_menu_set", "set", "close:true", "tm:side_menu_plan", "plan",
     "close:true", "tm:side_menu_usage", "ext:USAGE", "close:true", "tm:side_menu_docs", "ext:DOCS", "close:true", "tm:side_menu_out", "out:ANCHOR"].join(), p.log); }
+{ const p = paint({ inn: true, acct: {}, st: "12 月 4 日結束", full: "已取消試用 · 12 月 4 日結束" }), v = p.items[2].children[1];
+  t("0160 §2.1 列尾是短字、完整那句進 title(不同時才掛)", v.textContent === "12 月 4 日結束" && v.title === "已取消試用 · 12 月 4 日結束", [v.textContent, v.title]); }
 { const p = paint({ inn: false });
   t("§A4 沒登入:報告、空白、設定、說明文件;沒有 email 那一行", p.rows.join() === "報告,GAP,設定,說明文件", p.rows); }
 for (const k of ["pending", "busy"]) { const p = paint({ inn: true, [k]: true });
@@ -52,6 +54,12 @@ for (const k of ["pending", "busy"]) { const p = paint({ inn: true, [k]: true })
   t("§A4／S3 running:試用中 pv.st.trial、試用取消 pv.st.trialCancelled、付費 pv.st.planOn(不帶主機運行中);其他格 planStateOf;還沒開機空字",
     st("running", { on: true }) === "pv.st.trial" && st("running", { on: true, cx: true }) === "pv.st.trialCancelled" && st("running", {}) === "pv.st.planOn"
     && st("stopped", {}) === "stateOf:stopped" && st("running", { ctx: { sideBooted: false } }) === "");
+  // 0160 §2.1 選單短字:試用 side.trial、試用已取消 am.st.ends、停機一律 side.stopped、付費 pv.st.planOn;其他格照完整那句
+  const sh = (view, o) => vm.runInNewContext(cutFn(app, "planStateShort") + "\nplanStateShort()", Object.assign({ sideBooted: true, planView: () => view, planVars: () => ({ n: 3, d: "12 月 4 日" }),
+    t: (k) => k, acct: o.acct || null, planTrialOn: () => !!o.on, planTrialCx: () => !!o.cx, planStateText: () => "full:" + view }, o.ctx || {}));
+  const shGot = [sh("trial", {}), sh("trial", { acct: { trial_cancel_at_end: true } }), sh("running", { on: true }), sh("running", { on: true, cx: true }), sh("running", {}), sh("stopped", {}), sh("payFail", {}), sh("running", { ctx: { sideBooted: false } })];
+  t("0160 §2.1 planStateShort 照短字表", JSON.stringify(shGot) === JSON.stringify(["side.trial", "am.st.ends", "side.trial", "am.st.ends", "pv.st.planOn", "side.stopped", "full:payFail", ""]), shGot);
+  t("0160 §2.1 短字 zh「{d}結束」、en「Ends {d}」", STR.zh["am.st.ends"] === "{d}結束" && STR.en["am.st.ends"] === "Ends {d}");
   const ctx = { t: (k, v) => k + (v ? "|" + JSON.stringify(v) : ""), acct: null, planVars: () => ({ m: 5 }), planTrialOn: () => false, planTrialCx: () => false, planMo: () => true, planStopKind: () => "x" };
   vm.runInNewContext(cutFn(app, "planStateOf"), ctx); const P = (view, extra) => vm.runInNewContext("planStateOf(" + JSON.stringify(view) + ")", Object.assign(ctx, extra || {}));
   const got = ["out", "revoked", "unknown", "offer", "noTrial", "plan", "included", "billed", "none", "payFail", "planOn", "starting", "running"].map((v) => { const s = P(v); return s ? s.join(":") : null; });
@@ -62,7 +70,7 @@ for (const k of ["pending", "busy"]) { const p = paint({ inn: true, [k]: true })
 // ── 網址、開關、位置、收起時機 ──
 { const u = (L) => vm.runInNewContext(cutFn(app, "docsHomeUrl") + "\ndocsHomeUrl();", { LANG: L });
   t("§A4 說明文件開 /docs/<lang>?from=desktop(沒有結尾斜線,不借 docsUrl)", u("zh") === "https://blave.org/docs/zh?from=desktop" && u("en") === "https://blave.org/docs/en?from=desktop"); }
-{ const els = {}, el = (id) => els[id] || (els[id] = { id, hidden: true, attrs: {}, style: {}, offsetWidth: 208, prev: null, setAttribute(k, v) { this.attrs[k] = v; }, focus() { log.push("focus:" + id); },
+{ const els = {}, el = (id) => els[id] || (els[id] = { id, hidden: true, attrs: {}, style: {}, offsetWidth: 240, prev: null, setAttribute(k, v) { this.attrs[k] = v; }, focus() { log.push("focus:" + id); },
     get previousElementSibling() { return this.prev; }, after(m) { m.prev = this; log.push("after:" + id); }, getBoundingClientRect: () => ({ left: this_left, top: 760 }), querySelector: () => ({ focus: () => log.push("focus:first") }) });
   let this_left = 12, rail = false; const log = [];
   const ctx = { $: el, document: { documentElement: { classList: { contains: (c) => c === "ws-sc" && rail } } }, window: { innerWidth: 400, innerHeight: 800 },
@@ -74,7 +82,7 @@ for (const k of ["pending", "busy"]) { const p = paint({ inn: true, [k]: true })
   log.length = 0; vm.runInNewContext("amClose(true)", ctx);
   t("§A6 收起:兩顆 aria-expanded=false、重畫第一格(點搬回來)、焦點回第一格", el("side-menu").hidden && el("ws-conn").attrs["aria-expanded"] === "false" && el("rail-set").attrs["aria-expanded"] === "false" && log.join() === "first,focus:ws-conn", log);
   rail = true; this_left = 300; log.length = 0; vm.runInNewContext("amOpen()", ctx);
-  t("§A7 細軌:選單搬到 #rail-set 後面;右邊放不下夾回視窗、離邊 8", log[1] === "after:rail-set" && el("side-menu").style.left === 400 - 208 - 8 + "px", [log, el("side-menu").style.left]);
+  t("§A7 細軌:選單搬到 #rail-set 後面;右邊放不下夾回視窗、離邊 8", log[1] === "after:rail-set" && el("side-menu").style.left === 400 - 240 - 8 + "px", [log, el("side-menu").style.left]);
   vm.runInNewContext("amClose(false)", ctx); }
 { const wire = app.slice(app.indexOf('["ws-conn", "rail-set"].forEach((id) => {\n  $(id).addEventListener("click"'), app.indexOf("\n}\n", app.indexOf("new MutationObserver(() => { const now = at();")) + 3);
   t("§A6 第一格:click 開／收、↑ 開;選單 ↑↓ 循環、Home／End、Tab 收起不攔預設", /\$\(id\)\.addEventListener\("click", \(\) => \(amIsOpen\(\) \? amClose\(true\) : amOpen\(\)\)\);/.test(wire) && /e\.key === "ArrowUp" && !amIsOpen\(\)\) \{ e\.preventDefault\(\); amOpen\(\); \}/.test(wire)
@@ -85,9 +93,9 @@ for (const k of ["pending", "busy"]) { const p = paint({ inn: true, [k]: true })
   t("§A6 手機步驟框打開時選單先收(promptslot.js)", /if \(slotPopOpen\(\)\) \{ slotPopClose\(true\); return; \}\n\s*if \(typeof amClose === "function"\) amClose\(false\);/.test(slot)); }
 t("§A3／§A6 index.html:兩顆第一格 aria-haspopup=menu、aria-expanded、aria-controls=side-menu;#side-menu role=menu 緊接 #ws-conn;沒有 #rpt-nav",
   (html.match(/aria-haspopup="menu" aria-expanded="false" aria-controls="side-menu"/g) || []).length === 2 && /id="ws-conn"[^\n]*<\/button>\n[^\n]*\n\s*<div class="side-menu" id="side-menu" role="menu" hidden><\/div>/.test(html) && !/rpt-nav/.test(html));
-t("§A4 長相:寬 208、--surface-card、--shadow-md、--radius-lg、內距 6,不加 border;項目 6×10(token 組)、--radius-xs、13px、--ink-2;只轉 background／color;開著的底只加在帳號鈕與 #rail-set,不連帶細軌展開鈕",
+t("§A4／0160 §2.2 長相:寬 240(跟手機步驟框同寬)、--surface-card、--shadow-md、--radius-lg、內距 6,不加 border;項目 6×10(token 組)、--radius-xs、13px、--ink-2;只轉 background／color;開著的底只加在帳號鈕與 #rail-set,不連帶細軌展開鈕",
   /\.ic-btn\.av:hover, \.ic-btn\.av\[aria-expanded="true"\], #rail-set\[aria-expanded="true"\] \{/.test(css) && !/\.rail-btn\[aria-expanded/.test(css) && !/\.am-(who|i) \{[^}]*\b10px/.test(css) &&
-  /\.side-menu \{ position: fixed; z-index: 40; width: 208px; padding: var\(--space-6\); background: var\(--surface-card\); border-radius: var\(--radius-lg\); box-shadow: var\(--shadow-md\); \}/.test(css)
+  /\.side-menu \{ position: fixed; z-index: 40; width: 240px; padding: var\(--space-6\); background: var\(--surface-card\); border-radius: var\(--radius-lg\); box-shadow: var\(--shadow-md\); \}/.test(css)
   && /\.am-i \{[^}]*padding: var\(--space-6\) calc\(var\(--space-4\) \+ var\(--space-6\)\); border: 0; border-radius: var\(--radius-xs\); background: none; font-size: 13px; color: var\(--ink-2\);[^}]*transition: background var\(--motion-fast\) var\(--ease-standard\), color var\(--motion-fast\) var\(--ease-standard\); \}/.test(css));
 // §A9 agent 讀的三處:入口搬家了,句子要新舊兩種外殼都講得通(web 那半句不動)
 { const root = path.join(__dirname, ".."), rd = (f) => fs.readFileSync(path.join(root, f), "utf8");

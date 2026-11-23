@@ -17,6 +17,9 @@ class Node {
   appendChild(n) { if (n.tag === "#frag") this.children.push(...n.children); else this.children.push(n); return n; }   // fragment 跟真 DOM 一樣攤平
   setAttribute(k, v) { this.attrs[k] = String(v); }
   getAttribute(k) { return k in this.attrs ? this.attrs[k] : null; }
+  removeAttribute(k) { delete this.attrs[k]; }
+  addEventListener() {}   // 月報酬熱圖的卡內橫捲淡出(scrollFade)掛 scroll 監聽;這支不測捲動
+  get classList() { const n = this; return { add: (c) => { n.className = (n.className + " " + c).trim(); } }; }
   get textContent() { return this.text + this.children.map((c) => c.textContent).join(""); }
   set textContent(v) { this.children = []; this.text = v == null ? "" : String(v); }
 }

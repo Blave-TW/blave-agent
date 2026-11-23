@@ -228,6 +228,8 @@
                搬家那一行(handoff.js hoJobPaint,從送出到按〔收起〕)＞主鈕原因句(portfolio.js spPaintNote)＞停機句(hoNote)。
                role="status" 只放句子、內容沒變不重寫;搬家的文字鈕與並排表在後面兩個非 live 的容器(設計稽核 strategy-transfer-desktop) -->
           <p class="rp-ho-note" id="rp-ho-note" role="status" hidden></p>
+          <!-- 金額框存完、頁首沒變時的「已儲存」(4 秒):說明句後面自成一段,不蓋掉說明句(portfolio.js spPaintSaved) -->
+          <p class="rp-ho-note rp-saved" id="rp-saved" role="status" hidden></p>
           <div class="rp-ho-acts" id="rp-ho-acts" hidden></div>
           <div class="rp-ho-cmp" id="rp-ho-cmp" hidden></div>
         </div>
@@ -633,7 +635,7 @@
             <h6 class="set-gl" data-i18n="up.about"></h6>
             <div class="set-up-row">
               <p class="set-up-line" id="set-up-line" role="status"></p>
-              <button type="button" class="btn-quiet" id="set-up-btn"></button>
+              <button type="button" class="btn-quiet hit44" id="set-up-btn"></button>
             </div>
             <!-- 每天 06:00 自動更新(ui-prefs autoUpdate,缺 = 開;主行程 scheduledInstall 照它)。沒有更新來源時整段不出(app.js upSchedPaint) -->
             <div class="set-upsch" id="set-upsch" hidden>
@@ -647,7 +649,7 @@
                  值由 app.js 的 aboutIdLoad 填;讀不到或不是 UUID 的形狀就整段不出 -->
             <div class="set-up-row" id="set-id" hidden>
               <p class="set-up-line set-id-line"><span class="set-tipl" data-i18n="about.id"></span><span class="tip" id="set-id-tip" role="tooltip" data-i18n="about.idNote"></span><code class="set-idv" id="set-idv"></code></p>
-              <button type="button" class="btn-quiet" id="set-id-copy" data-i18n="about.idCopy" aria-describedby="set-id-tip"></button>
+              <button type="button" class="btn-quiet hit44" id="set-id-copy" data-i18n="about.idCopy" aria-describedby="set-id-tip"></button>
             </div>
           </div>
           <!-- 法遵兩份並排、不成句(不是「使用即表示同意」那種同意文字)。服務條款只有這一個入口;隱私權政策在 設定 › 隱私 另有一個就地的。
@@ -677,7 +679,10 @@
 <!-- 圖片放大 -->
 <div class="scrim lb-scrim" id="lb-scrim" role="dialog" aria-modal="true" data-i18n-aria="chat.imageZoom" hidden>
   <button type="button" class="modal-close lb-close" id="lb-close" data-i18n-aria="set.close">✕</button>
-  <img class="lb-img" id="lb-img" alt="">
+  <span class="lb-n" id="lb-n" hidden></span>
+  <button type="button" class="lb-nav lb-prev" id="lb-prev" data-i18n-aria="chat.imagePrev" hidden><span class="lb-cv" aria-hidden="true"></span></button>
+  <figure class="lb-fig"><img class="lb-img" id="lb-img" alt=""><figcaption class="lb-cap" id="lb-cap" hidden></figcaption></figure>
+  <button type="button" class="lb-nav lb-next" id="lb-next" data-i18n-aria="chat.imageNext" hidden><span class="lb-cv" aria-hidden="true"></span></button>
 </div>
 
 <!-- 連接交易所(自動下單頁的「連接交易所」直接開這個框;結構照雲端版)。內容由 trade.js 的 cxModalPaint 畫。
