@@ -5159,7 +5159,7 @@ msgid "rob.cfNoteFirst"
 msgstr "Usually a few minutes. It takes longer with more data or a bigger grid."
 
 msgid "rob.msgRescan"
-msgstr "Please rescan the parameters of strategy {display_name} ({name}) (lib.param_scan: scan_grid → find_plateau → write_scan → plot_heatmap). Use the current backtest's period and trading cost: {start} → {end}, trading cost {fee}%. Keep the previous axes — {rp} {r0}–{r1} and {cp} {c0}–{c1}; if the plateau lands on an edge, extend once per the lib rule. Then report the peak and the robust point."
+msgstr "Please rescan the parameters of strategy {display_name} ({name}) (lib.param_scan: scan_until_interior → write_scan → plot_heatmap). Use the current backtest's period and trading cost: {start} → {end}, trading cost {fee}%. Keep the previous axes — {rp} {r0}–{r1} and {cp} {c0}–{c1}; if the plateau lands on an edge, extend and rescan per the lib rule until it is off the edge. Then report the peak and the robust point."
 
 msgid "rob.msgRescanLabel"
 msgstr "Rescan the parameters of {name}"
@@ -5189,7 +5189,7 @@ msgid "rob.cfRangeVal"
 msgstr "{rp} {r0}–{r1} ({R} cells)"
 
 msgid "rob.msgRescan1"
-msgstr "Please rescan the parameters of strategy {display_name} ({name}) (lib.param_scan: scan_grid → find_plateau → write_scan → plot_heatmap; a single parameter uses the one-cell second axis described in the lib docs). Use the current backtest's period and trading cost: {start} → {end}, trading cost {fee}%. There is only one parameter, {rp}; keep the previous range {r0}–{r1}, and if the plateau lands on an edge, extend once per the lib rule. Then report the peak and the robust point."
+msgstr "Please rescan the parameters of strategy {display_name} ({name}) (lib.param_scan: scan_until_interior → write_scan → plot_heatmap; a single parameter uses the one-cell second axis described in the lib docs). Use the current backtest's period and trading cost: {start} → {end}, trading cost {fee}%. There is only one parameter, {rp}; keep the previous range {r0}–{r1}, and if the plateau lands on an edge, extend and rescan per the lib rule until it is off the edge. Then report the peak and the robust point."
 
 msgid "rob.tag.atPlateau1"
 msgstr "Current: the robust value"

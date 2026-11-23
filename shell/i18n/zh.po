@@ -5179,7 +5179,7 @@ msgid "rob.cfNoteFirst"
 msgstr "通常要幾分鐘，期間越長、格子越多越久。"
 
 msgid "rob.msgRescan"
-msgstr "請重新掃描策略「{display_name}」({name}) 的參數（lib.param_scan：scan_grid → find_plateau → write_scan → plot_heatmap）。期間與交易成本照目前回測：{start} → {end}、交易成本 {fee}%；兩軸沿用上次的 {rp}（{r0}–{r1}）與 {cp}（{c0}–{c1}），穩健點落在邊上時照 lib 規則往外延伸一次。掃完回報尖峰與穩健點。"
+msgstr "請重新掃描策略「{display_name}」({name}) 的參數（lib.param_scan：scan_until_interior → write_scan → plot_heatmap）。期間與交易成本照目前回測：{start} → {end}、交易成本 {fee}%；兩軸沿用上次的 {rp}（{r0}–{r1}）與 {cp}（{c0}–{c1}），穩健點落在邊上時照 lib 規則往外延伸重掃，直到不在邊上。掃完回報尖峰與穩健點。"
 
 msgid "rob.msgRescanLabel"
 msgstr "重新掃描 {name} 的參數"
@@ -5209,7 +5209,7 @@ msgid "rob.cfRangeVal"
 msgstr "{rp} {r0}–{r1}（{R} 格）"
 
 msgid "rob.msgRescan1"
-msgstr "請重新掃描策略「{display_name}」({name}) 的參數（lib.param_scan：scan_grid → find_plateau → write_scan → plot_heatmap，單參數照 lib 文件的一格第二軸寫法）。期間與交易成本照目前回測：{start} → {end}、交易成本 {fee}%；只有一個參數 {rp}，範圍沿用上次的 {r0}–{r1}，穩健點落在邊上時照 lib 規則往外延伸一次。掃完回報尖峰與穩健點。"
+msgstr "請重新掃描策略「{display_name}」({name}) 的參數（lib.param_scan：scan_until_interior → write_scan → plot_heatmap，單參數照 lib 文件的一格第二軸寫法）。期間與交易成本照目前回測：{start} → {end}、交易成本 {fee}%；只有一個參數 {rp}，範圍沿用上次的 {r0}–{r1}，穩健點落在邊上時照 lib 規則往外延伸重掃，直到不在邊上。掃完回報尖峰與穩健點。"
 
 msgid "rob.tag.atPlateau1"
 msgstr "目前參數：就是穩健參數"

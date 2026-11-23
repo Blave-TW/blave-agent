@@ -2,11 +2,12 @@
 Utilities for 2D parameter scanning and plateau detection.
 
 Usage:
-    from lib.param_scan import nice_grid, percentile_thresholds, scan_grid, find_plateau, on_edge, extend_axis, write_scan, plot_heatmap
+    from lib.param_scan import nice_grid, percentile_thresholds, scan_until_interior, write_scan, plot_heatmap
 
 Canonical scan flow: nice_grid / percentile_thresholds (axes anchored on the current
-constants) → scan_grid → find_plateau → (on_edge → extend_axis → scan_grid → find_plateau,
-once) → write_scan → plot_heatmap
+constants) → scan_until_interior (scan_grid → find_plateau, then on_edge → extend_axis →
+rescan until the plateau is interior or a stop is hit) → write_scan → plot_heatmap.
+scan_grid / find_plateau / on_edge / extend_axis stay public for hand-built loops.
 
 Grid size: every axis targets ~15 cells (GRID_N; ≈ 11–21 after nice-step rounding), i.e.
 100–400 combos — ≤ 10 s with a vectorized compute_signals (scan time is linear in
@@ -16,6 +17,7 @@ neighbourhood mean degenerates into a single cell when neighbours differ by nois
 """
 
 import json
+import math
 import os
 import time
 
@@ -37,8 +39,15 @@ SCAN_MAX_AXIS = 40
 # and turn the plateau's neighbourhood mean into a single-cell pick. 40 stays the hard cap.
 GRID_N = 15
 
-# Cells added on the edge side when the plateau lands on a grid border (one extension only).
+# Cells added on the edge side per extension when the plateau lands on a grid border.
 EDGE_EXTEND = 5
+
+# scan_until_interior stops extending after this many rounds (Wei 11-23: extend until interior).
+# 6 × 5 cells takes a 15-cell axis past the 40 cap, so the coarsened step has had its turn too.
+EDGE_MAX_EXTENSIONS = 6
+
+# Whole-scan time budget, first pass included: AGENTS.md › Iteration Brakes skips a scan over ~5 minutes.
+SCAN_BUDGET_S = 300
 
 
 def _nice_candidates(integer=False):
@@ -179,7 +188,7 @@ def percentile_thresholds(series, n_parts=17, current=None):
 
 def scan_grid(data, compute_signals_fn, row_vals, col_vals,
               row_param='entry_th', col_param='exit_th',
-              fee=None, valid_fn=None, warmup=0, **_):
+              fee=None, valid_fn=None, warmup=0, skip=None, **_):
     """
     Run a 2D parameter scan and return a Sharpe grid.
     Supports both Type A (single-symbol) and Type C (portfolio) strategies —
@@ -204,6 +213,8 @@ def scan_grid(data, compute_signals_fn, row_vals, col_vals,
                         Type C default: all combos valid (lambda r, c: True).
                         Pass explicitly to override.
     warmup            : leading bars to skip from PnL (= longest rolling window)
+    skip              : set of _cell_key(row, col) left NaN without running them
+                        (scan_until_interior's already-scanned cells)
 
     Returns
     -------
@@ -235,7 +246,7 @@ def scan_grid(data, compute_signals_fn, row_vals, col_vals,
     # type (Type A: row > col; Type C: all valid). Cells are listed up front (valid_fn
     # called once per cell) so the progress total matches the cells actually run.
     cells    = [(i, rv, j, cv) for i, rv in enumerate(row_vals) for j, cv in enumerate(col_vals)
-                if valid_fn is None or valid_fn(rv, cv)]
+                if (valid_fn is None or valid_fn(rv, cv)) and not (skip and _cell_key(rv, cv) in skip)]
     # Progress lines (stdout, every 10 % of the cells) so a long scan shows an ETA in
     # its log and a call cut short by its timeout still shows where it got to.
     progress = Progress('scan', len(cells), 'cells')
@@ -354,7 +365,8 @@ def on_edge(best_idx, shape):
     """
     Which grid borders the plateau cell sits on — a plateau on a border was only
     measured on a truncated neighbourhood and the real optimum may lie outside the
-    scanned range, so the axis is extended on that side and scanned once more.
+    scanned range, so the axis is extended on that side and scanned again
+    (scan_until_interior repeats this until the plateau is interior).
 
     Parameters
     ----------
@@ -385,13 +397,12 @@ def on_edge(best_idx, shape):
     return edges
 
 
-def extend_axis(vals, side, k=EDGE_EXTEND, floor=None, max_axis=SCAN_MAX_AXIS):
+def extend_axis(vals, side, k=EDGE_EXTEND, floor=None, max_axis=SCAN_MAX_AXIS, ceil=None):
     """
     Add k cells beyond one end of a nice_grid axis, at the axis's own step, so the
-    lattice (and the current cell on it) stays intact. Used ONCE after find_plateau
-    when on_edge says the plateau is on that border; the extended axis then goes
-    through scan_grid → find_plateau → write_scan again. Never extend twice — the
-    rescan counts as the same iteration under AGENTS.md › Iteration Brakes.
+    lattice (and the current cell on it) stays intact. One extension step of
+    scan_until_interior, which repeats it until the plateau is interior; the rescans
+    stay inside the same scan step under AGENTS.md › Iteration Brakes.
 
     Parameters
     ----------
@@ -403,6 +414,7 @@ def extend_axis(vals, side, k=EDGE_EXTEND, floor=None, max_axis=SCAN_MAX_AXIS):
     floor    : optional lower bound; cells below it are dropped (bar counts: floor=1,
                so a 'lo' extension never asks for a negative window)
     max_axis : api cap on the axis length
+    ceil     : optional upper bound; cells above it are dropped (a percentile 100, an RSI 100)
 
     Returns
     -------
@@ -426,7 +438,172 @@ def extend_axis(vals, side, k=EDGE_EXTEND, floor=None, max_axis=SCAN_MAX_AXIS):
     new = [int(round(v)) for v in new] if integer else [round(float(v), 10) for v in new]
     if floor is not None:
         new = [v for v in new if v >= floor]
+    if ceil is not None:
+        new = [v for v in new if v <= ceil]
     return new + vals if side == 'lo' else vals + new
+
+
+def _cell_key(row, col):
+    return (round(float(row), 10), round(float(col), 10))
+
+
+def _is_int_axis(vals):
+    return all(isinstance(v, (int, np.integer)) and not isinstance(v, (bool, np.bool_)) for v in vals)
+
+
+def _grow(vals, side, anchor, floor, ceil, k=EDGE_EXTEND, max_axis=SCAN_MAX_AXIS):
+    """One extension of one side. Room for k more cells → k cells at that end's step. No room
+    (40 cap) → the next nice step, anchored on `anchor` and k of the new steps past that end,
+    the way nice_grid coarsens rather than truncates. When the step would jump past floor /
+    ceil, the bound itself becomes the last cell, so a plateau is only called 'bound' once the
+    bound was scanned. Returns the old list when the side cannot grow."""
+    vals = list(vals)
+    integer = _is_int_axis(vals)
+    if (side == 'lo' and floor is not None and vals[0] <= floor) or \
+       (side == 'hi' and ceil is not None and vals[-1] >= ceil):
+        return vals
+    # the far end's own step: the other end may hold a bound cell off the lattice
+    step = vals[1] - vals[0] if side == 'lo' else vals[-1] - vals[-2]
+    if len(vals) + k <= max_axis:
+        new = [vals[0] - m * step for m in range(k, 0, -1)] if side == 'lo' else \
+              [vals[-1] + m * step for m in range(1, k + 1)]
+        new = [int(round(v)) for v in new] if integer else [round(float(v), 10) for v in new]
+        out = new + vals if side == 'lo' else vals + new
+    else:
+        step = _coarser(float(step), integer)
+        lo, hi = (vals[0] - k * step, vals[-1]) if side == 'lo' else (vals[0], vals[-1] + k * step)
+        out = nice_grid(lo, hi, current=anchor, integer=integer, step=step, max_axis=max_axis)
+    out = [v for v in out if (floor is None or v >= floor) and (ceil is None or v <= ceil)]
+    if len(out) < 2:
+        return vals
+    if side == 'lo' and floor is not None and out[0] > floor and len(out) < max_axis:
+        out = [int(math.ceil(floor)) if integer else round(float(floor), 10)] + out
+    if side == 'hi' and ceil is not None and out[-1] < ceil and len(out) < max_axis:
+        out = out + [int(math.floor(ceil)) if integer else round(float(ceil), 10)]
+    grew = out[0] < vals[0] if side == 'lo' else out[-1] > vals[-1]
+    return out if grew else vals
+
+
+def _budget_s(max_seconds, started):
+    """max_seconds, cut to the agent turn's iteration deadline when lib/iterate has one."""
+    try:
+        from lib.iterate import turn
+        t = turn() or {}
+    except Exception:
+        t = {}
+    if t.get("deadline"):
+        return min(max_seconds, max(t["deadline"] - started, 0))
+    return max_seconds
+
+
+def scan_until_interior(data, compute_signals_fn, row_vals, col_vals, current=None,
+                        row_floor=None, row_ceil=None, col_floor=None, col_ceil=None,
+                        max_extensions=EDGE_MAX_EXTENSIONS, max_seconds=SCAN_BUDGET_S,
+                        window=1, warmup=0, **scan_kw):
+    """
+    The scan step in one call: scan_grid → find_plateau, and while the plateau sits on a
+    grid border, extend that side (EDGE_EXTEND cells, same step; an axis at the 40 cap is
+    coarsened to the next nice step instead), rescan and find the plateau again. Cells
+    already scanned are not run again. All of it is one scan step under AGENTS.md ›
+    Iteration Brakes.
+
+    Stops (the first that holds):
+      'interior'   the plateau is off every border → adopt it
+      'bound'      every border it sits on is row_/col_floor or ceil itself, already scanned
+                   (bar count 1, a percentile 100); a step that would jump past the bound
+                   adds the bound as the last cell first
+      'extensions' max_extensions (EDGE_MAX_EXTENSIONS = 6) extensions done
+      'time'       the next rescan's estimate (seconds per cell so far × new cells) would end
+                   past max_seconds (SCAN_BUDGET_S = 300, first pass included; cut to the
+                   turn's iteration deadline when there is one)
+    Anything but 'interior' leaves the plateau on a border: do not adopt it on your own.
+
+    Parameters
+    ----------
+    data, compute_signals_fn, row_vals, col_vals : as scan_grid (start axes from
+               nice_grid / percentile_thresholds)
+    current  : (row, col) the strategy file holds — anchors a coarsened axis so the
+               current cell stays on it; None → the plateau's value on that axis
+    row_floor, row_ceil, col_floor, col_ceil : physical bounds per axis (bar counts:
+               floor=1; a window that must exceed 1: floor=2; a percentile: 0 / 100)
+    max_extensions, max_seconds : the stops above
+    window   : find_plateau neighbourhood radius
+    warmup   : int, or callable(row_vals, col_vals) → int when it follows the axes (the
+               longest window grows with the axis); a changed warmup rescans every cell
+    **scan_kw: row_param, col_param, fee (required), valid_fn → scan_grid
+
+    Returns
+    -------
+    dict: grid, row_vals, col_vals, nbr_mean, best_idx, best_row, best_col, best_sharpe
+          (the last full grid — write_scan it), edges (on_edge of the last plateau; [] when
+          interior), interior, stop, extensions, evaluated (combos with a Sharpe across every
+          pass — pass it to write_scan(evaluated=…)), seconds, path (per pass: best_row,
+          best_col, best_sharpe, edges, shape)
+    """
+    started = time.time()
+    budget = _budget_s(max_seconds, started)
+    rows, cols = list(row_vals), list(col_vals)
+    bounds = {0: (row_floor, row_ceil), 1: (col_floor, col_ceil)}
+    valid_fn = scan_kw.get('valid_fn')
+    cache, seen = {}, set()
+    cache_warmup = None
+    scan_s, cells_run = 0.0, 0
+    extensions, path = 0, []
+    while True:
+        w = int(warmup(rows, cols)) if callable(warmup) else int(warmup)
+        if w != cache_warmup:
+            cache, cache_warmup = {}, w
+        todo = [(r, c) for r in rows for c in cols
+                if _cell_key(r, c) not in cache and (valid_fn is None or valid_fn(r, c))]
+        t1 = time.time()
+        part = scan_grid(data, compute_signals_fn, rows, cols, warmup=w, skip=set(cache), **scan_kw)
+        scan_s += time.time() - t1
+        cells_run += len(todo)
+        grid = np.full((len(rows), len(cols)), np.nan)
+        for i, r in enumerate(rows):
+            for j, c in enumerate(cols):
+                key = _cell_key(r, c)
+                if key not in cache:
+                    cache[key] = part[i, j]
+                grid[i, j] = cache[key]
+                if np.isfinite(grid[i, j]):
+                    seen.add(key)
+        best_idx, nbr_mean, best_row, best_col, best_sharpe = find_plateau(grid, rows, cols, window)
+        edges = on_edge(best_idx, grid.shape)
+        path.append({'best_row': best_row, 'best_col': best_col, 'best_sharpe': round(best_sharpe, 4),
+                     'edges': edges, 'shape': grid.shape})
+        if not edges:
+            stop = 'interior'
+            break
+        if extensions >= max_extensions:
+            stop = 'extensions'
+            break
+        new = {0: rows, 1: cols}
+        for axis, side in edges:
+            anchor = current[axis] if current is not None else (best_row, best_col)[axis]
+            new[axis] = _grow(new[axis], side, anchor, *bounds[axis])
+        if new[0] == rows and new[1] == cols:
+            stop = 'bound'
+            break
+        w_next = int(warmup(new[0], new[1])) if callable(warmup) else w
+        pending = sum(1 for r in new[0] for c in new[1]
+                      if (w_next != w or _cell_key(r, c) not in cache) and (valid_fn is None or valid_fn(r, c)))
+        if time.time() - started + scan_s / max(cells_run, 1) * pending > budget:
+            stop = 'time'
+            break
+        rows, cols = new[0], new[1]
+        extensions += 1
+    out = {'grid': grid, 'row_vals': rows, 'col_vals': cols, 'nbr_mean': nbr_mean, 'best_idx': best_idx,
+           'best_row': best_row, 'best_col': best_col, 'best_sharpe': best_sharpe, 'edges': edges,
+           'interior': not edges, 'stop': stop, 'extensions': extensions, 'evaluated': len(seen),
+           'seconds': round(time.time() - started, 1), 'path': path}
+    names = (scan_kw.get('row_param', 'entry_th'), scan_kw.get('col_param', 'exit_th'))
+    where = "interior" if not edges else "still on the " + ", ".join(
+        f"{names[a]} {s} border" for a, s in edges) + f" (stop: {stop})"
+    print(f"Scan: {extensions} extension(s), plateau {names[0]}={best_row}, {names[1]}={best_col} "
+          f"nbr Sharpe={best_sharpe:.2f}, {where}; grid {len(rows)}×{len(cols)}; "
+          f"parameter sets evaluated in this scan: {len(seen)}; {out['seconds']}s")
+    return out
 
 
 def _grid_json(a):
@@ -499,7 +676,7 @@ def _clear_stale_tmp(path):
 
 
 def write_scan(grid, row_vals, col_vals, nbr_mean, best_idx, output_dir,
-               row_param, col_param, fee, start, end, current=None, window=1):
+               row_param, col_param, fee, start, end, current=None, window=1, evaluated=None):
     """
     Write the scan result to `strategies/<name>/scan.json` — the web workspace's
     穩健參數 (robust parameters) tab reads this file. **Call it after every
@@ -527,6 +704,8 @@ def write_scan(grid, row_vals, col_vals, nbr_mean, best_idx, output_dir,
                  np.isclose; off-grid values keep their vals with i/j = null.
                  None → written as null.
     window     : neighbourhood radius passed to find_plateau (default 1)
+    evaluated  : scan_until_interior's `evaluated` — combos scanned across every extension,
+                 counted toward params_evaluated instead of this grid's cells (never fewer)
 
     Returns
     -------
@@ -618,7 +797,9 @@ def write_scan(grid, row_vals, col_vals, nbr_mean, best_idx, output_dir,
           f"nbr Sharpe={nbr_mean[bi, bj]:.2f})")
     try:   # parameter sets evaluated, cumulative per strategy (auto-iterate ruling S3); old workspace: none
         from lib.iterate import note_params
-        note_params(os.path.basename(os.path.normpath(str(output_dir))), int(np.count_nonzero(~np.isnan(grid))))
+        cells = int(np.count_nonzero(~np.isnan(grid)))
+        note_params(os.path.basename(os.path.normpath(str(output_dir))),
+                    max(cells, int(evaluated)) if isinstance(evaluated, (int, np.integer)) else cells)
     except ImportError:
         pass
     return path

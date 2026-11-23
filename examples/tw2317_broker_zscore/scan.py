@@ -23,7 +23,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 import numpy as np
 from dotenv import dotenv_values
-from lib.param_scan import nice_grid, nice_step, scan_grid, find_plateau, on_edge, extend_axis, write_scan, plot_heatmap
+from lib.param_scan import nice_grid, nice_step, scan_grid, find_plateau, scan_until_interior, write_scan, plot_heatmap
 import strategy as s
 from lib.costs import fee_of  # the strategy's FEE, else its market default
 
@@ -58,32 +58,20 @@ exit_vals  = nice_grid(0.0, p95, current=s.EXIT_Z,  step=step)   # exit:  0 … 
 print(f"step={step}  ENTRY_Z 候選 ({len(entry_vals)}): {entry_vals}")
 print(f"          EXIT_Z  候選 ({len(exit_vals)}): {exit_vals}\n")
 
-def scan1(entry_vals, exit_vals):
-    t1 = time.time()
-    grid = scan_grid(
-        base_df, s.compute_signals, entry_vals, exit_vals,
-        row_param='entry_z', col_param='exit_z',        # window / zscore_win stay at defaults = file values
-        fee=fee_of(s), warmup=s.WARMUP,
-        valid_fn=lambda entry, exit_: entry < exit_,
-    )
-    print(f"round 1 掃描 {len(entry_vals)}×{len(exit_vals)} 組合,耗時 {time.time()-t1:.1f}s")
-    return grid, find_plateau(grid, entry_vals, exit_vals)
-
-grid1, (best1, nbr1, best_entry, best_exit, sharpe1) = scan1(entry_vals, exit_vals)
-
-# Plateau on a grid border → extend that axis 5 cells on that side (same step) and
-# rescan ONCE — still round 1, still one iteration. Round 1 only: round 2 is the
-# second and last iteration, so it never extends.
-edges = on_edge(best1, grid1.shape)
-for axis, side in edges:
-    if axis == 0:
-        entry_vals = extend_axis(entry_vals, side)
-    else:
-        exit_vals  = extend_axis(exit_vals, side)
-if edges and len(entry_vals) * len(exit_vals) > grid1.size:
-    grid1, (best1, nbr1, best_entry, best_exit, sharpe1) = scan1(entry_vals, exit_vals)
-if on_edge(best1, grid1.shape):   # still on a border after the one extension → report, never extend again
-    print("⚠️ 穩健點仍在網格邊緣,真正的最佳區可能在掃描範圍外——回報用戶,請用戶決定是否擴大範圍")
+# Plateau on a grid border → extend that side 5 cells (same step) and rescan until it is
+# interior — still round 1, still one iteration. Round 1 only: round 2 is the second and
+# last iteration, so it never extends.
+r1 = scan_until_interior(
+    base_df, s.compute_signals, entry_vals, exit_vals,
+    row_param='entry_z', col_param='exit_z',        # window / zscore_win stay at defaults = file values
+    fee=fee_of(s), warmup=s.WARMUP,
+    valid_fn=lambda entry, exit_: entry < exit_,
+    current=(s.ENTRY_Z, s.EXIT_Z),
+)
+grid1, entry_vals, exit_vals, nbr1, best1 = r1['grid'], r1['row_vals'], r1['col_vals'], r1['nbr_mean'], r1['best_idx']
+best_entry, best_exit, sharpe1 = r1['best_row'], r1['best_col'], r1['best_sharpe']
+if not r1['interior']:   # stopped (bound / extensions / time) still on a border → report, the user decides
+    print(f"⚠️ 穩健點仍在網格邊緣(停止原因 {r1['stop']}),真正的最佳區可能在掃描範圍外——回報用戶,請用戶決定")
 print(f"round 1 穩健參數: ENTRY_Z={best_entry}, EXIT_Z={best_exit}  "
       f"鄰域 Sharpe={sharpe1:.3f}  單格 Sharpe={grid1[best1]:.3f}")
 
@@ -98,7 +86,7 @@ write_scan(grid1, entry_vals, exit_vals, nbr1, best1,
            output_dir=str(OUT),
            row_param='ENTRY_Z', col_param='EXIT_Z', fee=fee_of(s),
            start=s.START, end=base_df.index[-1].strftime('%Y-%m-%d'),
-           current=(s.ENTRY_Z, s.EXIT_Z))
+           current=(s.ENTRY_Z, s.EXIT_Z), evaluated=r1['evaluated'])
 plot_heatmap(grid1, entry_vals, exit_vals, best1,
              row_label='ENTRY_Z', col_label='EXIT_Z',
              title=f'{s.STRATEGY_NAME} — round 1 (WINDOW={s.WINDOW}, ZSCORE_WIN={s.ZSCORE_WIN})',
