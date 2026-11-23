@@ -11,9 +11,9 @@ let red = 0; const ok = (n, c, got) => { console.log((c ? "PASS  " : "FAIL  ") +
 if (a < 0 || b < 0) { console.log("FAIL  sinopac.js 找不到純邏輯段的記號"); process.exit(1); }
 const head = src.slice(0, src.indexOf("let SP = spBlank();"));
 const ctx = {}; vm.createContext(ctx);
-vm.runInContext(head + "\n" + src.slice(a, b) + "\nthis.spView = spView; this.spBlank = spBlank; this.spRunning = spRunning; this.spSimOpen = spSimOpen; this.spSimNext = spSimNext;"
+vm.runInContext(head + "\n" + src.slice(a, b) + "\nthis.spcView = spcView; this.spBlank = spBlank; this.spRunning = spRunning; this.spSimOpen = spSimOpen; this.spSimNext = spSimNext;"
   + " this.spMsgPlace = spMsgPlace; this.spFormReady = spFormReady; this.spHm = spHm; this.spSimRow = spSimRow; this.SP_PROBE_VIEW = SP_PROBE_VIEW; this.SP_STOP_VIEW = SP_STOP_VIEW; this.SP_ERR_KEY = SP_ERR_KEY;", ctx);
-const { spView, spRunning, spSimOpen, spSimNext, spMsgPlace, spFormReady, spHm, spSimRow } = ctx;
+const { spcView: spView, spRunning, spSimOpen, spSimNext, spMsgPlace, spFormReady, spHm, spSimRow } = ctx;
 
 // 2026-11-18(週三)台北 10:00 = UTC 02:00
 const NOW = Date.UTC(2026, 10, 18, 2, 0, 0), S = NOW / 1000;

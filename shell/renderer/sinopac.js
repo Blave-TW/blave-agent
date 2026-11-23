@@ -68,7 +68,7 @@ function spSimNext(ms) {
 }
 /* (sinopac_connect, 畫面自己的狀態, { now }) → 態的名字(spec §3 的代號)。順序有意義:在跑的最先(鈕全鎖),
    再來是要用戶做事的,最後才是往下一步(spAdvance 接手的 r-ready／w-ready) */
-function spView(sc, ui, ctx) {
+function spcView(sc, ui, ctx) {
   if (ui.phase === "form") return "f";
   const setup = spSec(sc, "setup"), probe = spSec(sc, "probe"), sim = spSec(sc, "sim"), worker = spSec(sc, "worker");
   const run = spRunning(sc, ui.sent, ctx.now);
@@ -161,7 +161,7 @@ async function spPick() {
   SP.sig = null; spPaint();
 }
 // 表單送出:本機打開憑證(不登入永豐)→ 過了就進清單;錯掛在欄位下,框不關
-async function spGo() {
+async function spcGo() {
   if (SP.busy || spDown() || !spFormReady(SP, SP.info)) return;
   SP.busy = true; SP.msg = null; spPaint();
   const a = SP.fix === "cert" ? { apiKey: null, secret: null, personId: null } : { apiKey: SP.apiKey.trim(), secret: SP.secret.trim(), personId: SP.fix === "key" ? null : SP.id.trim().toUpperCase() };
@@ -441,7 +441,7 @@ function spSyncGo(view) {
 }
 function spPrimary() {
   if ($("cx-go").getAttribute("aria-disabled") === "true") return;
-  if (SP.view === "f") return spGo();
+  if (SP.view === "f") return spcGo();
   if (SP.view === "done") { cxModalClose(true); if (!(TR.open && TR.view === "tr")) trOpen(); }
 }
 
@@ -449,9 +449,9 @@ function spPaint() {
   if ($("cx-scrim").hidden || CXF.venue !== SINOPAC) return;
   if (!SP.openedAt) SP.openedAt = Date.now();
   const sc = spSC(), ctx = { now: Date.now(), cloud: spCloud() };
-  let view = spView(sc, SP, ctx);
+  let view = spcView(sc, SP, ctx);
   spAdvance(view, sc);
-  view = spView(sc, SP, ctx);
+  view = spcView(sc, SP, ctx);
   SP.view = view;
   const box = $("cx-body");
   $("cx-title").textContent = t("sp.title");
