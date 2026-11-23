@@ -51,13 +51,15 @@ const lineOf = (src, re) => { const m = re.exec(src); return m ? src.slice(0, m.
   const pure = trade.slice(trade.indexOf("/* ── 純邏輯("), trade.indexOf("/* ── 純邏輯到此"));
   eval(pure.replace(/^const /gm, "var ").replace(/^let /gm, "var "));
   const trReport = () => TR.st.report;
-  const lockM = /const locked = (!!x\.portfolio && !\(stored\[n\] > 0\) && !\(\(trReport\(\) \|\| \{\}\)\.can_trade_portfolio === true\));/.exec(trade);
-  ok("V5-02", "撥款鎖的原文找得到(trade.js:" + lineOf(trade, /const locked = !!x\.portfolio/) + ")", !!lockM);
-  const locked = (report, stored) => { TR.st.report = report; const x = { portfolio: true }, n = "basket"; return eval(lockM[1]); };
+  // 0.1.60 R3-9:前面多一道 usLock(存了必被 US_SYMBOL 拒的美股訊號列),投資組合那一道原文照鎖
+  const lockM = /const locked = (usLock \|\| \(!!x\.portfolio && !\(stored\[n\] > 0\) && !\(\(trReport\(\) \|\| \{\}\)\.can_trade_portfolio === true\)\));/.exec(trade);
+  ok("V5-02", "撥款鎖的原文找得到(trade.js:" + lineOf(trade, /const locked = usLock \|\| \(!!x\.portfolio/) + ")", !!lockM);
+  const locked = (report, stored, usLock = false) => { TR.st.report = report; const x = { portfolio: true }, n = "basket"; return eval(lockM ? lockM[1] : "undefined"); };
   ok("V5-02", "舊回報(沒有 can_trade_portfolio):投資組合的撥款鎖著", locked({}, {}) === true);
   ok("V5-02", "can_trade_portfolio 是字串 \"true\" / 1:照樣鎖(只認 true)", locked({ can_trade_portfolio: "true" }, {}) && locked({ can_trade_portfolio: 1 }, {}));
   ok("V5-02", "新回報 can_trade_portfolio:true → 解鎖", locked({ can_trade_portfolio: true }, {}) === false);
   ok("V5-02", "舊回報但已經撥過款(stored > 0)→ 不鎖(改金額 / 歸零要能做)", locked({}, { basket: 500 }) === false);
+  ok("V5-02", "美股訊號列(usLock)不論 can_trade_portfolio 都鎖", locked({ can_trade_portfolio: true }, {}, true) === true);
   // 目標:舊 lib 的 Type C 狀態沒有 weights、沒有 symbol → 不算任何目標(不猜);新狀態 → 每個資產
   const T0 = trClientTargets({ basket: 1000 }, { basket: { position: 0, market: "swap", updated_at: 1 } });
   ok("V5-02", "舊 Type C 狀態(沒有 weights):沒有目標列", JSON.stringify(T0) === "{}");

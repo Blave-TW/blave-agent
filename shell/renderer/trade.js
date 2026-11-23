@@ -840,6 +840,16 @@ function trUsNoAuto(r, sym, names) {
   const s = trCanonSym(String(sym).replace(/@spot$/i, ""));
   return !trTxfSpec(s) && !TR_TWSTOCK_RE.test(s) && !trSuffixZone(s);
 }
+/* 存檔時 runtime 一定拒(US_SYMBOL,_us_signal_refusal 不看金額、0 也拒)的美股訊號策略:投資組合、標的不是股票永續的單一標的。
+   配置表上這種列鎖金額格;還沒存過的不送(同留空的新列),整次存檔不會因為它被拒、其他列照存 */
+function trUsSaveRefused(r, n) {
+  if (trSrcMarket(r, n) !== "us_stock") return false;
+  const list = typeof TR !== "undefined" && TR && Array.isArray(TR.list) ? TR.list : [], x = list.find((y) => y.name === n) || {};
+  const k = r && r.strategy_kinds && typeof r.strategy_kinds === "object" ? r.strategy_kinds[n] : null, st = r && r.states && typeof r.states === "object" ? r.states[n] : null;
+  // Type B 不在這裡判:runtime 看的是有沒有 INTERVAL,不是檔頭的 # Type,外殼判不準(誤鎖會擋掉能下單的列);真的 Type B 存檔時照拒、出白話句
+  if (x.portfolio === true || (k && k.type === "C")) return true;
+  return trUsNoAuto(r, (st && st.symbol) || x.symbol || null, [n]);
+}
 /* 股票永續(美股訊號下在加密所的 NVDAUSDT 之類):貢獻的策略全是 us_stock、標的是交易對。lib/data._us_live_gate 只放 SYMBOL 是 Binance 股票永續的
    us_stock 策略上線,所以這兩個條件就夠;加密市場的策略直接下股票永續(fetch_kline NVDAUSDT)外殼分不出,照「顆」 */
 function trUsPerp(r, sym, names) {
@@ -3879,8 +3889,10 @@ function trAmountTable(names, stored, states) {
       const symText = isC ? (tcl ? tcl.text : "—") : txf ? t(txf.prod) : sym || "—";
       const symTip = isC && !tcl ? t("tr.typecPending") : tcl ? tcl.tip : "";
       // 美股純代號(trUsNoAuto):A 型取代市場標籤,投資組合在「投資組合」後面再接一個
-      const usNo = isC ? trUsNoAuto(trReport(), null, [n]) && (!(tc || draftTc) || (tc || draftTc).keys.every((k) => trUsNoAuto(trReport(), k, [n])))
-        : !txf && trUsNoAuto(trReport(), sym || null, [n]);
+      // 存了必被拒(US_SYMBOL)的那種也標「不能自動下單」:投資組合不論成分是不是股票永續
+      const usLock = !(stored[n] > 0) && trUsSaveRefused(trReport(), n);
+      const usNo = usLock || (isC ? trUsNoAuto(trReport(), null, [n]) && (!(tc || draftTc) || (tc || draftTc).keys.every((k) => trUsNoAuto(trReport(), k, [n])))
+        : !txf && trUsNoAuto(trReport(), sym || null, [n]));
       const row = document.createElement("tr");
       const first = trEl("td", "key");
       first.appendChild(trStratName(n));
@@ -3902,9 +3914,11 @@ function trAmountTable(names, stored, states) {
       first.appendChild(sub);
       // 投資組合策略沒有實盤路徑:0 → >0 是機器端必拒的轉換,從源頭鎖掉並講原因;已經 >0 的存量不鎖
       // 機器端的 lib 能讓投資組合自動下單(回報 can_trade_portfolio)就不鎖
-      const locked = !!x.portfolio && !(stored[n] > 0) && !((trReport() || {}).can_trade_portfolio === true);
+      const locked = usLock || (!!x.portfolio && !(stored[n] > 0) && !((trReport() || {}).can_trade_portfolio === true));
+      // 美股訊號(usLock):金額格鎖住,沒存過的這一列存檔時不送(trCfOpen blankNew),講一次;已存的舊列不講(它照送)
+      if (usLock) first.appendChild(trEl("span", "pf-note", t(n in stored ? "tr.usLockStored" : "tr.usLockNew")));   // 已存的舊列照送、存檔會整份被拒:先講出口
       // 雲端其實支援投資組合策略(已撥款的照跑),只是 app 不能從 0 開始撥(機器會拒):講真話,不沿用本機那句
-      if (locked) first.appendChild(trEl("span", "pf-note", cloud ? t("tr.typeCHost") : t("tr.typeC")));   // 真正的原因是機器的 lib 太舊(spec-0.1.13-order-copy #12);出口在選擇策略框
+      else if (locked) first.appendChild(trEl("span", "pf-note", cloud ? t("tr.typeCHost") : t("tr.typeC")));   // 真正的原因是機器的 lib 太舊(spec-0.1.13-order-copy #12);出口在選擇策略框
       // 模擬交易裡的台幣計價存量(擋之前加進來的):照常列、講原因、可以減可以移出,不能再加(這一格其實是口數)
       const twdRow = trPaperTw(n);
       if (twdRow) first.appendChild(trEl("span", "pf-note", t("tr.pick.twd")));
@@ -3917,7 +3931,7 @@ function trAmountTable(names, stored, states) {
       if (cloud) { inp.disabled = locked; inp.readOnly = TR.save === "saving"; } else inp.disabled = locked || TR.save === "saving";
       inp.setAttribute("aria-label", trDisplay(n) + " — " + (txf ? t("tr.lotsAria") : zoneOf[n] !== TR_ZONE_UNKNOWN ? t("tr.amountAria", { ccy: zoneOf[n] }) : t("tr.col.amount")));
       // 沒有金額的列留空,不預填 0(同網頁):預填的 0 留在格子裡,滑鼠點中間再打 1000 會變 10,000
-      inp.value = TR.raw && TR.raw[n] != null ? TR.raw[n] : TR.edits[n] != null ? trFmt(TR.edits[n]) : stored[n] ? trFmt(stored[n]) : "";
+      inp.value = usLock ? "" : TR.raw && TR.raw[n] != null ? TR.raw[n] : TR.edits[n] != null ? trFmt(TR.edits[n]) : stored[n] ? trFmt(stored[n]) : "";   // 鎖住的美股列不送,不顯示之前打的字
       if (TR.flash && TR.flash[n]) { inp.classList.add("flash"); delete TR.flash[n]; }   // 從優化套用過來、這一格剛改過
       // 格子只放數字:單位在區標題(或只有一區時在欄頭),units spec §9.6
       wrap.append(inp);
@@ -4359,7 +4373,7 @@ function trCfOpen(o) {
     return !!ks && ks.length > 0 && ks.every((k) => hold0.keys.indexOf(k) >= 0); };
   const derive = () => ctView(() => {
   names = inp ? Object.keys(stored).concat(inp.name in stored ? [] : [inp.name]) : opt.names;
-  blankNew = inp ? [] : names.filter((n) => trBlankNew(n, stored, TR.edits, TR.raw));   // 存檔前算好:清掉 edits／raw 之後判不出
+  blankNew = inp ? [] : names.filter((n) => trBlankNew(n, stored, TR.edits, TR.raw) || (!(n in stored) && trUsSaveRefused(trReport(), n)));   // 存檔前算好:清掉 edits／raw 之後判不出
   sending = inp ? sendingNow() : trSendAmounts(S.env, names.filter((n) => blankNew.indexOf(n) < 0), stored, TR.edits, trListNames()); removed = trRemoved(stored, sending);
   ctAll = trCtPayload(Object.keys(sending)); ctPending = Object.keys(sending).some((n) => { const c = trCtStored(n); return !!c && trCt(n) !== c; });
   joined = Object.keys(sending).filter((n) => !(n in stored));

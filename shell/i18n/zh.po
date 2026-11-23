@@ -2233,6 +2233,14 @@ msgstr "金額（{ccy}）"
 msgid "tr.noStrategies"
 msgstr "還沒有可以下單的策略。先請 agent 做一支，回測完就能設金額。"
 
+# 配置表上存了必被拒(US_SYMBOL)的美股訊號列:金額格鎖住,沒存過的這一列存檔時不送(trade.js trUsSaveRefused)
+msgid "tr.usLockNew"
+msgstr "存檔時不會加進策略組合。"
+
+# 同上,但已經存在設定裡的舊列:照送、整份存檔會被拒,出口是取消勾選
+msgid "tr.usLockStored"
+msgstr "存檔會被擋，先到「選擇策略」取消勾選。"
+
 msgid "tr.typeC"
 msgstr "Blave 要先更新"
 
@@ -9724,9 +9732,9 @@ msgstr "和另外 {n} 支"
 msgid "tr.marketVenue.crypto"
 msgstr "「{name}」{more}是{market}策略，加密貨幣交易所下不了。改綁台灣期貨商，或到「選擇策略」取消勾選後再儲存。"
 
-# 美股訊號策略的存檔拒絕(runtime _us_signal_refusal):原句細因七八種,同 MARKET_VENUE 一碼一句;字同網頁 workspace_pf_rej_us_symbol／us_venue
+# 美股訊號策略的存檔拒絕(runtime _us_signal_refusal):原句細因七八種,同 MARKET_VENUE 一碼一句。0.1.60 改白話(QA R3-9);網頁 workspace_pf_rej_us_symbol 待前端同改
 msgid "tr.usSymbol.rejected"
-msgstr "「{name}」{more}用的是美股訊號：只能用 Type A 單一標的策略下單，SYMBOL 要寫成該檔的股票永續（例如 NVDA → NVDAUSDT）。改好後再儲存，或到「選擇策略」取消勾選。"
+msgstr "「{name}」{more}用美股訊號，現在還不能自動下單。到「選擇策略」取消勾選後再儲存。"
 
 msgid "tr.usVenue.rejected"
 msgstr "「{name}」{more}的下單標的在這家交易所沒有對應的股票永續。改綁有這檔股票永續的交易所，或到「選擇策略」取消勾選後再儲存。"

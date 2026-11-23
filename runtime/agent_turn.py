@@ -5346,18 +5346,24 @@ def local_mcp_servers(sink, mcp_config, mcp_servers):
 
 # 電腦版外殼給這一輪的指示(BLAVE_TURN_NOTE,代號):用戶沒有選、外殼自己要加的產品限制與「怎麼回」。跟用戶的訊息分開送——
 # 寫進訊息本文的話,泡泡上就是用戶「說了」他沒說過的話(e2e 0.1.8 #131),對話存檔與重開畫回來的也是。只認這張表上的代號。
+# 新增報告框的回合外殼不把搜尋驗證交給人(shell main.js noVerify;QA 0.1.59 R3-14 等了 3.5 分鐘):agent 要知道那是當場回來的,不等、不重搜
+_REPORT_NO_VERIFY = (
+    " A robot check on a web search is not handed to the user in this turn: `browser_search` returns "
+    "`search_unavailable` at once — never wait for it or search again; build from lib data and the "
+    "`describe()` candidates, open list pages you already know, and the report says in one line that the "
+    "web could not be searched (`few_sources`, or the footnote).")
 TURN_NOTES = {
     "report_once": (
         "This request came from the desktop app's New report dialog. Produce the report once, now — unless the "
         "data check fails (references/reports.md §1b › Research questions): then answer in chat and offer the "
-        "report on the changed question. Either way, do not register or offer a schedule."),
+        "report on the changed question. Either way, do not register or offer a schedule." + _REPORT_NO_VERIFY),
     "report_recur": (
         "This request came from the desktop app's New report dialog, and it asks for the report on a schedule "
         "(every day, every week, a time of day). This computer produces it this once only and cannot schedule "
         "it: produce the report now (unless the data check fails — references/reports.md §1b › Research questions: "
         "then answer in chat and offer the report on the changed question), do not register a schedule, and say so "
         "plainly in the first sentence of your reply — this computer makes it this once, and recurring reports are "
-        "set up on the cloud machine."),
+        "set up on the cloud machine." + _REPORT_NO_VERIFY),
 }
 
 

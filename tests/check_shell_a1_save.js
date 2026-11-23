@@ -267,10 +267,15 @@ const draft = (o) => Object.assign({ picked: ["btc", "tw", "n5"], edits: { n5: 2
     ok("美股 存金額框:AMZN 不列進會送單,ETHUSDT 照列", !f.rows.some((x) => /^tr\.cf\.(buy|sell)AMZN/.test(x)) && f.rows.some((x) => /^tr\.cf\.buyETHUSDT300/.test(x)), J(f)); }
   // 不會送單時(列目標「原 → 新」):美股列只寫金額,不換數量、表頭不寫依哪一根;加密對照組照寫(B2;同網頁 8ebba9e22)
   { const US = { name: "us", displayName: "US", hasBacktest: true, symbol: "AMZN", market: "swap", srcMarket: "us_stock" };
+    // QA 0.1.60 R3-9:沒存過的美股裸代號草稿存了必被 US_SYMBOL 拒(不看金額)——不送、框不列,其他列照存
     bag({ picked: ["btc", "tw", "us"], edits: { us: 300 }, list: [US], noPv: true, pvs: { us: pvA("AMZN", { close: 200 }) } });
+    const f0 = open(); await tick();
+    ok("美股新列(存了必被拒):不送、不開框列它;送出的那一份沒有它", f0.direct === true && sends.length === 1 && sends[0].cmd === "amounts" && !("us" in sends[0].args.amounts), J([f0, sends]));
+    // 原 → 新 那條只剩已存的美股列(舊版存進去的)會走到
+    bag({ amounts: { us: 100 }, picked: ["btc", "tw", "us"], edits: { us: 300 }, list: [US], noPv: true, pvs: { us: pvA("AMZN", { close: 200 }) } });
     const f = open();
-    ok("美股新列(原 → 新):只寫金額、不換成數量(qty 不算)", f.title === "tr.cf.title" && J(f.rows) === J(["AMZN0→300"]), J(f));
-    ok("美股新列:表頭不寫「依那根算」", !/asof/.test(f.cap), J(f.cap));
+    ok("美股已存列(原 → 新):只寫金額、不換成數量(qty 不算)", f.title === "tr.cf.title" && J(f.rows) === J(["AMZN100→300"]), J(f));
+    ok("美股已存列:表頭不寫「依那根算」", !/asof/.test(f.cap), J(f.cap));
     bag({ picked: ["btc", "tw", "ec"], edits: { ec: 300 }, list: [EC], noPv: true, pvs: { ec: pvA("ETHUSDT", { close: 3000 }) } });
     const g = open();
     ok("對照:加密新列照寫顆數,不寫依哪一根", J(g.rows) === J(["ETHUSDT0→3000.1 tr.cf.unitCoins"]) && !/asof/.test(g.cap), J(g)); }

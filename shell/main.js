@@ -4055,8 +4055,9 @@ async function runTurn(rec, { sessionId, message, model: rawModel, effort: rawEf
   // 都算——它們都是這台電腦上的人按的;renderer 的 typed 旗標不傳過來,這裡不分。要帶 false 的是「沒有人在這台電腦按送出」的回合:
   // 排程回合、雲端主機那邊發起的回合、手機來的回合(startTurn origin "mobile",通道還沒上線)、任何自動回合——
   // 由 rec.origin 決定:只有 desktop 帶 true。雲端視角(viewing.env === "cloud")另外用 noUser 標:人在,但畫面上不是這台電腦的對話
+  // noVerify:報告框兩個代號的回合遇搜尋驗證不等人(QA R3-14;TURN_NOTES 新代號不自動繼承)
   if (fakeVerify) fakeVerify.arm();   // 這一輪的第一次搜尋先去假頁
-  try { brMount = await browser().beginTurn(win, sessionId, { userSent: rec.origin === "desktop", noUser: !!viewing && viewing.env === "cloud" }); } catch (_) { brMount = null; }
+  try { brMount = await browser().beginTurn(win, sessionId, { userSent: rec.origin === "desktop", noUser: !!viewing && viewing.env === "cloud", noVerify: note === "report_once" || note === "report_recur" }); } catch (_) { brMount = null; }
   if (brMount) { require("./mcpcode").removeConfig(mcpFile); mcpFile = require("./mcpcode").writeConfig(mcpDir(), mcpMount, brMount); }
   const mcpServers = mcpFile ? [...(mcpMount ? ["blave"] : []), ...(brMount ? ["blave_browser"] : [])] : [];
   // 上網只有內建瀏覽器一條路(e2e 0.1.8 #125):runtime 看到這個變數就把引擎自己的 WebSearch / WebFetch 關掉,

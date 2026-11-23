@@ -2369,9 +2369,10 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
         ok(`被拒(${env}):五支點名 → 列前三支 + 「和另外 2 支」;台股策略綁加密 → tr.marketVenue.crypto 帶市場名(台股)`,
           many === 'tr.needsRouting.rejected {"name":"atr.rejNameSepbtr.rejNameSepc","more":"tr.rejMore {\\"n\\":2}"}' && tw === 'tr.marketVenue.crypto {"name":"grid","more":"","market":"tr.mktName.twStock"}', J([many, tw])); } }
     { const S = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8");
-      ok("tr.notTxf.rejected／tr.pick.txf／txfKeep 不再寫死「統一期貨」:帶 {venue};兩語都有 MARKET_VENUE 那句;群益在地名「群益期貨／Capital Futures」(跟選單同一個 cap.venue);美股 US_SYMBOL／US_VENUE 兩句同網頁原文;VENUE_SYMBOL 合約／現貨兩句與「等 N 檔」兩語同網頁原文",
+      ok("tr.notTxf.rejected／tr.pick.txf／txfKeep 不再寫死「統一期貨」:帶 {venue};兩語都有 MARKET_VENUE 那句;群益在地名「群益期貨／Capital Futures」(跟選單同一個 cap.venue);美股 US_VENUE 同網頁原文、US_SYMBOL 改白話(QA R3-9,網頁 workspace_pf_rej_us_symbol 待前端同改);VENUE_SYMBOL 合約／現貨兩句與「等 N 檔」兩語同網頁原文",
         /"tr\.notTxf\.rejected": "[^"]*\{venue\}只能下台指期。到「選擇策略」取消勾選後再儲存。"/.test(S) && /"tr\.pick\.txf": "\{venue\}只能下台指期/.test(S) && !/"tr\.(notTxf\.rejected|pick\.txf|pick\.txfKeep)": "[^"]*統一期貨/.test(S)
-        && S.includes('"tr.usSymbol.rejected": "「{name}」{more}用的是美股訊號：只能用 Type A 單一標的策略下單，SYMBOL 要寫成該檔的股票永續（例如 NVDA → NVDAUSDT）。改好後再儲存，或到「選擇策略」取消勾選。"')
+        && S.includes('"tr.usSymbol.rejected": "「{name}」{more}用美股訊號，現在還不能自動下單。到「選擇策略」取消勾選後再儲存。"')
+        && S.includes('"tr.usSymbol.rejected": "“{name}”{more} uses a US-stock signal and can’t auto-trade yet. Uncheck it in Pick Strategies, then save."') && !/"tr\.usSymbol\.rejected": "[^"]*(SYMBOL|Type A|NVDAUSDT)/.test(S)
         && S.includes('"tr.usVenue.rejected": "“{name}”{more}: this exchange doesn’t list its symbol as a stock perpetual. Connect an exchange that lists that stock perpetual, or uncheck it in Pick Strategies, then save."')
         && S.includes('"tr.venueSymbol.rejected": "「{name}」的下單標的 {symbol} 在 {venue} 沒有可下單的合約。請 agent 改成 {venue} 有的標的，或到「選擇策略」取消勾選後再儲存。"')
         && S.includes('"tr.venueSymbol.rejectedSpot": "「{name}」的下單標的 {symbol} 在 {venue} 沒有可下單的現貨。請 agent 改成 {venue} 有的標的，或到「選擇策略」取消勾選後再儲存。"')
@@ -2379,6 +2380,17 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
         && S.includes('"tr.venueSymbol.rejectedSpot": "“{name}”: {venue} has no spot market for {symbol}. Ask the agent to switch to a symbol {venue} lists, or uncheck it in Pick Strategies, then save."')
         && S.includes('"tr.venueSymbol.more": " 等 {total} 檔"') && S.includes('"tr.venueSymbol.more": " and {more} more"')
         && S.includes('"cap.venue": "群益期貨"') && S.includes('"cap.venue": "Capital Futures"') && !S.includes("tr.venueCapitalFull") && /"tr\.marketVenue\.rejected": "[^"]*\{president\}或\{capital\}/.test(S)); }
+    // QA R3-9(0.1.60):存了必被拒(US_SYMBOL)的美股訊號列——金額格鎖住、沒存過的不送,整次存檔不被它拖垮、其他列照存
+    { const r = { strategy_kinds: { usc: { type: "C", market: "us_stock" }, usb: { type: "B", market: "us_stock" }, usa: { type: "A", market: "us_stock" }, perp: { type: "A", market: "us_stock" }, eth: { type: "A", market: "crypto" } },
+        states: { perp: { symbol: "NVDAUSDT" }, usa: { symbol: "NVDA" } } };
+      const keepTR = globalThis.TR; globalThis.TR = { list: [{ name: "usc", portfolio: true }, { name: "usb" }, { name: "usa" }, { name: "perp" }, { name: "eth", symbol: "ETHUSDT" }, { name: "draft", portfolio: true, srcMarket: "us_stock" }] };
+      const got = ["usc", "usb", "usa", "perp", "eth", "draft"].map((n) => trUsSaveRefused(r, n)); globalThis.TR = keepTR;   // 純邏輯段讀的是全域 TR(這個 async 區塊自己有一個 var TR)
+      ok("trUsSaveRefused:美股投資組合、裸代號單一標的 → 存了必被拒(Type B 不看檔頭,usb 沒標的照裸代號那條鎖);股票永續單一標的、加密不算;清單只有 srcMarket(雲端草稿)也認得",
+        J(got) === J([true, true, true, false, false, true]));
+      ok("存檔框:沒存過、存了必被拒的美股列跟留空的新列一樣不送(blankNew),配置表那一列金額格鎖住、講存檔時不會加入(已存的舊列講會被擋、先取消勾選)",
+        /blankNew = inp \? \[\] : names\.filter\(\(n\) => trBlankNew\(n, stored, TR\.edits, TR\.raw\) \|\| \(!\(n in stored\) && trUsSaveRefused\(trReport\(\), n\)\)\);/.test(src)
+        && /const usLock = !\(stored\[n\] > 0\) && trUsSaveRefused\(trReport\(\), n\);/.test(src) && /const locked = usLock \|\| \(/.test(src)
+        && /if \(usLock\) first\.appendChild\(trEl\("span", "pf-note", t\(n in stored \? "tr\.usLockStored" : "tr\.usLockNew"\)\)\);/.test(src)); }
     // 列(psRow):原因句 = 勾選框的 aria-describedby
     { const mk = (tag) => ({ tag, id: "", className: "", kids: [], text: "", attrs: {}, dataset: {}, setAttribute(k, v) { this.attrs[k] = String(v); }, appendChild(c) { this.kids.push(c); return c; }, append(...c) { c.forEach((x) => this.kids.push(x)); }, get textContent() { return this.text + this.kids.map((k) => k.textContent).join(""); }, set textContent(v) { this.text = v; } });
       const pctx = vm.createContext({ LANG: "zh", document: { createElement: mk }, t: (k, o) => k + (o ? " " + JSON.stringify(o) : "") });

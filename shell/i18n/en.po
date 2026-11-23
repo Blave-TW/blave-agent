@@ -2215,6 +2215,14 @@ msgstr "Amount ({ccy})"
 msgid "tr.noStrategies"
 msgstr "No strategy is ready to trade yet. Ask the agent for one — once it has a backtest you can give it a size."
 
+# 配置表上存了必被拒(US_SYMBOL)的美股訊號列:金額格鎖住,沒存過的這一列存檔時不送(trade.js trUsSaveRefused)
+msgid "tr.usLockNew"
+msgstr "Saving won’t add it to the portfolio."
+
+# 同上,但已經存在設定裡的舊列:照送、整份存檔會被拒,出口是取消勾選
+msgid "tr.usLockStored"
+msgstr "Saving will be refused. Uncheck it in Pick Strategies first."
+
 msgid "tr.typeC"
 msgstr "Blave needs an update"
 
@@ -9699,9 +9707,9 @@ msgstr " and {n} more"
 msgid "tr.marketVenue.crypto"
 msgstr "“{name}”{more} is a {market} strategy, which a crypto exchange can’t trade. Bind a Taiwan futures broker, or uncheck it in Pick Strategies, then save."
 
-# 美股訊號策略的存檔拒絕(runtime _us_signal_refusal):原句細因七八種,同 MARKET_VENUE 一碼一句;字同網頁 workspace_pf_rej_us_symbol／us_venue
+# 美股訊號策略的存檔拒絕(runtime _us_signal_refusal):原句細因七八種,同 MARKET_VENUE 一碼一句。0.1.60 改白話(QA R3-9);網頁 workspace_pf_rej_us_symbol 待前端同改
 msgid "tr.usSymbol.rejected"
-msgstr "“{name}”{more} uses a US-stock signal: it can only trade as a Type A single-symbol strategy, with SYMBOL set to that stock’s perpetual (e.g. NVDA → NVDAUSDT). Fix it and save again, or uncheck it in Pick Strategies."
+msgstr "“{name}”{more} uses a US-stock signal and can’t auto-trade yet. Uncheck it in Pick Strategies, then save."
 
 msgid "tr.usVenue.rejected"
 msgstr "“{name}”{more}: this exchange doesn’t list its symbol as a stock perpetual. Connect an exchange that lists that stock perpetual, or uncheck it in Pick Strategies, then save."
