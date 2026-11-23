@@ -13,7 +13,10 @@ var ENV = { cloudDirty: false };
 const TR_BAGS = { cloud: { st: null } };
 let cloudSt = null, running = false, sent = [], boxes = [], checks = 0, refreshes = 0;
 const trPoll = async () => { ENV.cloudDirty = false; TR_BAGS.cloud.st = cloudSt; };
-const window = { blave: { updateCheck: () => { checks++; return Promise.resolve(true); }, cloudRefresh: () => { refreshes++; return Promise.resolve(); } } };
+let cloudSends = [], cloudRes = { ok: true, result: "started" };
+const window = { blave: { updateCheck: () => { checks++; return Promise.resolve(true); }, cloudRefresh: () => { refreshes++; return Promise.resolve(); },
+  cloudSend: (cmd, args, rid) => { cloudSends.push([cmd, args, rid]); return Promise.resolve(cloudRes); } } };
+const trSendError = (res) => "send:" + (res && res.error);   // trade.js 那支(行為在 check_shell_trade.js);這裡只看有沒有交給它
 const submitMessage = async (msg, o) => { sent.push([msg, o]); running = true; return true; };
 const confirmBox = (o) => { boxes.push(o); };
 let tracked = []; const trackFeature = (n) => { tracked.push(n); };
@@ -24,7 +27,7 @@ eval(["trHasAccount", "trPresWip", "trCaplWip", "trSetupOnly", "trRecRunning", "
 const trVenueIds = (r) => (r && r.venue ? [r.venue] : []), trVenueLabel = (id) => id || "", envMoney = (st) => (st && st.report && st.report.venue === "paper" ? "paper" : "real");
 const envMoneyText = (m) => (m === "paper" ? "模擬" : "真錢"), trWhereTidy = (s) => s;
 const paneSt = { chat: { off: false } }, paneToggle = () => {}, upPaint = () => {}, upRefresh = () => Promise.resolve(), $ = (id) => ({ id });
-const told = [], busySlot = (id, anchor) => ({ id, anchor }), busyTell = (slot, kind) => told.push([slot.id, kind]);   // busy.js(回合中的鎖)
+const told = [], slots = {}, busySlot = (id, anchor) => Object.assign(slots[id] || (slots[id] = { id }), { anchor }), busyTell = (slot, kind) => told.push([slot.id, kind]);   // busy.js(回合中的鎖)
 // 最小假 DOM:lede 那一句經 upRich 畫成 p(版號包 .mono)走 lead 槽
 class El { constructor(tag) { this.tag = tag; this.className = ""; this.children = []; this._t = ""; } append(...x) { x.forEach((y) => this.children.push(y)); }
   get textContent() { return this.children.length ? this.children.map((c) => (typeof c === "string" ? c : c.textContent)).join("") : this._t; } set textContent(v) { this._t = String(v); this.children.length = 0; } }
@@ -33,11 +36,11 @@ const mono = (n, s) => !!n && (n.children || []).some((c) => c && c.className ==
 const ledeOk = (b, cv, lv) => !!b.lead && b.lead.tag === "p" && b.lead.className === "cf-lede" && /^up\.cf\.lede\{/.test(b.lead.textContent) && mono(b.lead, cv) && mono(b.lead, lv);
 let UP = { phase: "idle", current: "0.1.14", checkedAt: 1 };
 eval("var UPD = " + src.match(/var UPD = (\{[^\n]*\});/)[1]);
-eval(["UP_SESSION_IDLE_MS", "UP_RETRY_MS", "UP_WU_STATES", "UP_WU_DIR_RE"].map((k) => src.match(new RegExp("^const " + k + " = [^\\n]*;", "m"))[0].replace(/^const /, "var ")).join("\n"));
+eval(["UP_SESSION_IDLE_MS", "UP_DIRECT_MAX_MS", "UP_RETRY_MS", "UP_WU_STATES", "UP_WU_DIR_RE"].map((k) => src.match(new RegExp("^const " + k + " = [^\\n]*;", "m"))[0].replace(/^const /, "var ")).join("\n"));
 var UP_CHECKING = false, UP_CLOUD_BUSY = false;
 eval(require("./_tabs_stub").SRC);   // csSendAway／csAnyTurn 的單分頁版本(對話分頁核心不在這個切片裡)
-eval(["upObserve", "upMachineGone", "upWu", "upPlan", "upLocalTurn", "upCloudTurn", "upNow", "upTurnEnded", "upCloudWhere", "upRich"].map((n) => fnOr(n)).join("\n"));
-eval(["upCheck", "upCloudRefresh", "upCloudUpdate", "upCloudSend"].map((n) => fnOr(n, true)).join("\n"));
+eval(["upObserve", "upMachineGone", "upWu", "upPlan", "upLocalTurn", "upCloudTurn", "upNow", "upDirect", "upCloudAnchor", "upCloudSay", "upTurnEnded", "upCloudWhere", "upRich"].map((n) => fnOr(n)).join("\n"));
+eval(["upCheck", "upCloudRefresh", "upCloudUpdate", "upCloudSend", "upCloudDirect"].map((n) => fnOr(n, true)).join("\n"));
 
 // 每個下單狀態對到一份會讓真 trExecState 回出那個值的回報(alive = cloud.js 的「主機在跑而且回報夠新」)
 const REP = { running: {}, halted: { halt: { halted: true } }, dead: { reconciler: { alive: false } }, noaccount: { venue: null },
@@ -67,7 +70,7 @@ const reset = (s) => { cloudSt = s; TR_BAGS.cloud.st = s; running = false; sent 
   ok("…取消(不叫 onOk):什麼都不送、不進更新期間;onCancel 記 cloud_upd_cancel", sent.length === 0 && UPD.session === null && typeof b.onCancel === "function" && (b.onCancel(), tracked[tracked.length - 1] === "cloud_upd_cancel"));
   tracked = [];
   if (typeof b.onOk === "function") { b.onOk(); await new Promise((r) => setImmediate(r)); }
-  ok("…按「開始更新」:照既有路徑在本機聊天送 up.c.msg(viewing env:cloud)、開一段更新期間", sent.length === 1 && sent[0][0] === "up.c.msg" && JSON.stringify(sent[0][1]) === '{"viewing":{"env":"cloud"}}' && !!UPD.session && UPD.session.fromCv === "2026-10-04-c" && JSON.stringify(tracked) === '["cloud_upd_ok"]');
+  ok("…按「開始更新」(舊 runtime,報告沒有 can_ws_update):照既有路徑在本機聊天送 up.c.msg(viewing env:cloud)、開一段更新期間、記 cloud_upd_legacy", sent.length === 1 && sent[0][0] === "up.c.msg" && JSON.stringify(sent[0][1]) === '{"viewing":{"env":"cloud"}}' && !!UPD.session && UPD.session.fromCv === "2026-10-04-c" && JSON.stringify(tracked) === '["cloud_upd_legacy"]');
 
   reset(st("unconfirmed", { report: { venue: "paper", reconciler: { stopped: { reason: "machine_restart", gated: false } } } })); await upCloudUpdate();
   ok("重開沒能確認停住(unconfirmed,模擬也算)→ 跳確認;狀態句換成「換成新版後會先停住」那句(不寫用新版重新啟動);lede 照帶版號;footWhere 寫模擬", boxes.length === 1 && sent.length === 0 && /模擬/.test(boxes[0].footWhere || "")
@@ -79,7 +82,7 @@ const reset = (s) => { cloudSt = s; TR_BAGS.cloud.st = s; running = false; sent 
   ok("cv 也讀不到 → 一樣不帶號(照舊走 lines,沒有 lead)", boxes.length === 1 && boxes[0].lines[0] === "up.cf.ledeBare" && !boxes[0].lead);
   for (const ex of ["halted", "dead", "noaccount"]) {
     reset(st(ex)); await upCloudUpdate();
-    ok("更新雲端主機:" + ex + " → 不問、直接送 up.c.msg;記 open + ok", boxes.length === 0 && sent.length === 1 && sent[0][0] === "up.c.msg" && JSON.stringify(tracked) === '["cloud_upd_open","cloud_upd_ok"]');
+    ok("更新雲端主機:" + ex + " → 不問、直接送 up.c.msg(舊路);記 open + legacy", boxes.length === 0 && sent.length === 1 && sent[0][0] === "up.c.msg" && JSON.stringify(tracked) === '["cloud_upd_open","cloud_upd_legacy"]');
   }
   for (const ex of ["loading", "unknown"]) {
     reset(st(ex)); await upCloudUpdate();
@@ -105,19 +108,20 @@ const reset = (s) => { cloudSt = s; TR_BAGS.cloud.st = s; running = false; sent 
     ok("確認框的 onCancel:只在沒按主鈕 / 第二動作鈕就收掉時叫(取消、✕、Esc、框外、被程式收掉);主鈕與第二動作鈕先記 acted", /if \(c && c\.onCancel && !c\.acted\) c\.onCancel\(\);/.test(dc)
       && /delCtx\.acted = true; delClose\(false\); go\(\); return; \}/.test(src) && /if \(delCtx\) delCtx\.acted = true; delClose\(false\); if \(go\) go\(\);/.test(src) && /opener, onCancel \};/.test(cut(src, "confirmBox") || "")); }
   { const V = require("vm").runInNewContext(fs.readFileSync(path.join(R, "strings.js"), "utf8").replace(/^const STRINGS/m, "var STRINGS") + "\nSTRINGS");
-    // 設計師 D 版 spec §3(.claude/output/designer/desktop-cloud-update-modal-2026-10-08/spec.md)逐字;d4 的反引號不進 textContent
-    const want = { zh: ["把雲端主機更新到最新版", "雲端主機會從 {cv} 換到 {lv}。過程要幾分鐘，在聊天裡跑，做完會說一聲。", "雲端主機會換成最新版。過程要幾分鐘，在聊天裡跑，做完會說一聲。",
+    // 設計師 D 版 spec §3(.claude/output/designer/desktop-cloud-update-modal-2026-10-08/spec.md)逐字;d4 的反引號不進 textContent。
+    // 0.1.60 lede／ledeBare／d3 照 spec cloud-workspace-update-command-0160 §5.2 改(不再在聊天跑、不預告去向)
+    const want = { zh: ["把雲端主機更新到最新版", "雲端主機會從 {cv} 換到 {lv}，要幾分鐘。", "雲端主機會換成最新版，要幾分鐘。",
         "自動下單正在跑：動到下單程式時，會等沒有單在送出的空檔，再用新版重新啟動。", "主機重開後沒能確認自動下單已停下：換成新版後會先停住，按「啟動下單」才會繼續。",
         "讀不到自動下單狀態，照在跑處理。動到下單程式時，會等沒單在送的空檔再用新版重啟。",
-        "只換 Blave 官方的程式與說明檔，不碰你的策略檔與金鑰。部位不會平倉。", "一直等不到空檔，就只換檔，自動下單先留在舊版。", "沒更新完成會在聊天說明原因，再按一次就會接著做。",
+        "只換 Blave 官方的程式與說明檔，不碰你的策略檔與金鑰。部位不會平倉。", "一直等不到空檔，就只換檔，自動下單先留在舊版。", "沒更新完成，再按一次就會接著做。",
         "你改過的官方檔會換成官方版，舊檔備份在主機的 .official-backup/。", "你自己加的下單整合不動。", "開始更新", "更新雲端主機"],
-      en: ["Update the cloud machine", "The cloud machine goes from {cv} to {lv}. It takes a few minutes, runs in the chat, and says there when it’s done.",
-        "The cloud machine updates to the latest version. It takes a few minutes, runs in the chat, and says there when it’s done.",
+      en: ["Update the cloud machine", "The cloud machine goes from {cv} to {lv}. It takes a few minutes.",
+        "The cloud machine moves to the latest version. It takes a few minutes.",
         "Auto-trading is running: if the trading code changes, it waits until no order is mid-flight, then restarts on the new version.",
         "After the machine restarted, we couldn’t confirm auto-trading had stopped: once on the new version it stays stopped until you press Start trading.",
         "Couldn’t read auto-trading status, so it’s treated as running. If trading code changes, it restarts on the new version between orders.",
         "Only Blave’s official code and reference files change; your strategy files and keys are left alone. Positions stay open.", "If no gap comes up, only the files change and auto-trading stays on the old code.",
-        "If the update doesn’t finish, the chat says why; press Start update again and it picks up where it stopped.",
+        "If it doesn’t finish, press it again to pick up where it stopped.",
         "Official files you changed are replaced with the official versions; the old copies are backed up in .official-backup/ on the machine.", "Order integrations you added yourself are left alone.", "Start update", "Update Cloud Machine"] };
     const keys = ["up.cf.title", "up.cf.lede", "up.cf.ledeBare", "up.cf.body1", "up.cf.body1Unconfirmed", "up.cf.body1Unknown", "up.cf.d1", "up.cf.d2", "up.cf.d3", "up.cf.d4", "up.cf.d5", "up.cf.ok", "up.cloud.go"];
     const all = keys.map((k) => V.zh[k] + V.en[k]).join();
@@ -128,6 +132,40 @@ const reset = (s) => { cloudSt = s; TR_BAGS.cloud.st = s; running = false; sent 
   ok("trade.js 投資組合被鎖那一行的雲端入口:走 upCloudUpdate(含確認),不再直接叫 upCheck", /if \(cloud\) upCloudUpdate\(/.test(ps) && !/upCheck\(/.test(ps) && !/upCheck\(|upCloudRecheck\(/.test(trsrc));
   ok("app.js 再也沒有不經確認就送 up.c.msg 的地方:up.c.msg 只出現在 upCloudSend", (src.match(/t\("up\.c\.msg"\)/g) || []).length === 1 && /t\("up\.c\.msg"\)/.test(cut(src, "upCloudSend") || ""));
 
+  // ── 0.1.60 直接指令(spec cloud-workspace-update-command-0160 §4.1、§4.5):報告 can_ws_update → workspace_update,不開任何回合 ──
+  { const D = (exec, wu, o) => st(exec, { report: { can_ws_update: true, ...(wu ? { workspace_update: wu } : {}) }, ...(o || {}) });
+    const go = async (s0, res) => { reset(s0); cloudSends = []; cloudRes = res || { ok: true, result: "started" }; Object.keys(slots).forEach((k) => delete slots[k]); await upCloudUpdate();
+      if (boxes[0] && typeof boxes[0].onOk === "function") boxes[0].onOk(); for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r)); };
+    await go(D("running", { state: "done", outcome: "updated", to: "2026-10-04-c", ts: 77 }));
+    ok("直接指令:確認框照舊,按下後送 cloudSend(\"workspace_update\", {}),不送任何訊息、不開回合;記 open + ok(ack ok)",
+      boxes.length === 1 && JSON.stringify(cloudSends) === '[["workspace_update",{},null]]' && sent.length === 0 && JSON.stringify(tracked) === '["cloud_upd_open","cloud_upd_ok"]');
+    ok("…session.direct,prevTs = 按下當下報告裡那一份的 ts(M8);不記 cloudSid(沒有回合)", !!UPD.session && UPD.session.direct === true && UPD.session.prevTs === 77 && UPD.cloudSid === null && UPD.wuResult === null);
+    reset(D("halted")); told.length = 0; running = true; cloudSends = []; cloudRes = { ok: true }; await upCloudUpdate(); for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r));
+    ok("直接指令:對著雲端的回合在跑也不擋(不開回合,也不重開 bridge);halted → 不問直接送", told.length === 0 && JSON.stringify(cloudSends) === '[["workspace_update",{},null]]' && sent.length === 0);
+    running = false;
+    await go(D("halted"), { ok: false, kind: "rejected", error: "RuntimeError: NO_GIT: git is not installed on this machine" });
+    ok("NO_GIT → 按鈕下那一格寫 up.err.noGit,不開更新期間、不記 ok", slots["upc-why"] && slots["upc-why"].textContent === "up.err.noGit" && slots["upc-why"].hidden === false && UPD.session === null && tracked.indexOf("cloud_upd_ok") < 0);
+    await go(D("halted"), { ok: false, kind: "rejected", error: "RuntimeError: START_FAILED: could not start the update (OSError)" });
+    ok("START_FAILED → up.done.failedNone(什麼都沒動)", slots["upc-why"].textContent === "up.done.failedNone" && UPD.session === null);
+    await go(D("halted"), { ok: false, kind: "rejected", error: "RuntimeError: UPDATE_RUNNING: the cloud machine is updating — start again when it finishes" });
+    ok("UPDATE_RUNNING → 不出錯誤句,當成更新中(session 照開,等報告)", slots["upc-why"].hidden === true && !slots["upc-why"].textContent && !!UPD.session && UPD.session.direct === true);
+    await go(D("halted"), { ok: false, kind: "unknown", error: "UNKNOWN_RESULT" });
+    ok("送出了沒收到回條(unknown)→ 句子交給 trSendError,更新期間留著(機器可能已經在跑,結果照樣從報告認)", slots["upc-why"].textContent === "send:UNKNOWN_RESULT" && !!UPD.session && UPD.session.direct === true);
+    await go(D("halted"), { ok: false, kind: "undelivered", error: "RATE_LIMITED" });
+    ok("其他 → trSendError(res, \"update\", \"cloud\") 的句子", slots["upc-why"].textContent === "send:RATE_LIMITED" && UPD.session === null);
+    ok("舊 runtime(沒有 can_ws_update)只看旗標選路,不先試送再看失敗:舊路那幾則沒有呼叫 cloudSend", (reset(st("halted")), cloudSends = [], true) && (await upCloudUpdate(), cloudSends.length === 0 && sent.length === 1 && tracked.indexOf("cloud_upd_legacy") >= 0)); }
+  { // M5:更新途中按〔啟動下單〕被機器擋下 → tr.cloud.updRunning;字串照 runtime ws_update.ERR_UPDATE_RUNNING 逐字
+    const T = new Function("t", trsrc.match(/^const TR_REJECT_CODE_RE = [^\n]*$/m)[0] + "\n" + trsrc.match(/^const TR_UPDATE_RUNNING_RE = [^\n]*$/m)[0] + "\n" + cut(trsrc, "trRejectCode") + "\n" + cut(trsrc, "trRejectSentence") + "\nreturn { trRejectCode, trRejectSentence };")((k) => k);
+    const ws = fs.readFileSync(path.join(__dirname, "..", "runtime", "ws_update.py"), "utf8"), msg = (/^ERR_UPDATE_RUNNING = "([^"]+)"$/m.exec(ws) || [])[1];
+    const rc = T.trRejectCode("RuntimeError: " + msg);
+    ok("trRejectCode(\"RuntimeError: UPDATE_RUNNING: …\") → 代碼 UPDATE_RUNNING、句子 tr.cloud.updRunning;runtime 的原句還是 UPDATE_RUNNING: 開頭", !!msg && /^UPDATE_RUNNING: /.test(msg)
+      && rc && rc.code === "UPDATE_RUNNING" && T.trRejectSentence(rc) === "tr.cloud.updRunning" && T.trRejectCode("RuntimeError: TYPE_B: 「a」 x").code === "TYPE_B" && T.trRejectCode("RuntimeError: other") === null); }
+  { const V = require("vm").runInNewContext(fs.readFileSync(path.join(R, "strings.js"), "utf8").replace(/^const STRINGS/m, "var STRINGS") + "\nSTRINGS");
+    const want = { "tr.cloud.updRunning": ["雲端主機正在更新，更新完再按「啟動下單」。", "The cloud machine is updating. Press Start trading when it finishes."],
+      "up.err.noGit": ["雲端主機少了更新要用的元件，請聯絡我們。", "The cloud machine is missing a part the update needs. Contact us."],
+      "up.dot": ["雲端主機有新版", "Cloud update"],
+      "ho.err.old": ["雲端主機的程式還不支援搬策略。通常幾分鐘內會自動補上，到時再試。", "The cloud machine can’t move strategies yet. It usually catches up within a few minutes, so try again then."] };
+    ok("0.1.60 新字與改字 zh／en 定稿(電腦版只有這兩語)", Object.keys(want).every((k) => V.zh[k] === want[k][0] && V.en[k] === want[k][1])); }
   console.log(red ? `\n${red} FAIL` : "\nall pass");
   process.exit(red ? 1 : 0);
 })();

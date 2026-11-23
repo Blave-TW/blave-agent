@@ -3255,6 +3255,9 @@ msgstr "The pause didn’t arrive; the cloud is still trading. Try again. If it 
 msgid "tr.cloud.cmdRejected"
 msgstr "The cloud machine didn’t accept this command ({err})."
 
+msgid "tr.cloud.updRunning"
+msgstr "The cloud machine is updating. Press Start trading when it finishes."
+
 msgid "tr.cloud.noMachine"
 msgstr "There’s no cloud machine right now, so nothing was sent."
 
@@ -4848,10 +4851,10 @@ msgid "up.cf.title"
 msgstr "Update the cloud machine"
 
 msgid "up.cf.lede"
-msgstr "The cloud machine goes from {cv} to {lv}. It takes a few minutes, runs in the chat, and says there when it’s done."
+msgstr "The cloud machine goes from {cv} to {lv}. It takes a few minutes."
 
 msgid "up.cf.ledeBare"
-msgstr "The cloud machine updates to the latest version. It takes a few minutes, runs in the chat, and says there when it’s done."
+msgstr "The cloud machine moves to the latest version. It takes a few minutes."
 
 msgid "up.cf.body1"
 msgstr "Auto-trading is running: if the trading code changes, it waits until no order is mid-flight, then restarts on the new version."
@@ -4869,7 +4872,7 @@ msgid "up.cf.d2"
 msgstr "If no gap comes up, only the files change and auto-trading stays on the old code."
 
 msgid "up.cf.d3"
-msgstr "If the update doesn’t finish, the chat says why; press Start update again and it picks up where it stopped."
+msgstr "If it doesn’t finish, press it again to pick up where it stopped."
 
 msgid "up.cf.d4"
 msgstr "Official files you changed are replaced with the official versions; the old copies are backed up in .official-backup/ on the machine."
@@ -4937,10 +4940,22 @@ msgid "up.done.replaced"
 msgstr "{n} official files you had changed were replaced; the old copies are in {dir} ({view})."
 
 msgid "up.done.restartFailed"
-msgstr "The cloud machine has the new files, but auto-trading failed to restart and is still on the old code; say 更新 again to retry."
+msgstr "The new files are on the cloud machine, but auto-trading failed to restart and is still on the old code. Press Update Cloud Machine again to retry."
 
 msgid "up.done.restartDeferred"
-msgstr "The cloud machine has the new files, but auto-trading is still on the old code; once this order finishes, say 更新 again and it will restart."
+msgstr "The new files are on the cloud machine, but auto-trading is still on the old code. Once this order finishes, press Update Cloud Machine again to restart it."
+
+msgid "up.done.failedNone"
+msgstr "The cloud machine wasn’t updated and nothing changed. Press Update Cloud Machine again."
+
+msgid "up.done.failedPartial"
+msgstr "The cloud update didn’t finish. Press Update Cloud Machine again to pick up where it stopped."
+
+msgid "up.err.noGit"
+msgstr "The cloud machine is missing a part the update needs. Contact us."
+
+msgid "up.dot"
+msgstr "Cloud update"
 
 msgid "up.done.view"
 msgstr "view"
@@ -11189,7 +11204,7 @@ msgid "ho.err.unknown"
 msgstr "No reply from the cloud yet, so the result isn’t known. Check the list for {to} in a bit."
 
 msgid "ho.err.old"
-msgstr "Your cloud machine isn’t on this version yet. It updates itself; try again in a few minutes."
+msgstr "The cloud machine can’t move strategies yet. It usually catches up within a few minutes, so try again then."
 
 msgid "ho.err.retry"
 msgstr "It didn’t move this time. Try again later."

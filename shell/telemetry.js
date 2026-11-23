@@ -413,7 +413,10 @@ const EVENTS = {
     // 0.1.59 澄清表單主鈕直接送出(renderer/form.js;spec chat-answer-buttons §9,同 api 順序,api 先上):clarify_click = 主鈕送出且回合 started／queued
     // (canon 的 clarify_sent method:click;一格 prop 放不下 method,fill 那條照舊是 clarify_sent／clarify_sent_ed);clarify_undo = 那輪沒回覆沒收據就被停。
     // clarify_self 起無送出點(「我自己打」拿掉),api 照收舊版送的
-    "clarify_click", "clarify_undo"] },
+    "clarify_click", "clarify_undo",
+    // 0.1.60 更新雲端主機改送 workspace_update 直接指令(spec cloud-workspace-update-command-0160 §7.1,同 api 順序,api 先上):cloud_upd_ok 從這版起＝指令 ack ok;
+    // cloud_upd_legacy = 舊 runtime 退回本機回合那條(歸零再拿掉);cloud_upd_dot = 左下「雲端主機有新版」的點當天第一次被看見;cloud_upd_dot_go = 點亮著時按了選單「設定」
+    "cloud_upd_legacy", "cloud_upd_dot", "cloud_upd_dot_go"] },
 };
 // `claude auth status` 的 authMethod 原值 → cli_auth 的 how(隨包 CLI 2.1.281 的 auth status 只會給這六個)。唯一的一份:
 // 主行程 detectAgents 算好放進 out.claude.how,畫面與主行程都讀那一欄。null／缺 = none,表外 = other

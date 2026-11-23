@@ -122,6 +122,8 @@ CLOUD_ONLY = frozenset({
     "sinopac_setup", "sinopac_pfx_key", "sinopac_pfx", "sinopac_probe", "sinopac_sim_test", "sinopac_finish",
     # 策略搬家:export 只有雲端有(本機的檔外殼自己讀)
     "strategy_export",
+    # 更新雲端主機(runtime/ws_update.py):本機的 workspace 跟著 app 更新
+    "workspace_update",
 })
 # Not in the api's list at all: the desktop's own 統一期貨 connect flow
 # (runtime/president_connect.local_dispatch). Only the app's main process sends

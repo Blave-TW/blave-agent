@@ -652,6 +652,7 @@ REVIEWED = {
     ("sdk_sync.py", "_rename"): "<pin>.tmp → <pin> directory swap; $BASE/sdk and $BASE/state: cloud-only job (jobs.json blave-agent-sdk; the desktop has no $BASE/sdk and no sdk_sync), runtime = agent user there; desktop $BASE is outside the Codex sandbox anyway",
     ("sdk_sync.py", "_save_state"): "$BASE/sdk and $BASE/state: cloud-only job (jobs.json blave-agent-sdk; the desktop has no $BASE/sdk and no sdk_sync), runtime = agent user there; desktop $BASE is outside the Codex sandbox anyway",
     ("sdk_sync.py", "run"): "$BASE/sdk and $BASE/state: cloud-only job (jobs.json blave-agent-sdk; the desktop has no $BASE/sdk and no sdk_sync), runtime = agent user there; desktop $BASE is outside the Codex sandbox anyway",
+    ("ws_update.py", "_write_json"): "the `python -I` update child cannot import atomic_file: tempfile.mkstemp (O_EXCL, random name) in the same folder, then os.replace — the listener side goes through atomic_file.replacing",
 }
 found = []
 for name in sorted(os.listdir(RUNTIME)):
@@ -675,6 +676,7 @@ check(len(found) >= 6, f"enumeration found the reviewed sites (found {len(found)
 APPEND_REVIEWED = {
     ("events.py", "append"): "inlined O_NOFOLLOW append (strategy processes load events.py by path, no atomic_file)",
     ("command_listener.py", "_flatten_already_running"): '"a+" lock probe on an existing flatten.lock, writes nothing',
+    ("ws_update.py", "lock_free"): '"a+b" lock probe on state/workspace_update.lock (shared with manager/update_workspace.py), writes nothing',
 }
 CREATE_REVIEWED = {
     ("telegram_pairing.py", "write_json_600"): "config/ is root:root 755 on Linux (agent can't place a symlink), explicit ACL on Windows, BASE/config is outside the desktop sandbox",
@@ -711,6 +713,7 @@ WRITE_REVIEWED = {
     ("web_bridge.py", "_stop_running"): "stop flag in BASE/state/turn_stop; cloud only",
     ("sdk_sync.py", "_save_state"): "$BASE/sdk and $BASE/state: cloud-only job (jobs.json blave-agent-sdk; the desktop has no $BASE/sdk and no sdk_sync), runtime = agent user there; desktop $BASE is outside the Codex sandbox anyway",
     ("sdk_sync.py", "run"): ".ready marker in $BASE/sdk/<pin>; $BASE/sdk and $BASE/state: cloud-only job (jobs.json blave-agent-sdk; the desktop has no $BASE/sdk and no sdk_sync), runtime = agent user there; desktop $BASE is outside the Codex sandbox anyway",
+    ("ws_update.py", "_write_json"): "fd from tempfile.mkstemp (O_EXCL, random name), then os.replace: the `python -I` update child cannot import atomic_file",
 }
 app_found, create_found, write_found = set(), set(), set()
 for name in sorted(os.listdir(RUNTIME)):

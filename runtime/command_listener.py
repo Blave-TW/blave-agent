@@ -64,6 +64,7 @@ import tick_gate
 import turn_slots
 import venue_traits
 import strategy_transfer
+import ws_update
 
 try:
     import fcntl
@@ -8798,6 +8799,13 @@ def _cmd_telegram_reset(args):
     return telegram_pairing.reset(gen)
 
 
+def _cmd_workspace_update(args, cmd_id):
+    """更新雲端主機(runtime/ws_update.py):驗證、單飛、ack 前寫 applying、起獨立子行程;結果走報告的
+    workspace_update。子行程結束時推一次報告,不必等 2 分鐘的 timer。"""
+    return ws_update.start(args, WORKSPACE, _local_mode(), cmd_id, _pid_cmdline_or_none, _child_kw,
+                           lambda: _push(_ON_PROGRESS, "workspace update"))
+
+
 HANDLERS = {
     "halt": _cmd_halt,
     "resume": _cmd_resume,
@@ -8830,6 +8838,7 @@ HANDLERS = {
     "stats_refresh": _cmd_stats_refresh,
     "strategy_import": _cmd_strategy_import,
     "strategy_export": lambda args: _cmd_strategy_export(args, None),
+    "workspace_update": lambda args: _cmd_workspace_update(args, None),
 }
 # 群益 cloud connect (runtime/capital_connect.py): long steps come back as Deferred
 HANDLERS.update({
@@ -8875,6 +8884,11 @@ def dispatch(command):
     # for its unbind-halt (audit H2: outside it, that halt was inert — either
     # a swallowed ImportError or a HALT file in the wrong cwd); credentials for
     # the same reason (its rebind-eviction halt).
+    # 雲端主機正在更新(按鈕那條的 job,或對話那條的 apply 拿著鎖):換檔途中不啟動下單。帶 strategies 的
+    # resume 也擋;暫停、平倉、停機暫停不擋(spec cloud-workspace-update-command-0160 §2.8-3)
+    if cmd in ("resume", "resume_wait", "restart_reconciler") and not _local_mode() \
+            and ws_update.running(WORKSPACE, _pid_cmdline_or_none):
+        raise RuntimeError(ws_update.ERR_UPDATE_RUNNING)
     if cmd in ("resume", "resume_wait") and args.get("strategies") is None:
         m = _read_unbind_marker()
         if m and not m.get("held"):
@@ -8886,6 +8900,8 @@ def dispatch(command):
         result = _in_workspace(fn, args)
     elif cmd == "strategy_export":  # the staging slot is keyed by this command's id
         result = _cmd_strategy_export(args, command.get("id"))
+    elif cmd == "workspace_update":
+        result = _cmd_workspace_update(args, command.get("id"))
     else:
         result = fn(args)
     # a start held for an unanswered account question changed nothing: the
@@ -8982,6 +8998,10 @@ def run(on_applied=None, on_progress=None):
     _resume_restore_watch()
     _resume_transfer_watch()
     _resume_perf_refresh()
+    try:
+        ws_update.resume_watch(WORKSPACE, _pid_cmdline_or_none, lambda: _push(_ON_PROGRESS, "workspace update"))
+    except Exception as e:
+        _log(f"workspace update resume failed: {type(e).__name__}: {e}")
 
     # Type A/C strategy scheduling — its own daemon thread, independent of the
     # poll loop below (see the "Type A/C in-process scheduler" section).

@@ -1439,8 +1439,12 @@ function trErrStamp(ts, nowMs) {
 /* 機器拒絕的格式 `CODE: 「資料夾名」中文句`(runtime command_listener 的 TYPE_B;同綁定錯誤的代碼慣例)→ { code, name }。
    \u300c / \u300d = 「 」。認不得回 null */
 const TR_REJECT_CODE_RE = /^(?:[A-Za-z]*Error:\s*)?([A-Z][A-Z0-9_]+): \u300c([A-Za-z0-9_-]{1,64})\u300d/;
+// 雲端主機正在更新(runtime ws_update.ERR_UPDATE_RUNNING):不點名策略的拒絕,啟動下單／重啟對帳器都會收到
+const TR_UPDATE_RUNNING_RE = /^(?:[A-Za-z]*Error:\s*)?UPDATE_RUNNING:/;
 function trRejectCode(err) {
-  const s = String(err == null ? "" : err), m = TR_REJECT_CODE_RE.exec(s); if (!m) return null;
+  const s = String(err == null ? "" : err);
+  if (TR_UPDATE_RUNNING_RE.test(s)) return { code: "UPDATE_RUNNING", name: null, names: [], market: null, crypto: false, venueSymbol: null };
+  const m = TR_REJECT_CODE_RE.exec(s); if (!m) return null;
   // runtime 可能一次點名好幾支(NEEDS_ROUTING:「a」、「b」…):全部收進 names,句子最多列三支
   const names = [m[2]], rest = s.slice(m.index + m[0].length), re = /^\u3001\u300c([A-Za-z0-9_-]{1,64})\u300d/;
   let k = rest, x; while ((x = re.exec(k))) { names.push(x[1]); k = k.slice(x[0].length); }
@@ -1526,8 +1530,9 @@ function trDiedCut(full, lead) { return lead && full.startsWith(lead) ? lead.len
 const ENV_API = ["tradeStatus", "listStrategies", "loadStrategy", "tradeEquity", "tradeEvents", "tradeSend"];
 /* 雲端送得出去的指令:**只開真的有 UI 在用的**(稽核 S-2)。`amounts` = 雲端填金額(S4);`delete_strategy` = 雲端側欄的刪除;
    `credentials_remove` / `retest_accounts` = 雲端設定分頁(S5)。`credentials` 永遠不在這裡:金鑰只走主行程專用的 cloud-connect。
-   沒有 `update` / `restart_reconciler`:用本機 app 不觸發雲端 agent 回合(Wei 09-22)。主行程還會再擋一次(CLOUD_SHIPPED,兩份逐項相等)。 */
-const ENV_CLOUD_CMDS = ["halt", "close_all", "resume", "resume_wait", "amounts", "execution", "delete_strategy", "credentials_remove", "close_then_unbind", "retest_accounts", "book_account_confirm", "version_restore", "stats_refresh", "manage_optimize", "manage_backtest", "manage_cancel", "rename_strategy"];
+   沒有 `update` / `restart_reconciler`:用本機 app 不觸發雲端 agent 回合(Wei 09-22)。`workspace_update` = 更新雲端主機(0.1.60,
+   app.js upCloudSend 直接叫 cloudSend,列在這裡是讓兩份白名單一致)。主行程還會再擋一次(CLOUD_SHIPPED,兩份逐項相等)。 */
+const ENV_CLOUD_CMDS = ["halt", "close_all", "resume", "resume_wait", "amounts", "execution", "delete_strategy", "credentials_remove", "close_then_unbind", "retest_accounts", "book_account_confirm", "version_restore", "stats_refresh", "manage_optimize", "manage_backtest", "manage_cancel", "rename_strategy", "workspace_update"];
 function envApi(env, host) {
   if (env !== "cloud") { const o = { env: "local" }; ENV_API.forEach((k) => { o[k] = (...a) => host[k](...a); });
     /* 事件清單兩個視角同一個形狀 { code, events }。這台電腦永遠是 OK:那是本機檔案,檔不在就是真的沒發生過事
@@ -2452,6 +2457,7 @@ function trAlertShow() { const S = TR_BAGS[ENV.cur], a = $("tr-alert"); a.hidden
    MARKET_VENUE = 策略的市場跟交易所不符(群益只下台指期、台指期／台股策略綁到加密交易所) */
 function trTwVenueName(id) { return id === "capital" ? t("cap.venue") : t("pres.venue"); }
 function trRejectSentence(rc) {
+  if (rc.code === "UPDATE_RUNNING") return t("tr.cloud.updRunning");
   // 點名好幾支時最多列三支,其餘「等 N 支」(句子裡的名字寫顯示名;引號在字串裡,多的那段接在引號外)
   const ns = (rc.names && rc.names.length ? rc.names : [rc.name]).map(trDisplay), name = ns.slice(0, 3).join(t("tr.rejNameSep")), more = ns.length > 3 ? t("tr.rejMore", { n: ns.length - 3 }) : "";
   if (rc.code === "TYPE_B") return t("tr.typeB.rejected", { name, more });

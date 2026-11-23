@@ -2510,6 +2510,10 @@ def build_report(reporter=None):
         # the per-strategy detail of what is frozen; no page renders a
         # per-strategy confirmation card any more.
         "can_downtime_pause": _workspace_has_downtime_pause(),
+        # this runtime takes the `workspace_update` command (runtime/ws_update.py): the
+        # desktop's 更新雲端主機 sends it instead of opening a local agent turn; absent =
+        # older runtime, the app falls back to the turn (spec cloud-workspace-update-command-0160 §2.9)
+        "can_ws_update": True,
         "downtime_pause": downtime_pause_view(cfg, last),
         # 策略管理 subtab: member figures, allocators, the last proposal and
         # the walk-forward job/result (see manager_view). can_manage keys the

@@ -19,7 +19,8 @@ function paint(o) {
     amSignedIn: () => !!o.inn, amMark: () => !!o.mark, rptBag: () => ({ open: !!o.rptOn }), libExtIcon: () => mk("svg"), acct: o.acct || null,
     oauthPending: !!o.pending, planLoginBusy: !!o.busy, planStateText: () => o.st || "", amClose: (r) => log.push("close:" + r), amAnchor: () => "ANCHOR",
     rptMenuGo: () => log.push("rpt"), setOpen: () => log.push("set"), planOpen: () => log.push("plan"), usageUrl: () => "USAGE", docsHomeUrl: () => "DOCS",
-    acctOutAsk: (a) => log.push("out:" + a), trackFeature: (n) => log.push("tm:" + n), window: { blave: { openExternal: (u) => log.push("ext:" + u) } } };
+    acctOutAsk: (a) => log.push("out:" + a), trackFeature: (n) => log.push("tm:" + n), window: { blave: { openExternal: (u) => log.push("ext:" + u) } },
+    upDotNow: () => ({ on: !!o.cloudDot, key: o.cloudDot ? "2026-11-23" : null }), rpWfUpdate: () => log.push("wfupd") };
   vm.runInNewContext(cutFn(app, "amPaint") + "\namPaint();", ctx);
   const rows = menu.children.map((k) => (k.className === "am-gap" ? "GAP" : k.className === "am-who" ? "who:" + k.textContent : k.children[0].textContent));
   return { menu, rows, log, items: menu.children.filter((k) => k.className === "am-i") };
@@ -33,6 +34,15 @@ function paint(o) {
   p.items.forEach((b) => b.on.click());
   t("§A4／§10.1 每一項先收選單(焦點回第一格)再做事,埋點各一個字面名字;登出開確認框(opener = 第一格)", p.log.join() === ["close:true", "rpt", "close:true", "tm:side_menu_set", "set", "close:true", "tm:side_menu_plan", "plan",
     "close:true", "tm:side_menu_usage", "ext:USAGE", "close:true", "tm:side_menu_docs", "ext:DOCS", "close:true", "tm:side_menu_out", "out:ANCHOR"].join(), p.log); }
+{ // 0.1.60「雲端主機有新版」(設計師 spec cloud-update-dot-0160 §3、§4):設定列點＋值,整列 aria-label 含看得到的字;按了落在一般、焦點在〔更新雲端主機〕
+  for (const [lang, name] of [["zh", "設定，雲端主機有新版"], ["en", "Settings, Cloud update"]]) {
+    const p = paint({ inn: true, lang, cloudDot: true }), set = p.items[1], v = set.children[1];
+    t(lang + " 雲端有新版:「設定」列尾是值(點在前、字在後),title 是全字,整列 aria-label「" + name + "」;報告列照舊沒有點", v && v.className === "v" && v.children[0].className === "nav-new" && v.children[0].attrs["aria-hidden"] === "true"
+      && v.children[1] === STR[lang]["up.dot"] && v.title === STR[lang]["up.dot"] && set.attrs["aria-label"] === name && p.items[0].children.length === 1, { v, aria: set.attrs }); }
+  const p = paint({ inn: true, cloudDot: true }); p.items[1].on.click();
+  t("點亮著時按「設定」:記 side_menu_set 與 cloud_upd_dot_go,走 rpWfUpdate(不走 setOpen)", p.log.join() === "close:true,tm:side_menu_set,tm:cloud_upd_dot_go,wfupd", p.log);
+  const q = paint({ inn: true }); q.items[1].on.click();
+  t("沒亮:設定列沒有值、沒有 aria-label,照舊 setOpen", q.items[1].children.length === 1 && !q.items[1].attrs["aria-label"] && q.log.join() === "close:true,tm:side_menu_set,set", q.log); }
 { const p = paint({ inn: false });
   t("§A4 沒登入:報告、空白、設定、說明文件;沒有 email 那一行", p.rows.join() === "報告,GAP,設定,說明文件", p.rows); }
 for (const k of ["pending", "busy"]) { const p = paint({ inn: true, [k]: true });

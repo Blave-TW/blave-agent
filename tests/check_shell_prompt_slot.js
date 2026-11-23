@@ -162,6 +162,7 @@ t("§3.2 六條都成立 → 出", X.slotPhPlan(OK).draw === true);
       createElement: (tag) => mkEl(null, tag), createElementNS: (ns, tag) => mkEl(null, tag) }, Date,
       planView: () => S.view, planVars: () => S.v, trackFeature: (n) => S.feat.push(n), slotPaint: () => S.hit.push("slot"),
       planSignIn: () => S.hit.push("signin"), planOpen: () => S.hit.push("open"), bindGo: (n) => S.hit.push("bind:" + n),
+      upDotNow: () => ({ on: !!S.cloud, key: S.cloud ? "2026-11-23" : null }),
       window: { blave: { reopenOAuth: async () => { S.hit.push("reopen"); return S.reopen; } } } };
     Object.defineProperty(ctx2, "LANG", { get: () => ctx.LANG });
     Object.defineProperty(ctx2, "hasToken", { get: () => S.token !== false }); Object.defineProperty(ctx2, "acct", { get: () => S.acct || null }); Object.defineProperty(ctx2, "RPT", { get: () => ({ mark: !!S.mark }) });
@@ -200,10 +201,20 @@ t("§3.2 六條都成立 → 出", X.slotPhPlan(OK).draw === true);
     const dotOf = (id) => $(id).children.filter((k) => k.className === "am-dot");
     t("§A5／§A6 有新報告:兩顆名稱都接「，有新報告」,右上角一顆 aria-hidden 的點", $("ws-conn").attrs["aria-label"] === "帳號，有新報告" && $("rail-set").attrs["aria-label"] === "帳號，有新報告"
       && dotOf("ws-conn").length === 1 && dotOf("rail-set").length === 1 && dotOf("ws-conn")[0].attrs["aria-hidden"] === "true", $("ws-conn").attrs["aria-label"]);
-    $("side-menu").hidden = false; F.sideCvPaint(); t("§A5 選單開著時第一格不畫點(點在選單「報告」那一列)", dotOf("ws-conn").length === 0 && dotOf("rail-set").length === 0);
+    // 0.1.60 照 canon Attention dot › 傳遞修正(設計師 spec cloud-update-dot-0160 §2.3):浮動選單開著時觸發鈕的點留著
+    $("side-menu").hidden = false; F.sideCvPaint(); t("§A5 選單開著時第一格的點留著(面板是另一個表面)", dotOf("ws-conn").length === 1 && dotOf("rail-set").length === 1);
     $("side-menu").hidden = true; S.mark = false; F.sideCvPaint(); t("§A5 沒新報告:不渲染點", dotOf("ws-conn").length === 0);
     ctx.LANG = "en"; S.mark = true; S.view = "trial"; S.v = { n: 2, t: 14 }; F.sideCvPaint(); t("§A6 en 用半形逗號加空白", /^Account, New report, [^，]+$/.test($("ws-conn").attrs["aria-label"]), $("ws-conn").attrs["aria-label"]);
     ctx.LANG = "zh"; S.mark = false; S.view = "running";
+    // 0.1.60「雲端主機有新版」跟新報告共用第一格那一顆中性點:一格一顆,原因幾件念幾件,順序新報告、雲端
+    S.feat.length = 0; S.cloud = true; F.sideCvPaint();
+    t("雲端主機有新版:第一格「帳號，雲端主機有新版」、一顆點", $("ws-conn").attrs["aria-label"] === "帳號，雲端主機有新版" && $("ws-conn").title === "帳號，雲端主機有新版" && dotOf("ws-conn").length === 1 && dotOf("rail-set").length === 1, $("ws-conn").attrs["aria-label"]);
+    S.mark = true; F.sideCvPaint();
+    t("兩件同時:還是一顆點,名稱「帳號，有新報告，雲端主機有新版」", $("ws-conn").attrs["aria-label"] === "帳號，有新報告，雲端主機有新版" && dotOf("ws-conn").length === 1, $("ws-conn").attrs["aria-label"]);
+    ctx.LANG = "en"; F.sideCvPaint(); t("en:Account, New report, Cloud update", $("ws-conn").attrs["aria-label"] === "Account, New report, Cloud update", $("ws-conn").attrs["aria-label"]); ctx.LANG = "zh";
+    const dotFeat = S.feat.filter((n) => /dot/.test(n));
+    t("埋點:cloud_upd_dot 只看雲端那件事(當天一次,畫幾次都一次);新報告那顆今天已記過,不因為點同時代表雲端再記 rpt_dot_shown", dotFeat.join() === "cloud_upd_dot", dotFeat);
+    S.mark = false; S.cloud = false; F.sideCvPaint(); t("兩件都不成立:不渲染點", dotOf("ws-conn").length === 0);
     S.acct = { email: "alice@blave.org" }; F.sideCvPaint(); const face = () => $("ws-conn").children[0];
     t("§A3 已登入:帳號鈕(.av)畫 email 第一個字、轉大寫、textContent", /\bav\b/.test($("ws-conn").className) && face().textContent === "A" && face().tag === "span");
     S.acct = { email: "王小明@x.tw" }; F.sideCvPaint(); t("§A3 第一個字用 Array.from(中文字照放)", face().textContent === "王");
@@ -292,7 +303,7 @@ t("§3.2 六條都成立 → 出", X.slotPhPlan(OK).draw === true);
 
   // ── §8 埋點 ──
   t("§8.1 九個新名字接在 0.1.52 的 cx_key_page 後面、順序同 spec;之後接 0.1.54 拉回 icon 鈕 sp_pull_icon(0.1.57 的選單名字再接在後面)", /"cx_key_page",\n[^\n]*\n[^\n]*\n\s*"side_cv_login", "side_cv_trial", "side_cv_plan", "side_cv_stopped",\n\s*"login_side", "login_side_again", "bind_side", "plan_side", "stopped_side",\n[^\n]*\n\s*"sp_pull_icon",\n/.test(tele));
-  t("0.1.58 啟動框 start_catch_chg 接在 0.1.57 的 ns_example 後面;0.1.58 永豐連接框(旗標關著)sinf_* 六個再接在它後面;0.1.59 澄清表單 clarify_click / clarify_undo 接在 sinf_* 後面、是白名單最後一段(順序同 api)", /"ns_example",\n[^\n]*\n[^\n]*\n\s*"start_catch_chg",\n[^\n]*\n[^\n]*\n\s*"sinf_form_saved", "sinf_sign_open", "sinf_sim_sent", "sinf_signed", "sinf_ready", "sinf_relogin",\n[^\n]*\n[^\n]*\n[^\n]*\n\s*"clarify_click", "clarify_undo"\] \},/.test(tele));
+  t("0.1.58 啟動框 start_catch_chg 接在 0.1.57 的 ns_example 後面;0.1.58 永豐連接框(旗標關著)sinf_* 六個再接在它後面;0.1.59 澄清表單 clarify_click / clarify_undo 接在 sinf_* 後面、是白名單最後一段(順序同 api)", /"ns_example",\n[^\n]*\n[^\n]*\n\s*"start_catch_chg",\n[^\n]*\n[^\n]*\n\s*"sinf_form_saved", "sinf_sign_open", "sinf_sim_sent", "sinf_signed", "sinf_ready", "sinf_relogin",\n[^\n]*\n[^\n]*\n[^\n]*\n\s*"clarify_click", "clarify_undo",\n[^\n]*\n[^\n]*\n\s*"cloud_upd_legacy", "cloud_upd_dot", "cloud_upd_dot_go"\] \},/.test(tele));
   t("§8.2 slot_ph_show／slot_ph_open 留著(手機圖示畫出／按下);slot_up_*、slot_ph_close、slot_ph_login 沒有送出點", /"slot_ph_show"/.test(src) && /"slot_ph_open"/.test(src) && !/slot_up_show|slot_up_open|slot_ph_close|slot_ph_login/.test(app + src));
   t("§8.2 upd_pill_shown 列裡或細軌看得到都算、每日一次;upd_go_pill 按圓鈕", /if \(p\.show && \(pill\.offsetParent !== null \|\| dot\.offsetParent !== null\)\)/.test(cut(app, "function upPillPaint(")) && /trackFeature\("upd_go_pill"\);/.test(cut(app, "function upPillClick(")));
   t("§7 主行程的提示格存檔拿掉:slot-state、slot-phone-set、slotPhone", !/slot-state|slot-phone-set|slotPhone|slotStateGet/.test(main + pre));

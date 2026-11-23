@@ -74,7 +74,7 @@ function interpret(res) {
   if (!res || !res.status) return { code: "OFFLINE" };
   const s = res.status, b = res.body && typeof res.body === "object" ? res.body : {};
   if (s === 401) return { code: b.error_code === "APP_SECRET_REQUIRED" ? "APP_SECRET_REQUIRED" : "INVALID_CREDENTIALS" };
-  // 409 = 主機沒在跑(這個 app 不送 update,api 那兩個 update 專用的 409 碰不到)
+  // 409 = 主機沒在跑(`update` 已收掉;更新送的是 workspace_update,api 那兩個 update 專用的 409 碰不到)
   if (s === 409) return { code: "MACHINE_NOT_RUNNING", machineState: MACHINE_STATES.indexOf(b.machine_state) >= 0 ? b.machine_state : null };
   if (s === 403 && KEY_GATE_403.indexOf(b.error_code) >= 0) return { code: b.error_code, gate: keyGate(b) };
   if (s === 429 && b.error_code === "VERIFY_LOCKED") return { code: "VERIFY_LOCKED", gate: keyGate(b) };
@@ -209,13 +209,15 @@ function createCloudCmd(opts) {
 
 /* ── 不在 daemon.js UI_COMMANDS 裡的雲端指令:參數在這裡驗(main.js 的 cloud-send 用;本機那幾個走 daemon.argsOk)──
    delete_strategy = 只有 name,規則同機器端 `_cmd_delete_strategy` 與 api(資料夾名,不是顯示名稱)。
-   `update` 不在這裡:用本機 app 不觸發雲端 agent 回合(Wei 09-22),api 那一支留給網頁。 */
-const CLOUD_ONLY_COMMANDS = ["delete_strategy"];
+   workspace_update = 更新雲端主機(0.1.60):不收任何參數,機器自己 clone 官方 repo 跑 update_workspace.py,不開任何回合。
+   `update` 已收掉(它開雲端 agent 回合;Wei 09-22),api 回 410。 */
+const CLOUD_ONLY_COMMANDS = ["delete_strategy", "workspace_update"];
 const STRAT_NAME_RE = /^[A-Za-z0-9_-]{1,64}$/;
 function cloudArgsOk(cmd, a) {
   if (!a || typeof a !== "object" || Array.isArray(a)) return false;
   const keys = Object.keys(a);
   if (cmd === "delete_strategy") return keys.length === 1 && keys[0] === "name" && typeof a.name === "string" && STRAT_NAME_RE.test(a.name);
+  if (cmd === "workspace_update") return keys.length === 0;
   return false;
 }
 

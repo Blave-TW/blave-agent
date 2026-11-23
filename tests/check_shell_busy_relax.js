@@ -72,7 +72,7 @@ function rig(tabs, main) {
   ok("② 有對著雲端的回合:更新雲端主機鎖", p2.cloud.link.disabled === true);
   const p3 = plan({ ...base, localTurn: true, cloudTurn: false, mem: { session: { startAt: 1e6 - 1000 } } });
   ok("② 剛送出更新的 3 分鐘:別條本機回合在跑也不把鈕放回來(不會重送)", p3.cloud.link === null && p3.cloud.status[0] === "up.row.applying", p3.cloud);
-  ok("② 更新期間的閒置計時只看對著雲端的回合,無關的本機回合不延長", /upObserve\(UPD, cst\.cloud, trRestartUnconfirmed\(cst\.report\), !!upCloudTurn\(\), Date\.now\(\)\)/.test(app)); }
+  ok("② 更新期間的閒置計時只看對著雲端的回合,無關的本機回合不延長", /upObserve\(UPD, cst\.cloud, trRestartUnconfirmed\(cst\.report\), !!upCloudTurn\(\), Date\.now\(\), upWu\(cst\.report\)\)/.test(app)); }
 
 // ── ③ ──
 { const closed = mkTab("c", { running: true }, { closed: true }), r = rig([closed]); r.F.csShowRunning();
