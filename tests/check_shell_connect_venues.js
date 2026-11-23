@@ -182,7 +182,24 @@ app.whenReady().then(async () => {
   await wait(150);
   ok("③ 這台電腦是 Mac:七塊加密貨幣磚,台灣期貨那組不出磚、原位講 cx.macTw", J(await tiles()) === J(["binance", "bingx", "okx", "gateio", "bybit", "bitget", "stockcoin"])
     && (await js(`(() => { const n = document.querySelector("#cx-body .cx-macnote"), b = n && n.querySelector("button"), live = typeof p3Live === "function" && p3Live();
-      return !!n && n.firstChild.nodeValue === t("cx.macTw") && (live ? !!b && b.textContent === t("cx.macTwGo") && n.textContent === t("cx.macTw") + (LANG === "zh" ? "" : " ") + t("cx.macTwGo") : !b && n.textContent === t("cx.macTw")); })()`)));
+      return !!n && n.firstChild.nodeValue === t("cx.macTw") && (live ? !!b && b.textContent === t("cx.macTwGo") && n.textContent === t("cx.macTw") + t("cx.macTwGo") : !b && n.textContent === t("cx.macTw")); })()`)));
+  // spec mac-tw-row-0160:磚下面那行的〔改用雲端主機〕熱區不得往上蓋進磚(點磚最底排像素要開那塊磚、不是加購框)。
+  // 磚底是小數,量在底 −1／+1;磚左右圓角那段點到的是底下的 .cx-tiles,只驗不是連結
+  // 磚接說明行只在 Mac 有永豐磚時出;旗標關著就在框裡用同一組 class 搭一份量完拆掉,量的是真的樣式表
+  { const hr = await js(`(() => { let n = document.querySelector("#cx-body .cx-tiles + .cx-macnote"), fx = null;
+      if (!n || !n.querySelector(".btn-quiet")) { fx = document.createElement("div"); fx.innerHTML = '<div class="cx-tiles">' + '<button type="button" class="cx-tile"><span class="n">x</span></button>'.repeat(3) + '</div><p class="cx-macnote">' + t("cx.macTw") + '<button type="button" class="btn-quiet">' + t("cx.macTwGo") + '</button></p>';
+        document.querySelector("#cx-body .cx-pick").appendChild(fx); n = fx.lastChild; }
+      n.scrollIntoView({ block: "center" });
+      const b = n.querySelector(".btn-quiet"), g = n.previousElementSibling, tl = [...g.querySelectorAll(".cx-tile")], gr = g.getBoundingClientRect(), br = b.getBoundingClientRect(), y = gr.bottom - 1, rad = (e) => parseFloat(getComputedStyle(e).borderBottomLeftRadius) || 0;
+      const xs = new Set(); for (let x = Math.floor(br.left) - 30; x <= br.right + 30; x += 2) xs.add(x); tl.forEach((e) => { const r = e.getBoundingClientRect(); for (let x = Math.ceil(r.left + rad(e)) + 1; x < r.right - rad(e) - 1; x += 4) xs.add(x); });
+      let inTile = 0; const bad = [];
+      for (const x of xs) { const el = document.elementFromPoint(x, y), own = tl.find((e) => { const r = e.getBoundingClientRect(); return x > r.left + rad(e) && x < r.right - rad(e); });
+        if (el && el.closest(".cx-macnote")) bad.push(["link", x]); else if (own) { inTile++; if (!el || el.closest(".cx-tile") !== own) bad.push(["tile", x]); } }
+      const top = document.elementFromPoint((br.left + br.right) / 2, gr.bottom + 1), pre = getComputedStyle(b, "::before");
+      const o = { fixture: !!fx, inTile, bad, gap: Math.round((n.getBoundingClientRect().top - gr.bottom) * 10) / 10, hitH: parseFloat(pre.height), linkJustBelow: !!top && top.closest(".btn-quiet") === b };
+      if (fx) fx.remove(); return o; })()`);
+    ok("③ Mac 磚下的〔改用雲端主機〕(" + (hr.fixture ? "SINOPAC_LOCAL_ON 關著,用同 class 搭的那份" : "真的永豐磚") + "):點磚最底排像素回傳那塊磚、不是連結;熱區 44 高、上緣剛好接磚底;磚到這行 12",
+      hr.inTile > 0 && hr.bad.length === 0 && hr.hitH === 44 && hr.linkJustBelow && hr.gap === 12, hr); }
   await js(`(() => { cxModalClose(false); window.__platform = "win32"; cxModalOpen(null, null); })()`); await wait(150);
   // 這台電腦的「台灣期貨」組(Windows):群益本機受 CAPL_LOCAL_ON 管、統一受 PRES_LOCAL_ON 管(群益在前,同 mockup);兩個都關時那一組整個不出
   ok("③ 這台電腦(Windows):七塊磚" + (presOn ? " + 台灣期貨有統一" : ";PRES_LOCAL_ON 關著 → 沒有統一") + (caplOn ? "、群益本機" : "(CAPL_LOCAL_ON 關著 → 沒有群益)"),

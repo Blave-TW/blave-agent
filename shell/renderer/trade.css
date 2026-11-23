@@ -583,9 +583,13 @@ html.ws-sc .side-gate { display: none; }
 /* 框頂(spec connect-account-plan1 §2、§6):還沒選 → 兩組交易所磚;選了 → 頭列名稱＋「換一家」 */
 .cx-pick { margin-top: var(--space-12); }
 .cx-replace { margin: 0; font-size: 12px; line-height: 1.6; color: var(--ink-2); }
-.cx-grp { margin: var(--space-12) 0 var(--space-6); font-size: 12px; line-height: 1.5; color: var(--ink-3); }
+.cx-grp { margin: var(--space-16) 0 var(--space-6); font-size: 12px; line-height: 1.5; color: var(--ink-3); }
 .cx-pick > .cx-grp:first-child { margin-top: 0; }
-.cx-macnote { margin: 0; font-size: 12px; line-height: 1.6; color: var(--ink-2); text-wrap: pretty; }
+/* 段內 6／8／12、段與段之間 16;句與連結的間距由 column-gap 給(中英一致),窄寬時連結整顆換行靠左(spec mac-tw-row-0160) */
+.cx-macnote { margin: 0; display: flex; flex-wrap: wrap; align-items: baseline; column-gap: var(--space-8); row-gap: var(--space-4); font-size: 12px; line-height: 1.6; color: var(--ink-2); text-wrap: pretty; }
+.cx-macnote .btn-quiet { line-height: inherit; }
+.cx-tiles + .cx-macnote { margin-top: var(--space-12); }
+.cx-tiles + .cx-macnote .btn-quiet::before { top: calc(-1 * var(--space-12)); transform: translateX(-50%); }   /* 熱區上緣剛好接磚底:.cx-body 那條置中會往上蓋進磚 13px,點磚下緣開到加購框 */
 /* 交易所磚:外形照 .cf-opt 未選／hover,點了就走,沒有選中態、沒有圓鈕;3 欄,窄寬 2 欄 */
 .cx-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-8); }
 @media (max-width: 560px) { .cx-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

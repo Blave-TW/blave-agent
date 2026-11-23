@@ -108,6 +108,13 @@ class N {
     && STR.zh["sp.usWhy"] === "用美股訊號，現在還不能自動下單。" && STR.en["sp.usWhy"] === "Uses a US-stock signal, so it can’t auto-trade yet.");
   ok("⑤ P3-10 Mac 台灣期貨:一句講要 Windows、〔改用雲端主機〕關連接框、開加購框預選 Windows、記 cx_mac_tw_cloud", STR.zh["cx.macTw"] === "群益、統一需要 Windows。" && STR.zh["cx.macTwGo"] === "改用雲端主機"
     && /cxModalClose\(false\); p3OpenAddon\(null, p3TierOf\("windows", "starter"\), undefined, "cloud"\);/.test(trade) && /trackFeature\("cx_mac_tw_cloud"\)/.test(trade));
+  { const css = read("trade.css"), rule = (sel) => { const i = css.indexOf("\n" + sel + " {"); return i < 0 ? null : css.slice(i + sel.length + 3, css.indexOf("}", i)).trim(); }, tl = cutFn(trade, "cxTiles");
+    ok("⑤ Mac 台灣期貨說明行(spec mac-tw-row-0160):連結直接 append、不插空字串／空格,間距交給 CSS gap", /const b = trEl\("button", "btn-quiet[^"]*", t\("cx\.macTwGo"\)\);/.test(tl) && /\n      p\.append\(b\); \}/.test(tl) && !/p\.append\([^)]*" "/.test(tl), tl.slice(tl.indexOf("const macTw"), tl.indexOf("const twGroup")));
+    const grp = rule(".cx-grp"), note = rule(".cx-macnote"), hit = rule(".cx-tiles + .cx-macnote .btn-quiet::before");
+    ok("⑤ 段與段之間 16、磚到說明行 12;說明行 flex wrap、column-gap 8", /^margin: var\(--space-16\) 0 var\(--space-6\);/.test(grp || "") && rule(".cx-pick > .cx-grp:first-child") === "margin-top: 0;"
+      && /display: flex; flex-wrap: wrap; align-items: baseline; column-gap: var\(--space-8\);/.test(note || "") && rule(".cx-tiles + .cx-macnote") === "margin-top: var(--space-12);", [grp, note]);
+    ok("⑤ 〔改用雲端主機〕熱區:上緣往上只伸 12(剛好接磚底)、只做水平置中;比 .cx-body 那條置中 44 的權重高", hit === "top: calc(-1 * var(--space-12)); transform: translateX(-50%);"
+      && css.includes("\n.cx-body .btn-quiet::before { inset: auto; left: 50%; top: 50%; width: max(44px, calc(100% + 8px)); height: 44px;"), hit); }
   ok("⑤ R3-15 優化表底合計跨幣別時換成投入資金的幣別(d.ccy),不換顯示幣別", /trZoneSum\(mpsAmountsPayload\(d\), null, \([^)]*\) => \{[^}]*\}, d\.ccy\)\.total/.test(read("portfolio.js"))
     && /trZoneTotals\(amounts, trZoneOf, mf, fv\.fx, base \|\| fv\.base\)/.test(trade)); }
 

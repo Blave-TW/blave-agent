@@ -6695,7 +6695,7 @@ function cxTiles(L) {
   const macTw = () => { const p = trEl("p", "cx-macnote", t("cx.macTw"));
     if (typeof p3Live === "function" && p3Live()) { const b = trEl("button", "btn-quiet hit44", t("cx.macTwGo")); b.type = "button";
       b.addEventListener("click", () => { trackFeature("cx_mac_tw_cloud"); cxModalClose(false); p3OpenAddon(null, p3TierOf("windows", "starter"), undefined, "cloud"); });
-      p.append(LANG === "zh" ? "" : " ", b); }
+      p.append(b); }
     return p; };
   const twGroup = () => { if (tw === null) group("tw", "cap.group.tw", [], macTw()); else if (tw.length) { group("tw", "cap.group.tw", tw.map(([id, k]) => [id, t(k)])); if (CXF.env === "local" && window.blave.platform !== "win32") w.appendChild(macTw()); } };
   const twFirst = typeof MKT !== "undefined" && mktTwFirst(MKT.v);   // 主要市場台指期:台灣期貨那組排前面
