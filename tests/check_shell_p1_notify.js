@@ -245,7 +245,10 @@ t("狀態:全部平倉延到開盤與取消延後不發,水位線照推;要再�
   else { const py = fs.readFileSync(apiPy, "utf8"), spec = (/^    "order_error": \{([\s\S]*?)\n    \S/m.exec(py) || [])[1] || "";
     t("…api 拒單冷卻同秒數、同三個欄位、同去數字規則;模擬帳戶拒單降 P2(api 還沒上就紅,出貨順序 api 先)",
       new RegExp('"p1_cooldown_s": ' + P1_ERR_COOL_S + "\\b").test(spec) && /"p1_cool_on": \("exchange", "symbol", "error"\)/.test(spec)
-      && py.includes('re.sub(r"\\d[\\d.,]*", "#", v)') && /if event_type == "order_error" and \(data or \{\}\)\.get\("exchange"\) == "paper":\n\s+return P2/.test(py)); } }
+      // 去數字規則:api 489aa48d 把它搬進 _error_reason(error)(冷卻鍵與舊機退避共用),冷卻鍵的 error 欄要經過它;舊寫法(就地 re.sub 在 v 上)也認
+      && (py.includes('re.sub(r"\\d[\\d.,]*", "#", v)')
+        || (/def _error_reason\(error\):\n    return hashlib\.sha256\(re\.sub\(r"\\d\[\\d\.,\]\*", "#", str\(error\)\)/.test(py) && /if f == "error":\n\s+v = _error_reason\(v\)/.test(py)))
+      && /if event_type == "order_error" and \(data or \{\}\)\.get\("exchange"\) == "paper":\n\s+return P2/.test(py)); } }
 { // 0.1.58:反覆卡住已暫停(P1)發本機通知;睡醒(P2)也發但不亮紅點(Wei 11-17);卡住已重啟(P2)不發
   o = p1Pick([ev(900, "reconciler_hang_halted", {}), ev(901, "machine_woke", { minutes: 120, held: true }), ev(902, "reconciler_hang_restarted", {})], 899, NOW);
   t("0.1.58 反覆卡住、睡醒發,卡住已重啟不發", types(o) === "reconciler_hang_halted:900,machine_woke:901" && o.mark === 902);
