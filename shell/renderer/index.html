@@ -140,6 +140,8 @@
       <!-- 中欄上方本來就在的 44px 拖曳區:最左是「這台電腦｜雲端」切換器(整個 workspace 跟著換),右邊一句這一邊的狀態。
            兩格永遠可按;格內的錢記號與狀態由 trade.js 畫。整條仍可拖視窗,只有切換器 no-drag -->
       <div class="tb" id="tr-tb">
+        <!-- 首頁鈕(spec home-button-0160):回到這個視角的歡迎頁,不換視角;已在歡迎頁只標 aria-current、外觀不變。不加 tooltip -->
+        <button type="button" class="tb-home" id="tr-home" data-i18n-aria="nav.home"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></button>
         <div class="envsw" id="envsw" role="group" data-i18n-aria="env.aria"><button type="button" id="env-local" data-env="local" aria-pressed="true"></button><button type="button" id="env-cloud" data-env="cloud" aria-pressed="false"></button></div>
         <span class="mode" id="tr-tb-mode" hidden></span><span class="tb-txt" id="tr-tb-txt"></span>
       </div>
@@ -454,9 +456,6 @@
       <div class="chat-scroll" id="chat-scroll">
       </div>
       <div class="chat-input-wrap">
-        <!-- 更新那一格:照網頁工作頁 #ws_update(輸入列右上方一行安靜小字)。只有兩種:app 新版已暫存好 → 「重新啟動以完成更新」(可點);
-             雲端主機正在換檔 → 不可點的「更新中…」。其餘時候不出。字由 upPaint 決定:**不掛 data-i18n**,換語言時的通用迴圈會把它洗成另一個狀態的字 -->
-        <button type="button" class="ws-update" id="ws-update" hidden><span></span></button>
         <!-- 開關開著、帳號下剛配對了手機(設計 account-security-mails §7.3;relay 狀態的 notice):回合失敗卡的樣子加一顆 ✕,不自動消失。
              字由 phNoticePaint 寫(帶機型、支數),不掛 data-i18n;✕ 的可及名稱沿用 set.close -->
         <div class="ph-notice" id="ph-notice" role="status" hidden>

@@ -49,6 +49,18 @@ html.ws-sc .pane-main > .tb { padding-left: var(--space-48); }   /* 側欄收起
   flex: none; background: var(--envsw-rail);
 }
 html[data-env="cloud"] .envsw { --envsw-rail: var(--bg-body); }
+/* 首頁鈕(spec home-button-0160 §2):本體 28×28、圖示 16／1.75、熱區 44×44(往左 13、往右 3:跟切換器第一格的熱區剛好相接);
+   跟切換器隔 .tb 既有的 gap 8。配方同 ☰／＋:靜止 --ink-3,滑過墊 --surface-muted(雲端頂列本身是那個色,改墊 --bg-body)。已在歡迎頁外觀不變 */
+.tb-home {
+  -webkit-app-region: no-drag; position: relative; z-index: 21;   /* 同 .envsw:壓過 .ws-bar */
+  flex: none; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;
+  border-radius: var(--radius-sm); color: var(--ink-3);
+  transition: color var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard);
+}
+.tb-home::before { content: ""; position: absolute; inset: -8px -3px -8px -13px; -webkit-app-region: no-drag; }
+.tb-home:hover { background: var(--surface-muted); color: var(--ink); }
+html[data-env="cloud"] .tb-home:hover { background: var(--bg-body); }
+.tb-home .ic { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
 .envsw button {
   display: flex; align-items: center; justify-content: center; width: 36px; height: 24px;
   transition: color var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard);

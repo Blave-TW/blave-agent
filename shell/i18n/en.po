@@ -1626,7 +1626,7 @@ msgid "tr.autoOn"
 msgstr "Auto-trading running"
 
 msgid "tr.presAwake"
-msgstr "{n} lot(s) open at President, this computer stays awake while plugged in"
+msgstr "{n} lot(s) open at President"
 
 msgid "tr.halted"
 msgstr "Paused"
@@ -1641,7 +1641,7 @@ msgid "tr.lastRun"
 msgstr "last ran until {t}"
 
 msgid "tr.died"
-msgstr "Trading stopped, and not because you paused it · last ran {t}. Press Start trading to resume."
+msgstr "Trading stopped, and not because you paused it · last ran {t}. Press Start Trading to resume."
 
 # tr.died／tr.diedZ 開頭要加重的那一段(trade.js trDiedCut);兩句的開頭要跟它逐字相同
 msgid "tr.diedLead"
@@ -1695,10 +1695,10 @@ msgid "tr.loading"
 msgstr "Loading…"
 
 msgid "tr.stop"
-msgstr "Pause trading"
+msgstr "Pause Trading"
 
 msgid "tr.start"
-msgstr "Start trading"
+msgstr "Start Trading"
 
 msgid "tr.stopping"
 msgstr "Pausing…"
@@ -1722,7 +1722,7 @@ msgid "tr.cmdRejected"
 msgstr "This computer rejected the command ({err})."
 
 msgid "tr.hostRetry"
-msgstr "The order engine stopped and is restarting; no orders meanwhile. If it then shows not started, press Start trading."
+msgstr "The order engine stopped and is restarting; no orders meanwhile. If it then shows not started, press Start Trading."
 
 msgid "tr.hostShort"
 msgstr "Order engine not running"
@@ -1737,7 +1737,7 @@ msgid "tr.unknownBody"
 msgstr "The trading status couldn’t be read this round, so the account and positions can’t be shown for now. It will try again in a few seconds."
 
 msgid "tr.unknownStop"
-msgstr " The order engine may still be running; to stop it, press Pause trading above."
+msgstr " The order engine may still be running; to stop it, press Pause Trading above."
 
 msgid "tr.badAmount"
 msgstr "Enter a number, e.g. 1,500.50"
@@ -1837,31 +1837,31 @@ msgid "tr.err.askPromptCloud"
 msgstr "The cloud machine's order engine reported a failed order: {sym} — {err}. Please use the blave tools to find out why on that machine, explain it in plain words, and tell me what to do; don't place any orders yourself."
 
 msgid "tr.stopChoiceSelf"
-msgstr "Exits, stops and take-profits keep running. “Pause and close positions” closes only auto-trading’s positions; manual ones stay."
+msgstr "Exits, stops and take-profits keep running. “Pause and Close Positions” closes only auto-trading’s positions; manual ones stay."
 
 msgid "tr.stopChoiceSelfFreeze"
 msgstr "While paused, no orders go out — not even exits, stops or take-profits. Stop orders on the exchange still work."
 
 msgid "tr.stopChoiceSelfFreeze2"
-msgstr "“Pause and close positions” closes only auto-trading’s positions; manual ones stay."
+msgstr "“Pause and Close Positions” closes only auto-trading’s positions; manual ones stay."
 
 msgid "tr.stopChoice"
-msgstr "Exits, stops and take-profits keep running. “Pause and close positions” market-closes every position here, including manual ones."
+msgstr "Exits, stops and take-profits keep running. “Pause and Close Positions” market-closes every position here, including manual ones."
 
 msgid "tr.stopChoiceFreeze"
 msgstr "While paused, no orders go out — not even exits, stops or take-profits. Stop orders on the exchange still work."
 
 msgid "tr.stopChoiceFreeze2"
-msgstr "“Pause and close positions” market-closes every position here, including manual ones."
+msgstr "“Pause and Close Positions” market-closes every position here, including manual ones."
 
 msgid "tr.closeAllWarn2"
-msgstr "Strategy amounts are kept; Start trading later rebuilds positions to them. To avoid that, zero the amounts or remove strategies first."
+msgstr "Strategy amounts are kept; Start Trading later rebuilds positions to them. To avoid that, zero the amounts or remove strategies first."
 
 msgid "tr.stopKeep"
-msgstr "Pause trading"
+msgstr "Pause Trading"
 
 msgid "tr.stopFlat"
-msgstr "Pause and close positions"
+msgstr "Pause and Close Positions"
 
 msgid "tr.startWarn1"
 msgstr "Real orders resume immediately, moving your strategies’ positions to the current targets."
@@ -1874,10 +1874,10 @@ msgid "tr.acctActualTip"
 msgstr "The strategy records more than the account holds, maybe from a manual close. To realign, ask the agent."
 
 msgid "tr.startCatchUp"
-msgstr "Start and catch up positions"
+msgstr "Start and Catch Up Positions"
 
 msgid "tr.startWait"
-msgstr "Start, wait for new signals"
+msgstr "Start, Wait for New Signals"
 
 # 啟動下單框(先選再按):兩個選項各帶後果(真錢版講「真實委託」)、常駐安全句、「細節」裡的小標
 msgid "tr.opt.legend"
@@ -1952,7 +1952,7 @@ msgid "tr.means.2p"
 msgstr "Sleep, shutdown or quitting Blave stops it; paper positions stay open."
 
 msgid "tr.means.3"
-msgstr "After reopening Blave, press Start trading again."
+msgstr "After reopening Blave, press Start Trading again."
 
 msgid "tr.means.4"
 msgstr "Stop orders on the exchange are unaffected; consider placing them."
@@ -2037,7 +2037,7 @@ msgid "set.awake.leadOff"
 msgstr "Auto-trading stops while the computer sleeps."
 
 msgid "set.awake.leadOffWin"
-msgstr "Auto-trading stops while the computer sleeps. With President Futures positions open, it still stays awake while plugged in."
+msgstr "Auto-trading stops while the computer sleeps. With President or Capital futures positions open, it still won't sleep on its own."
 
 # {broker} = the bound TW broker's full name (cap.venue / pres.venue)
 msgid "tr.quote.live"
@@ -2094,7 +2094,7 @@ msgid "tr.tab.set"
 msgstr "Settings"
 
 msgid "tr.onboard"
-msgstr "Connect a trading account, then press Release pause above and set amounts."
+msgstr "Connect a trading account, then press Release Pause above and set amounts."
 
 msgid "tr.onboard.cloud"
 msgstr "Order sizes are derived from your exchange equity, and this cloud machine has no exchange connected yet."
@@ -2807,7 +2807,7 @@ msgid "tr.ov.evHaltNote"
 msgstr "exits and stops still run; new entries paused"
 
 msgid "tr.ov.evDowntimeNote"
-msgstr "everything is frozen, including closes; press Start trading to resume"
+msgstr "everything is frozen, including closes; press Start Trading to resume"
 
 msgid "tr.ov.evErr"
 msgstr "Order failed"
@@ -2995,7 +2995,7 @@ msgstr "Can’t read the cloud’s event log right now; this will retry shortly.
 # ── 視窗之外:選單列 / Dock / 結束攔截(字由 renderer 交給主行程)──
 
 msgid "tm.pause"
-msgstr "Pause trading (keep positions)"
+msgstr "Pause Trading (Keep Positions)"
 
 msgid "tm.open"
 msgstr "Open Blave"
@@ -3007,7 +3007,7 @@ msgid "tm.notifTitle"
 msgstr "Trading paused"
 
 msgid "tm.notifBody"
-msgstr "No orders will be sent; existing positions are untouched. To resume, press Start trading on the Auto Trading page in Blave."
+msgstr "No orders will be sent; existing positions are untouched. To resume, press Start Trading on the Auto Trading page in Blave."
 
 msgid "tm.phoneHalt"
 msgstr "Trading paused from your phone"
@@ -3023,13 +3023,13 @@ msgid "tm.phoneHaltUnsureBody"
 msgstr "It has most likely taken effect. Open Blave to check."
 
 msgid "tm.pauseFail"
-msgstr "The pause command didn’t go through, so it may still be trading. Open Blave and press Pause trading again."
+msgstr "The pause command didn’t go through, so it may still be trading. Open Blave and press Pause Trading again."
 
 msgid "tm.quitTitle"
 msgstr "Auto trading is still running"
 
 msgid "tm.quitBody"
-msgstr "After Blave quits, this computer places no more orders and closes nothing; positions stay at {venue}. When you open Blave again, press Start trading to resume."
+msgstr "After Blave quits, this computer places no more orders and closes nothing; positions stay at {venue}. When you open Blave again, press Start Trading to resume."
 
 msgid "tm.quitGo"
 msgstr "Quit Blave"
@@ -3057,11 +3057,11 @@ msgstr "Restarting…"
 
 # 更新 modal 下單中(spec desktop-update-pill §4.2):重新啟動的後果,兩句(標題 tm.quitTitle、主鈕 up.md.go)
 msgid "tm.updateBody"
-msgstr "After the restart, this computer places no more orders and closes no positions. Positions stay at {venue}, and it won't trade again until you press Start trading."
+msgstr "After the restart, this computer places no more orders and closes no positions. Positions stay at {venue}, and it won't trade again until you press Start Trading."
 
 # 同上,主行程讀不到交易所名時用(不寫成「部位留在，」)
 msgid "tm.updateBodyBare"
-msgstr "After the restart, this computer places no more orders and closes no positions. Positions stay at the exchange, and it won't trade again until you press Start trading."
+msgstr "After the restart, this computer places no more orders and closes no positions. Positions stay at the exchange, and it won't trade again until you press Start Trading."
 
 # 啟動時不在「應用程式」資料夾問一次(§4;main.js askMoveToApps)
 msgid "tm.move.title"
@@ -3089,6 +3089,9 @@ msgstr "The exchange rejected an order. Open Blave to see why."
 # 這台電腦｜雲端(線 B 第一刀;字以 blave-canon designer/strings-desktop-local-and-cloud-2026-09.md 為準)
 msgid "env.aria"
 msgstr "Environment"
+
+msgid "nav.home"
+msgstr "Home"
 
 msgid "env.local"
 msgstr "This computer"
@@ -3244,7 +3247,7 @@ msgid "tr.cloud.means.3"
 msgstr "The machine takes {h} TWD from your balance every hour for as long as it exists. Under {m} TWD it stops: trading halts and positions stay at the exchange."
 
 msgid "tr.cloud.means.4"
-msgstr "After the machine stops or restarts, trading stays paused — no exits or stops either — until you press Start trading. A brief loss of connection to the exchange doesn’t pause it."
+msgstr "After the machine stops or restarts, trading stays paused — no exits or stops either — until you press Start Trading. A brief loss of connection to the exchange doesn’t pause it."
 
 msgid "tr.cloud.bothReal.h"
 msgstr "This computer is also trading real money."
@@ -3259,7 +3262,7 @@ msgid "tr.cloud.cmdUnknown"
 msgstr "The command was sent; the cloud machine hasn’t reported back and it may have run. Check this page before pressing again."
 
 msgid "tr.cloud.startedNotRunning"
-msgstr "The machine accepted the start, but the trading program didn’t run. Press Start trading again in the web workspace."
+msgstr "The machine accepted the start, but the trading program didn’t run. Press Start Trading again in the web workspace."
 
 msgid "tr.cloud.cmdNotDelivered"
 msgstr "The pause didn’t arrive; the cloud is still trading. Try again. If it keeps failing, revoke the cloud key at the exchange and close positions yourself."
@@ -3268,7 +3271,7 @@ msgid "tr.cloud.cmdRejected"
 msgstr "The cloud machine didn’t accept this command ({err})."
 
 msgid "tr.cloud.updRunning"
-msgstr "The cloud machine is updating. Press Start trading when it finishes."
+msgstr "The cloud machine is updating. Press Start Trading when it finishes."
 
 msgid "tr.cloud.noMachine"
 msgstr "There’s no cloud machine right now, so nothing was sent."
@@ -3317,7 +3320,7 @@ msgid "tm.stUnknown"
 msgstr "Status unavailable"
 
 msgid "tm.pauseLocal"
-msgstr "Pause trading on this computer (leave positions)"
+msgstr "Pause Trading on This Computer (Leave Positions)"
 
 msgid "tm.quitCloudNote"
 msgstr "Trading in the cloud isn’t affected and keeps running."
@@ -4020,7 +4023,7 @@ msgid "tr.stopAfterStart"
 msgstr "The start may already be in effect. Positions from any orders it placed stay open."
 
 msgid "tr.startingHint"
-msgstr "The start command is on its way. To stop it, press Pause trading."
+msgstr "The start command is on its way. To stop it, press Pause Trading."
 
 msgid "tr.cloud.hidden"
 msgstr "Strategies that can’t be read right now: {n}. Their amounts are kept as they are."
@@ -4531,13 +4534,13 @@ msgstr "close them in Capital’s trading software"
 # 全部平倉跳過這家是因為部位快照還沒跟上剛送出的單(manual_close_required reason snapshot_lag;群益、統一都會發;
 # 字同 api openclaw/notify.py _MANUAL_CLOSE_SNAPSHOT_LAG(券商名同 _VENUE_NAMES 短名),web workspace_ov_ev_manual_close_lag;整句一則,不拆說明,與 api 逐字同);{broker} 照下面對照表
 msgid "tr.ov.evManualCloseLag"
-msgstr "Not closed on {broker}: position data lags the last order. In a minute, press “Pause and close positions” again, or close at your broker."
+msgstr "Not closed on {broker}: position data lags the last order. In a minute, press “Pause and Close Positions” again, or close at your broker."
 
 msgid "tr.ov.evManualCloseQueued"
-msgstr "Not closed on {broker}: the last close there is not reported yet. Press “Pause and close positions” again after {at} (Taiwan time), or check your orders at your broker before closing there."
+msgstr "Not closed on {broker}: the last close there is not reported yet. Press “Pause and Close Positions” again after {at} (Taiwan time), or check your orders at your broker before closing there."
 
 msgid "tr.ov.evManualCloseQueuedSoon"
-msgstr "Not closed on {broker}: the last close there is not reported yet. Press “Pause and close positions” again in a few minutes, or check your orders at your broker before closing there."
+msgstr "Not closed on {broker}: the last close there is not reported yet. Press “Pause and Close Positions” again in a few minutes, or check your orders at your broker before closing there."
 
 msgid "tr.ov.brokerCapital"
 msgstr "Capital"
@@ -4555,7 +4558,7 @@ msgid "cdel.absent"
 msgstr "This strategy wasn’t on the cloud machine, so nothing was deleted. The list catches up once it updates."
 
 msgid "tr.cloud.restartStopped"
-msgstr "The machine restarted, so no orders are going out — nothing is managing your positions and stops won’t run. Press Start trading to resume."
+msgstr "The machine restarted, so no orders are going out — nothing is managing your positions and stops won’t run. Press Start Trading to resume."
 
 msgid "tm.quitTurnTitle"
 msgstr "The agent is still replying"
@@ -4586,7 +4589,7 @@ msgid "tr.startOffDraft"
 msgstr "Picked strategies aren’t saved yet."
 
 msgid "tr.restartStoppedLocal"
-msgstr "Blave was restarted, so no orders are going out — nothing is managing your positions and stops won’t run. Press Start trading to resume."
+msgstr "Blave was restarted, so no orders are going out — nothing is managing your positions and stops won’t run. Press Start Trading to resume."
 
 msgid "tr.haltReason"
 msgstr "No new positions; exits and stops still run."
@@ -4607,7 +4610,7 @@ msgid "tr.ov.evRestartStoppedNote"
 msgstr "no orders are sent"
 
 msgid "tm.evRestartStoppedNote"
-msgstr "Nothing is managing your positions; exits and stops won’t run. Press Start trading in Auto Trading to resume. Stop orders on the exchange still work."
+msgstr "Nothing is managing your positions; exits and stops won’t run. Press Start Trading in Auto Trading to resume. Stop orders on the exchange still work."
 
 msgid "tr.cloud.cxSavedStale"
 msgstr "The key was sent, but the cloud machine hasn’t reported back. Connect again, or ask the agent in chat to check the machine."
@@ -4619,19 +4622,19 @@ msgid "tm.stMayTrade"
 msgstr "May still be trading"
 
 msgid "tr.cloud.restartUnconfirmed"
-msgstr "After the restart, we couldn’t confirm trading stopped. Press Pause trading, then Update Cloud Machine."
+msgstr "After the restart, we couldn’t confirm trading stopped. Press Pause Trading, then Update Cloud Machine."
 
 msgid "tr.ov.evRestartStopFailed"
 msgstr "Machine restarted — trading may not have stopped"
 
 msgid "tr.ov.evRestartStopFailedNote"
-msgstr "press Pause trading first, then Update Cloud Machine; the machine is out of date"
+msgstr "press Pause Trading first, then Update Cloud Machine; the machine is out of date"
 
 msgid "tr.haltReasonAll"
-msgstr "No orders are going out — exits and stops won’t run either. Fix it, then press Start trading; unsure why? Ask the agent in chat."
+msgstr "No orders are going out — exits and stops won’t run either. Fix it, then press Start Trading; unsure why? Ask the agent in chat."
 
 msgid "tr.cloud.closeAllWarn2Unconfirmed"
-msgstr "Amounts are kept: after you update the machine and press Start trading, positions are rebuilt to them. To avoid that, zero the amounts first."
+msgstr "Amounts are kept: after you update the machine and press Start Trading, positions are rebuilt to them. To avoid that, zero the amounts first."
 
 msgid "tr.cloud.recomputing"
 msgstr "Strategies are recomputing on post-restart data. Catch up becomes available when they finish; close this box and open it again then."
@@ -4655,19 +4658,19 @@ msgid "tr.startOffNoAmt"
 msgstr "No strategy has an amount yet. Set one under Portfolio."
 
 msgid "tr.startOffNoAmtRelease"
-msgstr "No strategy has an amount, so there’s nothing to start. To let your own strategy code place orders again, press Release pause."
+msgstr "No strategy has an amount, so there’s nothing to start. To let your own strategy code place orders again, press Release Pause."
 
 msgid "tr.releaseClose"
-msgstr "Close positions and release"
+msgstr "Close Positions and Release"
 
 msgid "tr.startOffNoAmtReleaseClose"
-msgstr "No strategy has an amount, so there's nothing to start. To let your own strategy code place orders again, press Close positions and release."
+msgstr "No strategy has an amount, so there's nothing to start. To let your own strategy code place orders again, press Close Positions and Release."
 
 msgid "tr.startOnBook"
 msgstr "The ledger still holds {n} in positions. Once started, the order program closes them first, following the current amounts (0)."
 
 msgid "tr.release"
-msgstr "Release pause"
+msgstr "Release Pause"
 
 msgid "tr.releasing"
 msgstr "Releasing…"
@@ -4682,7 +4685,7 @@ msgid "tr.acct.reason"
 msgstr "After the key change, Blave can’t tell if this is the same {v} account. Until you answer, nothing trades — not even exits or stops."
 
 msgid "tr.acct.btn"
-msgstr "Confirm account"
+msgstr "Confirm Account"
 
 msgid "tr.acct.confirming"
 msgstr "Confirming…"
@@ -4691,7 +4694,7 @@ msgid "tr.acct.title"
 msgstr "Is this still the same {v} account?"
 
 msgid "tr.acct.body"
-msgstr "This key can’t read account details. Neither answer places orders; you stay paused until you press Start trading."
+msgstr "This key can’t read account details. Neither answer places orders; you stay paused until you press Start Trading."
 
 msgid "tr.acct.ifSame"
 msgstr "Same account: the positions Blave opened on {v} stay under Blave's management."
@@ -4709,13 +4712,13 @@ msgid "tr.acct.sent"
 msgstr "Your answer is on its way; this updates once the machine reports back."
 
 msgid "tr.acct.doneSame"
-msgstr "Confirmed as the same {v} account: Blave keeps managing its positions, and exits and stops run as usual. Press Start trading to open new positions again."
+msgstr "Confirmed as the same {v} account: Blave keeps managing its positions, and exits and stops run as usual. Press Start Trading to open new positions again."
 
 msgid "tr.acct.doneSameFreeze"
-msgstr "Confirmed as the same {v} account: Blave keeps managing its positions. Press Start trading to resume."
+msgstr "Confirmed as the same {v} account: Blave keeps managing its positions. Press Start Trading to resume."
 
 msgid "tr.acct.doneDiff"
-msgstr "{v} starts from zero; earlier positions are yours, and Blave won’t touch them. Press Start trading and strategies open positions again."
+msgstr "{v} starts from zero; earlier positions are yours, and Blave won’t touch them. Press Start Trading and strategies open positions again."
 
 msgid "tr.relBody"
 msgstr "Orders blocked during the pause, including your own strategy code’s, go through again. No strategy has an amount, so none will trade."
@@ -4766,7 +4769,7 @@ msgid "tr.relNotNow"
 msgstr "Not now"
 
 msgid "tr.relCloseGo"
-msgstr "Close positions and release"
+msgstr "Close Positions and Release"
 
 msgid "tr.diedZ"
 msgstr "Trading stopped, and not because you paused it · last ran {t}."
@@ -4784,13 +4787,13 @@ msgid "tr.haltReasonAllZ"
 msgstr "No orders are going out — exits and stops won’t run either. If you’re not sure what caused it, ask the agent in chat."
 
 msgid "tr.cloud.restartNoAccountZ"
-msgstr "The machine restarted, so no orders are going out — orders from your own strategy code are blocked too. Press Release pause to allow them again."
+msgstr "The machine restarted, so no orders are going out — orders from your own strategy code are blocked too. Press Release Pause to allow them again."
 
 msgid "tr.hostRetryZ"
 msgstr "The order engine on this computer stopped and is restarting; no orders go out meanwhile. Once it is back, check the status here."
 
 msgid "minv.release"
-msgstr "This version of Blave needs an update before it can send Release pause. Update at the bottom of Settings › General."
+msgstr "This version of Blave needs an update before it can send Release Pause. Update at the bottom of Settings › General."
 
 msgid "tr.cloud.cxSavedStalePaper"
 msgstr "The paper account was sent, but the cloud machine hasn’t reported back. Try again, or ask the agent in chat to check the machine."
@@ -4872,7 +4875,7 @@ msgid "up.cf.body1"
 msgstr "Auto-trading is running: if the trading code changes, it waits until no order is mid-flight, then restarts on the new version."
 
 msgid "up.cf.body1Unconfirmed"
-msgstr "After the machine restarted, we couldn’t confirm auto-trading had stopped: once on the new version it stays stopped until you press Start trading."
+msgstr "After the machine restarted, we couldn’t confirm auto-trading had stopped: once on the new version it stays stopped until you press Start Trading."
 
 msgid "up.cf.body1Unknown"
 msgstr "Couldn’t read auto-trading status, so it’s treated as running. If trading code changes, it restarts on the new version between orders."
@@ -4897,9 +4900,6 @@ msgstr "Start update"
 
 msgid "up.restart"
 msgstr "Restart to finish updating"
-
-msgid "up.applying"
-msgstr "Updating…"
 
 # 按了「重新啟動以完成更新」並確認、主行程正在收工 / 安裝(main.js restarting):聊天那一格、關於列、選單列那一行都換這句,停用(設計複驗 0.1.10)
 msgid "up.restarting"
@@ -4946,7 +4946,7 @@ msgid "up.done.cloudRestarted"
 msgstr "Cloud machine updated to {cv}; auto-trading restarted on the new version."
 
 msgid "up.done.paused"
-msgstr "Cloud machine updated to {cv}. Auto-trading is still paused; press Start trading to resume."
+msgstr "Cloud machine updated to {cv}. Auto-trading is still paused; press Start Trading to resume."
 
 msgid "up.done.replaced"
 msgstr "{n} official files you had changed were replaced; the old copies are in {dir} ({view})."
@@ -5799,9 +5799,6 @@ msgstr "Sign In & Use"
 
 msgid "lib.bb.loginInstall"
 msgstr "Sign In & Install"
-
-msgid "lib.bb.loginUseNote"
-msgstr "Needs a plan, {p} every 30 days. New accounts get {t} days free."
 
 msgid "lib.bb.renewNote"
 msgstr "Then {p} every 30 days. Cancel anytime."
@@ -9639,10 +9636,10 @@ msgstr "Paused: no new positions, but reductions and closes run as soon as you s
 
 # 存金額確認框(0.1.27 加到策略組合;canon design-system › 確認 modal):標題就是動作,會送單=儲存並下單;表頭時間只講一次
 msgid "tr.cf.title"
-msgstr "Save amounts"
+msgstr "Save Amounts"
 
 msgid "tr.cf.titleFire"
-msgstr "Save and place orders"
+msgstr "Save and Place Orders"
 
 msgid "tr.cf.capOrders"
 msgstr "Estimated orders for the next round ({n})"
@@ -10290,7 +10287,7 @@ msgstr "Keys of a Bitget copy-trading or elite-trader account can't trade. Creat
 
 # 讀帳是空的、策略還記著部位而自動暫停(reason 開頭 positions read back empty;trade.js trHaltReasonText)
 msgid "tr.haltEmptyRead"
-msgstr "The account is flat but the strategy isn't, so nothing goes out. Same account, closed by you? Press Start trading again, or ask the agent."
+msgstr "The account is flat but the strategy isn't, so nothing goes out. Same account, closed by you? Press Start Trading again, or ask the agent."
 
 # 對不上的倉位清單(trade.js trPaintMismatch):欄名與出口句
 msgid "tr.mm.colSym"
@@ -10306,7 +10303,7 @@ msgid "tr.mm.none"
 msgstr "No position"
 
 msgid "tr.mm.foot"
-msgstr "Check them on Bitget, then press Start trading."
+msgstr "Check them on Bitget, then press Start Trading."
 
 # 事件列(P3):Bitget 換帳戶類型、倉位全對上、自動恢復
 msgid "tr.ov.evBitgetUta"
@@ -10599,14 +10596,14 @@ msgid "tr.ov.evUnconfirmedReleasedNone"
 msgstr "It did not fill; new entries on this symbol resume."
 
 msgid "tr.haltUnconfirmed"
-msgstr "An order on {sym} may have filled, so nothing goes out. Don't place it again yourself: tell your agent how much filled, then press Start trading."
+msgstr "An order on {sym} may have filled, so nothing goes out. Don't place it again yourself: tell your agent how much filled, then press Start Trading."
 
 msgid "tr.ov.evHaltUnconfirmedNote"
-msgstr "an order on {sym} may have filled, so nothing goes out. Don't place it again yourself: tell your agent how much filled, then press Start trading."
+msgstr "an order on {sym} may have filled, so nothing goes out. Don't place it again yourself: tell your agent how much filled, then press Start Trading."
 
 # 下單結果不明(designer v034 UX 定稿):全部平倉沒平到那一型與它的收尾、整台暫停沒有標的的退路與本機通知內文、manual 停車部位表那句
 msgid "tr.ov.evHaltUnconfirmedNoteNosym"
-msgstr "an order may have filled, so nothing goes out. Don't place it again yourself: tell your agent how much filled, then press Start trading."
+msgstr "an order may have filled, so nothing goes out. Don't place it again yourself: tell your agent how much filled, then press Start Trading."
 
 # 0.1.58 下單程式卡住自救、睡醒(copy-0158)
 msgid "tr.ov.evExecHang"
@@ -10622,7 +10619,7 @@ msgid "tr.ov.evHaltHangNote"
 msgstr "order program kept hanging"
 
 msgid "tr.haltHangWatch"
-msgstr "The order program hung three times in an hour. Exits and stops won't run either; press Start trading to try again."
+msgstr "The order program hung three times in an hour. Exits and stops won't run either; press Start Trading to try again."
 
 msgid "tr.ov.evWoke"
 msgstr "Computer woke; trading resumed"
@@ -10655,7 +10652,7 @@ msgid "tm.evWokeNoteHeld"
 msgstr "Your computer slept for {d} and placed no orders meanwhile. Trading now follows the latest signals. New entries and adds wait for strategies to recompute, up to 3 minutes."
 
 msgid "tm.evHaltUnconfirmedNote"
-msgstr "An order may have filled, so nothing goes out. Don't place it again yourself: tell your agent how much filled, then press Start trading."
+msgstr "An order may have filled, so nothing goes out. Don't place it again yourself: tell your agent how much filled, then press Start Trading."
 
 msgid "tm.evCloseIdentity"
 msgstr "Capital positions still open"
@@ -10667,25 +10664,25 @@ msgid "tm.evCloseLag"
 msgstr "Positions not closed"
 
 msgid "tm.evCloseLagNote"
-msgstr "Position data lags the last order. In a minute, press “Pause and close positions” again, or close at your broker."
+msgstr "Position data lags the last order. In a minute, press “Pause and Close Positions” again, or close at your broker."
 
 msgid "tm.evCloseQueued"
 msgstr "Capital positions not closed"
 
 msgid "tm.evCloseQueuedNote"
-msgstr "The last close is not reported yet. Press “Pause and close positions” again after {at} (Taiwan time), or check your orders in Capital's trading software before closing there."
+msgstr "The last close is not reported yet. Press “Pause and Close Positions” again after {at} (Taiwan time), or check your orders in Capital's trading software before closing there."
 
 msgid "tm.evCloseQueuedSoonNote"
-msgstr "The last close is not reported yet. Press “Pause and close positions” again in a few minutes, or check your orders in Capital's trading software before closing there."
+msgstr "The last close is not reported yet. Press “Pause and Close Positions” again in a few minutes, or check your orders in Capital's trading software before closing there."
 
 msgid "tr.ov.evUnconfirmedCloseAll"
 msgstr "Not closed with the rest"
 
 msgid "tr.ov.evUnconfirmedCloseAllNote"
-msgstr "An order here has an unknown outcome and was left out of this close. Don't trade it yourself: tell your agent how much filled, then press Pause and close positions again."
+msgstr "An order here has an unknown outcome and was left out of this close. Don't trade it yourself: tell your agent how much filled, then press Pause and Close Positions again."
 
 msgid "tr.ov.evUnconfirmedReleasedCloseAllFilled"
-msgstr "It filled and is in the book. To close it, press Pause and close positions again."
+msgstr "It filled and is in the book. To close it, press Pause and Close Positions again."
 
 msgid "tr.ov.evUnconfirmedReleasedCloseAllNone"
 msgstr "It did not fill. Nothing else to do."
@@ -10698,7 +10695,7 @@ msgstr "Outcome unknown — it may have filled; don't place it again yourself. N
 
 # 追蹤不了而整台暫停、HALT reason 讀不到標的時的狀態句(大寫開頭;同網頁 workspace_pf_halt_unconfirmed_nosym)
 msgid "tr.haltUnconfirmedNosym"
-msgstr "An order may have filled, so nothing goes out. Don't place it again yourself: tell your agent how much filled, then press Start trading."
+msgstr "An order may have filled, so nothing goes out. Don't place it again yourself: tell your agent how much filled, then press Start Trading."
 
 # 對話分頁(0.1.37;spec chat-tabs-2026-10-29 §2–§4;排隊行與狀態字同 web workspace_cs_*,tests/check_web_desktop_parity.js 比對;tabs.brWait 待設計師過字)
 msgid "tabs.list"
@@ -12182,8 +12179,14 @@ msgstr "{side} {sym} {n}"
 msgid "tr.opt.catchNeedRead"
 msgstr "Catch-up is available after the account is read."
 
-msgid "tr.opt.catchNeedSignal"
-msgstr "Catch-up is available after the strategies compute their signals."
+msgid "tr.opt.catchComputing"
+msgstr "Computing signals…"
+
+msgid "tr.opt.catchLate"
+msgstr "No signal after 1 minute."
+
+msgid "tr.opt.catchRetry"
+msgstr "Refresh"
 
 msgid "p3.set.used"
 msgstr "{p}% used"
@@ -12208,6 +12211,15 @@ msgstr "Starting a cloud machine ends the trial."
 
 msgid "sp.cf.addFire"
 msgstr "Add and Place Orders"
+
+msgid "sp.cf.addStart"
+msgstr "Add and Start Trading"
+
+msgid "sp.addedIdle"
+msgstr "Added to Portfolio. Not trading yet."
+
+msgid "sp.addedHalted"
+msgstr "Added to Portfolio. Trading is paused."
 
 msgid "sp.oosFail"
 msgstr "Failed out-of-sample validation."

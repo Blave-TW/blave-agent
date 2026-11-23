@@ -1243,7 +1243,7 @@ function connectPaint() {
 /* 0.1.60(spec cloud-workspace-update-command-0160 §4):報告帶 can_ws_update 的主機,「更新雲端主機」改送機器直接指令 workspace_update,
    不開任何回合(session.direct)。這一次的結果用狀態轉移認(M8):按下當下報告裡那一份的 ts = prevTs,之後第一份 ts 不同的終態就是這次的,
    不拿機器時鐘(秒)跟電腦時鐘(毫秒)比。認到了記 wuResult = 那份的 ts,失敗那一行只對它講。舊 runtime 照舊走本機回合那條 */
-var UPD = { cloudSid: null, turnCloud: false, session: null, lagCv: null, done: null, wuResult: null };   // cloudSid = 送「更新雲端主機」那一條(別條先結束不收它的)
+var UPD = { cloudSid: null, turnCloud: false, session: null, lagCv: null, done: null, wuResult: null, sayTo: null };   // cloudSid = 送「更新雲端主機」那一條(別條先結束不收它的);sayTo = 結果行只寫進的那一條對話(按下當下的分頁)
 const UP_SESSION_IDLE_MS = 30 * 60000;   // 更新期間 30 分鐘沒有回合就結束(兜底)
 const UP_DIRECT_MAX_MS = 60 * 60000;   // 直接指令那條的兜底:機器端最長約 57 分鐘(F 兩輪＋P＋A＋A2),比它長才收
 /* 更新期間裡最後一個回合結束滿 3 分鐘(> 雲端 2 分鐘一次的回報,成功的更新這時一定已經回報),再按「更新雲端主機」而雲端仍落後 = 上一次沒成功:
@@ -1255,6 +1255,8 @@ function upObserve(mem, cloud, stale, cloudTurn, now, wu) {
   const c = cloud || {}, cv = c.config_version || null, lv = c.latest_config_version || null;
   const lag = !!(cv && lv && cv !== lv) || !!stale, caughtUp = !!(cv && lv && cv === lv) && !stale;
   const endSession = () => { mem.session = null; mem.cloudSid = null; };
+  // 這一次等不到結果就收掉(出了新一版、兜底逾時):結果行要寫進的那一條也放掉,之後別處發起的更新不寫進它(稽核 release-0160-e P2)
+  const giveUp = () => { endSession(); mem.sayTo = null; };
   const s = mem.session;
   if (s && s.direct && wu && wu.ts != null && wu.ts !== s.prevTs) {
     if (wu.state === "applying") s.sawApplying = true;
@@ -1268,16 +1270,16 @@ function upObserve(mem, cloud, stale, cloudTurn, now, wu) {
     if (mem.session) endSession();
     mem.lagCv = null;
   }
-  if (mem.session && lv && mem.session.nv && lv !== mem.session.nv) endSession();   // 出了更新一版:這一次的結果不拿來判下一版
+  if (mem.session && lv && mem.session.nv && lv !== mem.session.nv) giveUp();   // 出了更新一版:這一次的結果不拿來判下一版
   // 兜底:舊路 30 分鐘沒有回合;直接指令那條沒有回合、不看 cloudTurn,60 分鐘(比機器端最長的一輪長)
   if (mem.session && mem.session.direct ? now - mem.session.startAt > UP_DIRECT_MAX_MS
-    : mem.session && !cloudTurn && now - (mem.session.lastTurnAt || mem.session.startAt) > UP_SESSION_IDLE_MS) endSession();
+    : mem.session && !cloudTurn && now - (mem.session.lastTurnAt || mem.session.startAt) > UP_SESSION_IDLE_MS) giveUp();
   return mem;
 }
 /* 雲端是「沒有主機」或「啟動中」= 舊主機已經不在了:之前記的落後、追上、更新期間都是那台的事,清掉——
    不清的話新開的主機一跑起來就被當成「已更新到」。停機(同一台)與讀不到不清。 */
 function upMachineGone(mem, kind) {
-  if (kind === "none" || kind === "starting") Object.assign(mem, { lagCv: null, done: null, session: null, cloudSid: null });
+  if (kind === "none" || kind === "starting") Object.assign(mem, { lagCv: null, done: null, session: null, cloudSid: null, sayTo: null });
   return mem;
 }
 const UP_WU_STATES = ["applying", "done", "failed"], UP_WU_OUTCOMES = ["updated", "up_to_date", "restart_failed", "restart_deferred", "stopped", "error", "partial"];
@@ -1430,11 +1432,20 @@ function upSayLines(cst) {
   let said = []; try { said = JSON.parse(lsGet(UP_SAID_KEY) || "[]"); } catch (_) { said = []; }
   if (!Array.isArray(said)) said = [];
   const lines = [upBackupLine(UP), cst && envCloudKind(cst) === "running" ? upDoneLine(upWu(cst.report), UPD) : null];
-  lines.forEach((L) => {
+  lines.forEach((L, i) => {
     if (!L || said.indexOf(L.key) >= 0) return;
     said.push(L.key); lsSet(UP_SAID_KEY, JSON.stringify(said.slice(-20)));
-    upSayLine(L);
+    if (i === 0) { upSayLine(L, null); return; }
+    /* 雲端更新的結果行只寫進按〔更新雲端主機〕當下那一條對話(Wei 11-23):別的分頁不出;那一條已關掉、或這台電腦沒記到是哪一條
+       (別台電腦／網頁發起、重開 app 前發起的)就不寫——不改寫到別的分頁。寫過就放掉,之後別處發起的更新不再寫進它 */
+    const T = upSayTab(UPD.sayTo); UPD.sayTo = null;
+    if (T) upSayLine(L, T);
   });
+}
+function upSayTab(sid) {
+  if (!sid || typeof CS === "undefined") return null;
+  const T = CS.tabs.get(sid);
+  return T && !T.dead && !T.closed && CS.order.includes(sid) ? T : null;
 }
 /* 那一行記著 key 與參數(不是畫好的字):切語言時 applyStatic → upRelang 照現在的語言重畫(0.1.11 Windows 真機:切 en 後還是中文) */
 const UP_LINE_OF = new WeakMap();
@@ -1445,12 +1456,14 @@ function upPaintLine(el, L) {
   upRich(el, L.head[0], L.head[1], { mono: ["cv", "av", "n", "dir"], view });
   if (L.tail) { if (LANG !== "zh") el.append(" "); upRich(el, L.tail[0], L.tail[1], { mono: ["n", "dir"], view }); }
 }
-function upSayLine(L) {
+// T = 寫進哪一條對話(null = 眼前這條);不是眼前那條就只放進它的節點,不唸、不捲眼前的聊天
+function upSayLine(L, T) {
   const el = document.createElement("div"); el.className = "msg sys";
   UP_LINE_OF.set(el, L);
   upPaintLine(el, L);
+  if (T && T !== CS.cur) { T.el.appendChild(el); return; }
   srSay(el.textContent);
-  chatEl().appendChild(el); busyPin(); scrollChat();
+  (T ? T.el : chatEl()).appendChild(el); busyPin(); scrollChat();
 }
 function upRelang() { document.querySelectorAll("#chat-scroll .msg.sys").forEach((el) => { const L = UP_LINE_OF.get(el); if (L) upPaintLine(el, L); }); }
 /* 「查看」:本機備份 → 主行程開 Finder(路徑由主行程算,畫面不交路徑);雲端備份 → 在本機聊天送一句固定的話請這台電腦的 agent 列出
@@ -1511,17 +1524,6 @@ function upPaint() {
   else { if (cl) cbtn.append(t("up.cloud.go") + (cl.ask ? "…" : "")); cbtn.removeAttribute("aria-label"); }
   const cBusy = !!(cl && cl.disabled && !cl.spin);   // 更新雲端主機:對著雲端的回合在跑是鎖,點了講原因;刷新中(圓環)照舊 disabled
   cbtn.disabled = !!(cl && cl.disabled) && !cBusy; busyLock(cbtn, cBusy); cbtn.title = cBusy ? t("busy.cloudUpd") : "";
-  // 聊天輸入列右上那一格(照網頁 .ws-update):只剩雲端主機「更新中…」(狀態字,aria-disabled)。本機等重開的提示只在側欄膠囊(§3.2:同一件事只講一處)
-  const w = $("ws-update");
-  if (w) {
-    const k = p.slot && p.slot.kind === "applying" ? "applying" : "", hadFocus = document.activeElement === w;
-    w.hidden = !k; w.dataset.kind = k;
-    w.firstElementChild.textContent = k ? t("up.applying") : "";
-    w.disabled = false; w.setAttribute("aria-disabled", k ? "true" : "false");
-    w.classList.toggle("is-status", !!k);
-    w.title = "";
-    if (hadFocus && w.hidden) $("ta").focus();   // 那一格收掉了:焦點不能掉到 BODY
-  }
   upPillPaint();
   upSchedPaint();
   upSayLines(cst);
@@ -1593,17 +1595,17 @@ async function upCloudSend(opener) {
   if (typeof paneSt !== "undefined" && paneSt.chat.off) paneToggle("chat", false);   // 聊天欄收著就先展開:過程在那裡
   Object.assign(UPD, { done: null, cloudSid: null, session: { startAt: now, lastTurnAt: now, fromCv: c.config_version || null, nv: c.latest_config_version || null } });
   const sending = csSendAway(t("up.c.msg"), { viewing: { env: "cloud" } }), sid = CS.away.sid;
-  UPD.cloudSid = sid;
+  UPD.cloudSid = sid; UPD.sayTo = sid;   // 舊路:結果行寫進送出那一句的那一條(眼前這條在跑就是新開的那條)
   const sentOk = await sending;
   // 沒送出去(版本被停用等)、或那一條在回來之前就結束了(同步拋錯):不進更新期間。只看送出的那一條,別條在跑不算
   const T = CS.tabs.get(sid), alive = T ? tabRun(T) : upLocalTurn();
-  if (!sentOk || !alive) { if (UPD.cloudSid === sid) { UPD.cloudSid = null; UPD.session = null; } }
+  if (!sentOk || !alive) { if (UPD.cloudSid === sid) { UPD.cloudSid = null; UPD.session = null; UPD.sayTo = null; } }
 }
 /* 直接指令:ack ok = 機器收下、開始跑(不是更新完);結果從報告的 workspace_update 讀(upObserve 認)。
    UPDATE_RUNNING = 已經在更新(別台電腦、或對話那條):不出錯誤句,當成更新中畫 */
 async function upCloudDirect(c, cst, now, opener) {
   const prev = upWu(cst && cst.report);
-  Object.assign(UPD, { done: null, cloudSid: null, wuResult: null,
+  Object.assign(UPD, { done: null, cloudSid: null, wuResult: null, sayTo: CS.cur ? CS.cur.sid : null,
     session: { startAt: now, fromCv: c.config_version || null, nv: c.latest_config_version || null, direct: true, prevTs: prev ? prev.ts : null, sawApplying: false } });
   upCloudSay(null, opener); upPaint();
   let res = null;
@@ -1612,7 +1614,7 @@ async function upCloudDirect(c, cst, now, opener) {
   if (res && res.ok) trackFeature("cloud_upd_ok");
   else if (!/UPDATE_RUNNING/.test(e)) {
     // 送出了沒收到回條(unknown):機器可能已經在跑,更新期間留著(結果照樣從報告認),句子照講
-    if (!(res && res.kind === "unknown") && UPD.session && UPD.session.direct && UPD.session.startAt === now) UPD.session = null;
+    if (!(res && res.kind === "unknown") && UPD.session && UPD.session.direct && UPD.session.startAt === now) { UPD.session = null; UPD.sayTo = null; }
     upCloudSay(/NO_GIT/.test(e) ? t("up.err.noGit") : /START_FAILED/.test(e) ? t("up.done.failedNone") : trSendError(res, "update", "cloud"), opener);
   }
   upPaint();
@@ -3294,7 +3296,9 @@ function confirmBox({ title, lines, ok, onOk, opener, alt, mark, markKind, extra
     choices.forEach((c) => {
       const row = mk("label", "cf-opt" + (c.disabled ? " off" : "")), r = mk("input");
       r.type = "radio"; r.name = "cf-choice"; r.value = c.id; r.disabled = !!c.disabled; r.checked = !!c.checked && !c.disabled;
-      const d = mk("span", "cf-opt-d", c.disabled && c.why ? c.why : c.desc);
+      // why 可以是節點(啟動框等訊號那一句帶轉圈或〔重新整理〕):呼叫端自己用 textContent 建
+      const dv = c.disabled && c.why ? c.why : c.desc, d = mk("span", "cf-opt-d", typeof dv === "string" ? dv : null);
+      if (dv && typeof dv !== "string") d.appendChild(dv);
       if (c.disabled && c.why) { d.id = "cf-why-" + c.id; r.setAttribute("aria-describedby", d.id); }
       row.append(r, mk("span", "cf-opt-t", c.title), d);
       if (c.list && !c.disabled) row.appendChild(mk("span", "cf-opt-l", c.list));   // 這一條會下的單:另起一行、主墨,按下前唯一要核對的東西(啟動下單框的補齊)

@@ -118,7 +118,7 @@ const reset = (s) => { cloudSt = s; TR_BAGS.cloud.st = s; running = false; sent 
       en: ["Update the cloud machine", "The cloud machine goes from {cv} to {lv}. It takes a few minutes.",
         "The cloud machine moves to the latest version. It takes a few minutes.",
         "Auto-trading is running: if the trading code changes, it waits until no order is mid-flight, then restarts on the new version.",
-        "After the machine restarted, we couldn’t confirm auto-trading had stopped: once on the new version it stays stopped until you press Start trading.",
+        "After the machine restarted, we couldn’t confirm auto-trading had stopped: once on the new version it stays stopped until you press Start Trading.",
         "Couldn’t read auto-trading status, so it’s treated as running. If trading code changes, it restarts on the new version between orders.",
         "Only Blave’s official code and reference files change; your strategy files and keys are left alone. Positions stay open.", "If no gap comes up, only the files change and auto-trading stays on the old code.",
         "If it doesn’t finish, press it again to pick up where it stopped.",
@@ -161,7 +161,7 @@ const reset = (s) => { cloudSt = s; TR_BAGS.cloud.st = s; running = false; sent 
     ok("trRejectCode(\"RuntimeError: UPDATE_RUNNING: …\") → 代碼 UPDATE_RUNNING、句子 tr.cloud.updRunning;runtime 的原句還是 UPDATE_RUNNING: 開頭", !!msg && /^UPDATE_RUNNING: /.test(msg)
       && rc && rc.code === "UPDATE_RUNNING" && T.trRejectSentence(rc) === "tr.cloud.updRunning" && T.trRejectCode("RuntimeError: TYPE_B: 「a」 x").code === "TYPE_B" && T.trRejectCode("RuntimeError: other") === null); }
   { const V = require("vm").runInNewContext(fs.readFileSync(path.join(R, "strings.js"), "utf8").replace(/^const STRINGS/m, "var STRINGS") + "\nSTRINGS");
-    const want = { "tr.cloud.updRunning": ["雲端主機正在更新，更新完再按「啟動下單」。", "The cloud machine is updating. Press Start trading when it finishes."],
+    const want = { "tr.cloud.updRunning": ["雲端主機正在更新，更新完再按「啟動下單」。", "The cloud machine is updating. Press Start Trading when it finishes."],
       "up.err.noGit": ["雲端主機少了更新要用的元件，請聯絡我們。", "The cloud machine is missing a part the update needs. Contact us."],
       "up.dot": ["雲端主機有新版", "Cloud update"],
       "ho.err.old": ["雲端主機的程式還不支援搬策略。通常幾分鐘內會自動補上，到時再試。", "The cloud machine can’t move strategies yet. It usually catches up within a few minutes, so try again then."] };

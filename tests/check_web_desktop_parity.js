@@ -189,7 +189,11 @@ const START_PAIRS = { "tr.start": "workspace_pf_start", "tr.opt.legend": "worksp
   // 單那一行「會」只寫第一筆(設計稽核 0158 S3)
   "tr.opt.catchWill": "workspace_pf_catch_will", "tr.opt.catchWillMore": "workspace_pf_catch_will_more",
   // 讀到帳之前補齊停用的原因(Wei 裁定稽核 0158 R1)
-  "tr.opt.catchNeedRead": "workspace_pf_opt_catch_need_read", "tr.opt.catchNeedSignal": "workspace_pf_opt_catch_need_signal" };
+  "tr.opt.catchNeedRead": "workspace_pf_opt_catch_need_read",
+  // 0.1.60 等第一個訊號(spec add-then-start-0160 補記):取代 catchNeedSignal——正在算、1 分鐘逾時、〔重新整理〕
+  "tr.opt.catchComputing": "workspace_pf_opt_catch_computing", "tr.opt.catchLate": "workspace_pf_opt_catch_late", "tr.opt.catchRetry": "workspace_pf_opt_catch_retry",
+  // 0.1.60 加入並啟動下單(spec add-then-start-0160 A-1、A-3;表面表要求字串配對):金額框主鈕、取消啟動框後說明行兩句
+  "sp.cf.addStart": "workspace_sp_cf_add_start", "sp.addedIdle": "workspace_sp_added_idle", "sp.addedHalted": "workspace_sp_added_halted" };
 for (const lang of ["zh", "en"]) {
   const dp = poMap(path.join(__dirname, "..", "shell", "i18n", lang + ".po")), wp = poMap(path.join(webDir, "app", "translations", lang, "LC_MESSAGES", "messages.po"));
   const bad = Object.entries(START_PAIRS).filter(([d, w]) => typeof dp[d] !== "string" || dp[d] !== wp[w]);
@@ -1051,7 +1055,7 @@ for (const lang of ["zh", "en"]) {
   // 0.1.50 只有電腦版的情境(spec §7 表面表:web 沒有擋免費要資料策略的牆、沒有框 ②):B 型開通鈕、框 ② 的列、來源句與付款中、訪客安裝鈕與試用句、partial 沒扣那句、
   // 錢包變了那句;扣款還在確認(unsettled:電腦版沒有「重新整理這頁」,寫「稍後再回來看」)。web 第二批補框 ②-D 時,planD、pay、paying、src*、partNoCharge、srcChanged 從這裡移回配對表
   const BB_DESK_ONLY = ["waiting", "waitNote", "reopen", "expired", "planB", "planD", "planTitle", "todayCard", "todayPay", "pay", "paying", "srcCard", "srcCardAny", "srcWallet",
-    "srcMixWc", "srcMixWcAny", "srcMixCw", "srcMixCwAny", "partNoCharge", "srcChanged", "loginInstall", "loginUseNote", "unsettled",
+    "srcMixWc", "srcMixWcAny", "srcMixCw", "srcMixCwAny", "partNoCharge", "srcChanged", "loginInstall", "unsettled",
     // B 型直接開付款頁的鈕下「可隨時取消。」:web 沒有 B 型開通(同 planB)
     "cancelNote"], BB_WEB_ONLY = ["confirming", "desktop_title", "desktop_lede",   // desktop_*:電腦版的單回到網頁時那一頁(稽核 W3),電腦版沒有這一頁
     // 網頁 0.1.51 直接付的鈕與付完結果句:plan_buy 跟電腦版 planD 同義,但鈕字格式各照自己表面(電腦版 en「Start Plan & Buy · {p}」帶中點,網頁不帶),不逐字比;

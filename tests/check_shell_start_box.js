@@ -40,19 +40,26 @@ function world(o) {
     trReport: () => report, trZView: () => ({ off: !!env.zoff }), envHeadState: () => "halted", trIsPaper: () => o.money === "paper", envMoney: () => o.money || null,
     trBookBaseline: () => o.book || "unknown", envMoneyText: (m) => (m ? "tr.mode." + m : ""), trWhereTidy: (x) => x, trVenueId: () => (o.money === "paper" ? "paper" : o.money ? "binance" : null), trVenueLabel: (id) => id || "", 
     trRestartKind: () => o.restart || null, trRecomputing: () => !!env.recomputing, trBothReal: () => null, planVars: () => ({ h: "0.9", m: "50" }), planMo: () => false,
-    trPlanLine: () => o.plan || null, trCatchPlan: () => env.catchPlan, trHasAccount: () => env.account !== false, trFirstReadPending: () => !!env.firstRead, trBookFresh: () => o.fresh !== false, trWaitStranded: () => o.stranded || 0, trStored: () => ({}),   // 0.1.24 A6:照策略組合 N 支、合計 ≈ X(格式在 check_shell_portfolio.js 驗)
+    trPlanLine: () => o.plan || null, trCatchPlan: (r) => (env.unread && env.unread(r) ? null : env.catchPlan) /* 同真的 trCatchPlan 開頭:部位還沒讀到(trPosUnread)= 不知道 */, trHasAccount: () => env.account !== false, trFirstReadPending: () => !!env.firstRead, trBookFresh: () => o.fresh !== false, trWaitStranded: () => o.stranded || 0, trStored: () => ({}),   // 0.1.24 A6:照策略組合 N 支、合計 ≈ X(格式在 check_shell_portfolio.js 驗)
     trHeldVenue: (res) => (res && res.held) || null, trRecRunning: () => !!o.recRunning, lsGet: (k) => (k in store ? store[k] : null), lsSet: (k, v) => { store[k] = v; },
     trSend: (S, cmd, args, how) => { sent.push(cmd); if (how) env.hows.push(how); return Promise.resolve(o.reply ? o.reply(cmd) : { ok: true }); },
     // 真的 trRun 依序跑每一步、前一步沒成功就停;這裡只留這一條(過場態、紅字不在這支測試的範圍)
     trRun: async (want, steps) => { for (const st of steps) { const r = await st(env.TR); if (!r || !r.ok || env.trHeldVenue(r)) break; } },
     window: { blave: { platform: o.platform || "darwin" } },
     LANG: "zh", trTwName: (s) => ({ "2330": "台積電" })[s] || "",
+    // 0.1.60 等訊號:2 秒一讀(trPollSoon)、雲端開爆發窗(ENV.burst);啟動框關掉叫 spStartClosed(策略頁說明行當場重畫)
+    trEl: (tag, cls, text) => { const e = new El(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; },
+    polls: [], trPollSoon: (ms) => env.polls.push(ms), ENV: { burst: null }, trBurstBump: (b, now, ms) => ({ start: now, until: now + ms }),
+    closed: 0, spStartClosed: () => { env.closed++; },
+    // 真的 trPosUnread／trPosPending 跑在這份報告上(稽核 release-0160-e 必修 1:永豐 SnapshotLag 期間當還沒讀到帳)
+    trVenueIds: (r) => Object.keys((r.account && r.account.venues) || {}), trLiveEntry: (r, id) => ((r.account && r.account.venues) || {})[id] || null,
     AWAKE: o.awake, account: o.account, firstRead: o.firstRead, catchPlan: o.catch === undefined ? null : o.catch, recomputing: !!o.recomputing, hows: [], tracked: [], switched: [], trackFeature: (n) => env.tracked.push(n), laiOn: () => false, envSwitchGuarded: (e) => { env.switched.push(e); return true; },
   };
   const names = Object.keys(env);
-  const body = `let delCtx = null; ${fn(app, "cfSupersede")}\n${fn(app, "delOkBusy")}\n${fn(app, "confirmBox")}\n${fn(app, "cfPopToggle")}\n${fn(app, "cfPopEsc")}\n${fn(app, "delClose")}\n${fn(trade, "trCloudBox")}\n${fn(trade, "trTwBroker")}\n${fn(trade, "trExecKey")}\n${fn(trade, "trExecStored")}\n${fn(trade, "trExecCurrent")}\n${fn(trade, "trCatchHow")}\n${fn(trade, "trPadLatin")}\n${fn(trade, "trTidyZh")}\n${fn(trade, "trStartNotes")}\n${fn(trade, "trAwakeCloudGo")}\n${fn(trade, "trDeferredCloseLine")}\n${(trade.match(/^const TR_CHANGED_ARM_MS = [^\n]*\n/m) || [""])[0]}${fn(trade, "trCatchSame")}\n${fn(trade, "trStartReadRefresh")}\n${fn(trade, "trAskStart")}\n
-    const click = ${okClick};\n return { trAskStart, trStartNotes, trStartReadRefresh, delClose, click, ctx: () => delCtx };`;
+  const body = `let delCtx = null; ${fn(app, "cfSupersede")}\n${fn(app, "delOkBusy")}\n${fn(app, "confirmBox")}\n${fn(app, "cfPopToggle")}\n${fn(app, "cfPopEsc")}\n${fn(app, "delClose")}\n${fn(trade, "trCloudBox")}\n${fn(trade, "trTwBroker")}\n${fn(trade, "trExecKey")}\n${fn(trade, "trExecStored")}\n${fn(trade, "trExecCurrent")}\n${fn(trade, "trCatchHow")}\n${fn(trade, "trPadLatin")}\n${fn(trade, "trTidyZh")}\n${fn(trade, "trStartNotes")}\n${fn(trade, "trAwakeCloudGo")}\n${fn(trade, "trDeferredCloseLine")}\n${(trade.match(/^const TR_CHANGED_ARM_MS = [^\n]*\n/m) || [""])[0]}${(trade.match(/^const TR_START_POLL_MS = [^\n]*\n/m) || [""])[0]}${fn(trade, "trCatchSame")}\n${fn(trade, "trPosPending")}\n${fn(trade, "trPosUnread")}\n${fn(trade, "trStartWaitOn")}\n${fn(trade, "trStartReadRefresh")}\n${fn(trade, "trAskStart")}\n
+    const click = ${okClick};\n return { trAskStart, trStartNotes, trStartReadRefresh, trStartWaitOn, trPosUnread, delClose, click, ctx: () => delCtx };`;
   const M = new Function(...names, body)(...names.map((k) => env[k]));
+  env.unread = M.trPosUnread;
   Object.keys(ids).forEach((k) => delete ids[k]);
   $("del-scrim").hidden = true;
   M.trAskStart(null);
@@ -118,7 +125,7 @@ const NONE = { text: null, n: 0, key: "", items: [] };
   // ---- 0.1.58 補齊排第一、條件成立才預選(spec 0158-catchup-intro §1.3–1.5;每一列 §1.4 情境一次;稽核 0158 M1／M2／B3／B4／B5)----
   { const P = (text, n, items) => ({ text, n, key: "", items: (items || []).map(([k, q, exact]) => ({ k, q, exact: !!exact })) });
     const ONE = P("會買進 BTC 1,200 USDT。", 1, [["+BTCUSDT", 1200]]);
-    const cur = () => $("del-body").all().filter((n) => n.cls.has("cf-opt")).map((row) => ({ id: row.kids.find((k) => k.tag === "input").value, input: row.kids.find((k) => k.tag === "input"),
+    const cur = () => $("del-body").all().filter((n) => n.cls.has("cf-opt")).map((row) => ({ row, id: row.kids.find((k) => k.tag === "input").value, input: row.kids.find((k) => k.tag === "input"),
       d: row.kids.find((k) => k.cls && k.cls.has("cf-opt-d")), l: row.kids.find((k) => k.cls && k.cls.has("cf-opt-l")), w: row.kids.find((k) => k.cls && k.cls.has("cf-opt-w")) }));
     const sel = () => (cur().find((o) => o.input.checked) || {}).id || null;
     const tail = () => $("del-body").kids.find((k) => k.cls && k.cls.has("cf-tail"));
@@ -174,20 +181,67 @@ const NONE = { text: null, n: 0, key: "", items: [] };
       await w.press(1); ok("R1 舊 runtime:送不出", w.sent.length === 0);
       w.env.firstRead = false; w.env.catchPlan = ONE; w.M.trStartReadRefresh(); tick(600);
       ok("R1 舊 runtime 讀到帳:主鈕可按", w.okb.disabled === false); }
-    // 讀到帳但訊號還沒算出來(trCatchPlan 回 null,稽核 B1;同 R1 原則):補齊停用、講原因,算出來後重畫才可選
-    { const w = world({ money: "real", catch: null }), c = cur();
-      ok("訊號還沒算出來:補齊停用、說明換成「策略算完訊號後才能補齊」、不出單、不接沒有單;預選等新訊號", c[0].input.disabled === true && c[0].d.textContent === "tr.opt.catchNeedSignal"
-        && c[0].input.attrs["aria-describedby"] === c[0].d.id && !c[0].l && sel() === "wait" && w.okb.textContent === "tr.startWait");
+    // 讀到帳但訊號還沒算出來(trCatchPlan 回 null,稽核 B1;同 R1 原則):補齊停用,算出來後重畫才可選。
+    // 0.1.60(spec add-then-start-0160 補記):停用那段是轉圈＋「正在算訊號…」、框開著時 2 秒讀一次、最多 1 分鐘;逾時換「等了 1 分鐘還沒算出訊號。」＋〔重新整理〕
+    const why = (o) => o.d.kids.find((k) => k.cls && k.cls.has("cf-wait"));
+    const spinOf = (o) => (why(o) ? why(o).kids.find((k) => k.cls && k.cls.has("spin16")) : null), retryOf = (o) => (why(o) ? why(o).kids.find((k) => k.tag === "button") : null);
+    const EV = { preventDefault() {}, stopPropagation() {} };
+    { const t0 = CLOCK, w = world({ money: "real", catch: null }), c = cur();
+      ok("訊號還沒算出來:補齊停用(radio 真 disabled)、說明是轉圈(aria-hidden)＋「正在算訊號…」、aria-describedby 指它、不出單;預選等新訊號、真錢記號、焦點在取消",
+        c[0].input.disabled === true && c[0].row.cls.has("off") && !!spinOf(c[0]) && spinOf(c[0]).attrs["aria-hidden"] === "true" && why(c[0]).textContent === "tr.opt.catchComputing"
+        && c[0].input.attrs["aria-describedby"] === c[0].d.id && !!c[0].d.id && !c[0].l && sel() === "wait" && w.okb.textContent === "tr.startWait" && w.mark.textContent === "tr.mode.real" && El.focus === $("del-cancel"),
+        { d: c[0].d.textContent, sel: sel() });
+      ok("等訊號:開框就排 2 秒後讀一次、等到開框後 60 秒;trPoll 用 trStartWaitOn 判要不要 2 秒一輪;這台電腦不開爆發窗",
+        w.env.polls.join() === "2000" && w.env.TR.startUnread.until === t0 + 60000 && w.M.trStartWaitOn(CLOCK) === true && w.env.ENV.burst === null, { polls: w.env.polls, u: w.env.TR.startUnread });
       c[0].input.checked = true; await c[0].input.fire("change"); await w.press(1);
       ok("訊號還沒算出來:硬把補齊勾起來按也送不出 resume(按下時 trCatchPlan 仍是 null → 重畫不送)", w.sent.indexOf("resume") < 0 && w.open(), w.sent);
-      w.M.trStartReadRefresh();
-      ok("訊號還沒算出來:每一輪 trPaint 不重畫、補齊仍停用", cur()[0].input.disabled === true && cur()[0].d.textContent === "tr.opt.catchNeedSignal");
+      tick(2000); w.M.trStartReadRefresh();
+      ok("等訊號 2 秒後還算不出:不重畫、補齊仍停用、仍在轉", cur()[0].input.disabled === true && !!spinOf(cur()[0]) && sel() === "wait" && w.sent.indexOf("resume") < 0);
       w.env.catchPlan = ONE; w.M.trStartReadRefresh();
-      ok("訊號算出來了:原地重畫、補齊可選並列出單、不自動預選補齊", cur()[0].input.disabled === false && cur()[0].l && cur()[0].l.textContent === ONE.text && sel() === "wait" && w.okb.textContent === "tr.startWait");
-      await pickNow(w, "catch"); tick(600); await w.press(1);
+      ok("訊號算出來了:原地重畫、補齊可選並列出單、不自動預選補齊(預選仍停等新訊號)、不再轉、不再 2 秒一讀", cur()[0].input.disabled === false && cur()[0].l && cur()[0].l.textContent === ONE.text
+        && cur()[0].d.textContent === "tr.opt.catchDesc" && sel() === "wait" && w.okb.textContent === "tr.startWait" && w.env.TR.startUnread === null && w.M.trStartWaitOn(CLOCK) === false);
+      await pickNow(w, "catch"); await w.press(1);
+      ok("訊號算出來後重畫 600ms 內選補齊按下:不算、什麼都沒送", w.sent.indexOf("resume") < 0 && w.open(), w.sent);
+      tick(600); await w.press(1);
       ok("訊號算出來後選補齊、過了 600ms 再按:照列出的單送 resume", w.sent.join() === "resume,restart_reconciler", w.sent); }
+    // 1 分鐘還算不出:逾時句＋〔重新整理〕;重新整理再等一輪、焦點回取消;取消不送任何指令
+    { const w = world({ money: "real", catch: null }); w.env.polls.length = 0;
+      tick(59999); w.M.trStartReadRefresh();
+      ok("等訊號 59.999 秒:仍是正在算", !!spinOf(cur()[0]) && w.M.trStartWaitOn(CLOCK) === true);
+      tick(1); w.M.trStartReadRefresh();
+      const c = cur();
+      ok("等滿 1 分鐘:原地換「等了 1 分鐘還沒算出訊號。」＋〔重新整理〕(btn-quiet)、不轉、補齊仍停用、預選仍等新訊號;停止 2 秒一讀;什麼都沒送",
+        c[0].input.disabled === true && !spinOf(c[0]) && why(c[0]).textContent === "tr.opt.catchLatetr.opt.catchRetry" && retryOf(c[0]).cls.has("btn-quiet")
+        && sel() === "wait" && w.M.trStartWaitOn(CLOCK) === false && w.env.polls.length === 0 && w.sent.length === 0 && w.open(), { d: c[0].d.textContent, polls: w.env.polls });
+      w.M.trStartReadRefresh();
+      ok("逾時後每一輪 trPaint 不再重畫、句子不變", why(cur()[0]).textContent === "tr.opt.catchLatetr.opt.catchRetry");
+      El.focus = null; retryOf(cur()[0]).on.click[0](EV);
+      ok("按〔重新整理〕:回到正在算、重新等 1 分鐘、排 2 秒一讀、焦點回取消、什麼都沒送", !!spinOf(cur()[0]) && w.env.TR.startUnread.until === CLOCK + 60000 && w.env.polls.join() === "2000"
+        && El.focus === $("del-cancel") && sel() === "wait" && w.sent.length === 0 && w.open());
+      ok("原地重畫(逾時、重新整理)都不算取消:沒叫 spStartClosed", w.env.closed === 0, w.env.closed);
+      w.M.delClose(false);
+      ok("真錢等訊號時按取消:框關、不送任何指令、叫一次 spStartClosed(策略頁說明行當場重畫)", !w.open() && w.sent.length === 0 && w.env.closed === 1 && w.env.TR.startUnread !== null && w.M.trStartWaitOn(CLOCK) === false);
+      w.M.trStartReadRefresh();
+      ok("框關掉後:下一輪清掉等待、也不重新開框", w.env.TR.startUnread === null && !w.open()); }
+    { const w = world({ money: "real", env: "cloud", catch: null });
+      ok("雲端等訊號:另開 60 秒爆發窗(主行程才會真的重抓)", !!w.env.ENV.burst && w.env.ENV.burst.until === CLOCK + 60000 && w.env.polls.join() === "2000"); }
+    { const w = world({ money: "real", catch: null, firstRead: true });
+      ok("還沒讀到帳(R1)不是等訊號:照舊「讀到帳戶後才能補齊」、不轉、不 2 秒一讀", cur()[0].d.textContent === "tr.opt.catchNeedRead" && !why(cur()[0]) && w.env.polls.length === 0 && w.M.trStartWaitOn(CLOCK) === false); }
+    // 稽核 release-0160-e 必修 1:永豐送單後等快照(SnapshotLag)時,帳上讀不到——當還沒讀到帳:補齊停用、講讀帳那句、不預選、不 2 秒一讀;
+    // 這裡 catch 故意給一份「算得出來」的單(舊版 trCatchPlan 會把帳上當 0 列出整筆),框也不能列、不能預選
+    { const LAG = { ok: false, error: { type: "SnapshotLag", stage: "get_positions" }, equity: 1000000, positions: null };
+      const w = world({ money: "real", catch: ONE, report: { account: { read_at: 1, venues: { sinopac: LAG } } } }), c = cur();
+      ok("SnapshotLag:補齊停用、原因句「讀到帳戶後才能補齊。」(不是正在算訊號)、不列單;預選等新訊號、主鈕「啟動，等新訊號」;不 2 秒一讀",
+        c[0].input.disabled === true && c[0].row.cls.has("off") && c[0].d.textContent === "tr.opt.catchNeedRead" && !why(c[0]) && !c[0].l && sel() === "wait" && w.okb.textContent === "tr.startWait"
+        && w.env.polls.length === 0, { d: c[0].d.textContent, l: !!c[0].l, sel: sel() });
+      c[0].input.checked = true; await c[0].input.fire("change"); await w.press(1);
+      ok("SnapshotLag:硬把補齊勾起來按也送不出 resume", w.sent.indexOf("resume") < 0, w.sent);
+      w.env.TR.st.report.account.venues.sinopac = { ok: true, equity: 1000000, positions: {} }; w.M.trStartReadRefresh();
+      ok("快照跟上:原地重畫、補齊可選並列出單、不預選", cur()[0].input.disabled === false && !!cur()[0].l && sel() === "wait" && w.okb.textContent === "tr.startWait"); }
+    { const w = world({ money: "real", catch: null, recomputing: true });
+      ok("重算中不是等訊號:照舊重算那句、不 2 秒一讀", cur()[0].d.textContent === "tr.cloud.recomputing" && w.env.polls.length === 0); }
     { const w = world({ money: "paper", catch: null, report: { can_wait_start: false } });
-      ok("訊號還沒算出來 · 舊 runtime 一顆鈕:主鈕停用、原因句在 lines", w.okb.disabled === true && $("del-body").kids.some((k) => k.textContent === "tr.opt.catchNeedSignal")); }
+      ok("訊號還沒算出來 · 舊 runtime 一顆鈕:主鈕停用、原因句(正在算)在 lines", w.okb.disabled === true && $("del-body").kids.some((k) => k.textContent === "tr.opt.catchComputing")); }
     // 稽核 M2:資料超過 10 分鐘:單照列(同網頁)、不預選;手動選補齊時送出的就是列出來的那幾筆
     { const w = world({ money: "real", catch: ONE, fresh: false });
       ok("M2 資料超過 10 分鐘:單照列、預選等新訊號", cur()[0].l && cur()[0].l.textContent === ONE.text && sel() === "wait" && w.okb.textContent === "tr.startWait");

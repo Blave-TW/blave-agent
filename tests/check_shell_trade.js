@@ -162,7 +162,7 @@ ok("spec-0.1.13 #4 單複數:顯示的數 |n| = 1 用單數;0、0.5、1.2、2、
     && STR.zh["cx.note.stockcoin"] === "金鑰要建成合約類型，並先在 StockCoin App 把資金轉進合約帳戶，Blave 只讀得到那裡的餘額。" && STR.en["cx.note.stockcoin"] === "Create a futures-type key, and move your funds into the futures account in the StockCoin app first. Blave can only read that balance.");
 }
 { const S3 = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8"), has = (k, v) => S3.includes(J(k) + ": " + J(v));
-  ok("order-copy #8 暫停框:主鈕「暫停下單 / Pause trading」(0.1.27);舊 lib 第一句照舊講出場照常(兩種 self_ledger 各一句)", has("tr.stopKeep", "暫停下單") && has("tr.stopKeep", "Pause trading")
+  ok("order-copy #8 暫停框:主鈕「暫停下單 / Pause Trading」(0.1.27;en Title Case,Wei 11-23);舊 lib 第一句照舊講出場照常(兩種 self_ledger 各一句)", has("tr.stopKeep", "暫停下單") && has("tr.stopKeep", "Pause Trading")
     && /^"tr\.stopChoice": "平倉與停損停利照常執行。/m.test(S3.split("\n").map((l) => l.trim()).join("\n")) && has("tr.stopChoiceSelf", "平倉與停損停利照常執行。「暫停並關閉部位」只平自動下單建立的部位，你手動開的單不動。"));
   // 凍結那兩組把「暫停並關閉部位」拆到 <選句>2 另起一行(文案清長句):四種組合畫出來的框都要有鈕上的字
   ok("0.1.27 稽核 s18 暫停框:四種組合的引號裡寫的是鈕上的字「暫停並關閉部位」(tr.stopFlat;凍結那組在 Freeze2);重建句講照金額重建、不寫「下單機會」",
@@ -1303,7 +1303,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       && /Object\.prototype\.hasOwnProperty\.call\(TR_BROKER_KEY, d\.exchange\) \? TR_BROKER_KEY\[d\.exchange\] : "tr\.ov\.brokerOther"/.test(src));
     ok("…整句與 api notify.py _MANUAL_CLOSE_SNAPSHOT_LAG 逐字同(去掉 🚨、{broker_zh} → {broker});券商短名同 _VENUE_NAMES",
       SZ.zh["tr.ov.evManualCloseLag"] === "沒替{broker}平倉：部位資料還沒跟上剛送的單。一分鐘後再按「暫停並關閉部位」，或到券商平倉。"
-      && SZ.en["tr.ov.evManualCloseLag"] === "Not closed on {broker}: position data lags the last order. In a minute, press “Pause and close positions” again, or close at your broker." && !("tr.ov.evManualCloseLagNote" in SZ.zh)
+      && SZ.en["tr.ov.evManualCloseLag"] === "Not closed on {broker}: position data lags the last order. In a minute, press “Pause and Close Positions” again, or close at your broker." && !("tr.ov.evManualCloseLagNote" in SZ.zh)
       && SZ.zh["tr.ov.brokerCapital"] === "群益" && SZ.zh["tr.ov.brokerPresident"] === "統一" && SZ.en["tr.ov.brokerCapital"] === "Capital" && SZ.en["tr.ov.brokerPresident"] === "President" && SZ.zh["tr.ov.brokerOther"] === "這家券商" && SZ.en["tr.ov.brokerOther"] === "your broker"); }
   { // 設計稽核可後修 §3-1:雲端的投資組合策略那句講真話;L3:框開著時變成讀不到設定 → 送出前再擋一次;L2:=absent 講明
     ok("order-copy #12 沒撥過款的投資組合策略:金額表那一列講「要先更新」(雲端 tr.typeCHost、本機 tr.typeC),tr.cloud.typeC 退役", /if \(locked\) first\.appendChild\(trEl\("span", "pf-note", cloud \? t\("tr\.typeCHost"\) : t\("tr\.typeC"\)\)\);/.test(src) && !/tr\.cloud\.typeC/.test(src));
@@ -1439,19 +1439,26 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       && /^主機重開過，什麼單都不下/.test(get("zh", "tr.cloud.restartNoAccountZ")) && get("zh", "tr.cloud.restartNoAccountStart") === null && get("zh", "tr.cloud.restartNoAccount") === null
       && get("zh", "tr.ov.evHaltNote") === "平倉與停損停利照常執行，停開新倉" && get("zh", "tr.ov.evRestartStoppedNote") === "什麼單都不送"   // 稽核 0127b1 P2-20:跟狀態列同一個講法,一句就夠
       && /更新主機後按「啟動下單」/.test(get("zh", "tr.cloud.closeAllWarn2Unconfirmed")) && get("zh", "tr.cloud.saveIdleUnconfirmed") === null   // 存金額框的 idle 那句 0.1.24 退場
-      && /after you update the machine and press Start trading/.test(get("en", "tr.cloud.closeAllWarn2Unconfirmed")) && get("en", "tr.cloud.saveIdleUnconfirmed") === null
+      && /after you update the machine and press Start Trading/.test(get("en", "tr.cloud.closeAllWarn2Unconfirmed")) && get("en", "tr.cloud.saveIdleUnconfirmed") === null
       && get("en", "tr.cloud.restartStartWarn2") === null && get("zh", "tr.cloud.restartStartWarn2") === null);
     ok("側欄「已停」→「已暫停」;設定的雲端舊版那句照稽核", get("zh", "side.cloud.st.halted") === "已暫停" && get("en", "side.cloud.st.halted") === "Paused"
       && get("zh", "up.c.needsUpdate") === null);   // v4:那一句退場(雲端更新走「檢查更新」,沒有第四個狀態)
     const en = po("en").split("\n").filter((l) => l.startsWith("msgstr ")).join("\n");
-    // Title Case 撤回(web 已回 sentence case,兩邊要一致;Title Case 另開一批)。原本唯一留著的 tr.cloud.means.2 隨啟動框改版退役(Wei 0928 第 3 點)
-    ok("EN 鈕名:下單那幾顆維持 sentence case(舊字串,另批處理);0.1.28 onboarding 與連接框這次新增／改動的鈕依 canon design-system.md Casing(按鈕 Title Case)", get("en", "tr.stop") === "Pause trading" && get("en", "tr.start") === "Start trading"
-      && get("en", "tr.stopFlat") === "Pause and close positions" && get("en", "tr.startCatchUp") === "Start and catch up positions" && get("en", "up.restart") === "Restart to finish updating"
-      && get("en", "cx.connect") === "Connect Account" && get("en", "cx.title") === "Connect Account"
+    // Wei 11-23(稽核 release-0160-e):英文下單鈕一律 Title Case(canon design-system/copy.md Casing);句子裡點名這些鈕的地方跟著鈕名(兩語都講同一顆鈕)。
+    // ct.errRun 是動作句(啟動下單後才能換合約),不是點名鈕,不算
+    const enMain = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8"), enNoRun = en.replace('msgstr "Start trading to switch contracts"', "");
+    ok("EN 下單鈕 Title Case(Wei 11-23):啟動／暫停／補齊／等新訊號／儲存並下單／加入並啟動下單／解除暫停／確認帳戶;句子裡點名的鈕名同字;sentence case 的鈕名在 .po 與主行程預設字都不再出現",
+      get("en", "tr.start") === "Start Trading" && get("en", "tr.stop") === "Pause Trading" && get("en", "tr.stopKeep") === "Pause Trading" && get("en", "tr.stopFlat") === "Pause and Close Positions"
+      && get("en", "tr.startCatchUp") === "Start and Catch Up Positions" && get("en", "tr.startWait") === "Start, Wait for New Signals" && get("en", "tr.cf.titleFire") === "Save and Place Orders"
+      && get("en", "tr.cf.title") === "Save Amounts" && get("en", "sp.cf.addStart") === "Add and Start Trading" && get("en", "sp.cf.addFire") === "Add and Place Orders"
+      && get("en", "tr.release") === "Release Pause" && get("en", "tr.releaseClose") === "Close Positions and Release" && get("en", "tr.relCloseGo") === "Close Positions and Release"
+      && get("en", "tr.acct.btn") === "Confirm Account" && get("en", "tm.pause") === "Pause Trading (Keep Positions)"
+      && get("en", "up.restart") === "Restart to finish updating" && get("en", "cx.connect") === "Connect Account" && get("en", "cx.title") === "Connect Account"
       && get("en", "cx.paperFoot") === "Try Paper Trading First" && get("en", "cx.keyPage") === "Create a Key on {venue}"
-      && ["Start Trading", "Update to the Latest Version Now", "Pause and Close Positions", "Catch Up Positions", "Wait for New Signals"].every((x) => en.indexOf(x) < 0)
-      && (en.match(/Pause Trading/g) || []).length === 0
-      && !/Pause Trading \(keep|Press Start Trading/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8")));
+      && /Press Start Trading to resume/.test(get("en", "tr.died")) && /“Pause and Close Positions”/.test(get("en", "tr.stopChoice")) && /press Release Pause/.test(get("en", "tr.startOffNoAmtRelease"))
+      && ["Start trading", "Pause trading", "Pause and close positions", "Start and catch up positions", "Start, wait for new signals", "Save and place orders", "Release pause", "Close positions and release", "Add and start trading"]
+        .every((x) => enNoRun.indexOf(x) < 0 && enMain.indexOf(x) < 0)
+      && en.indexOf("Update to the Latest Version Now") < 0 && /pause: "Pause Trading \(Keep Positions\)"/.test(enMain));
     // v4 §7 驗收:「立即更新到最新版本」那顆鈕已經不在,全 app 可見字串(兩語 .po、產出的 strings.js、renderer 與主行程的 js)都不能再叫人去按它
     const SH = path.join(__dirname, "..", "shell"), shellSrc = [po("zh"), po("en")].concat(["renderer", "."].flatMap((d) => fs.readdirSync(path.join(SH, d)).filter((f) => /\.(js|html)$/.test(f)).map((f) => fs.readFileSync(path.join(SH, d, f), "utf8")))).join("\n");
     ok("全 app 不再出現「立即更新到最新版本」/ Update to the latest version now(兩語);三句改講「更新雲端主機」(0.1.15:檢查更新不再碰雲端)", !/立即更新到最新版本|Update to the latest version now/i.test(shellSrc)
@@ -1467,7 +1474,9 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       /const recomputing = trRecomputing\(r\), rkS = trRestartKind\(r\);/.test(start)
       // 0.1.58 R1:停用條件多了「還沒讀到帳」,原因句重算中優先
       && /const catchOff = recomputing \|\| !plan0;/.test(start)
-      && /const catchWhy = recomputing \? t\("tr\.cloud\.recomputing"\) : !read \? t\("tr\.opt\.catchNeedRead"\) : t\("tr\.opt\.catchNeedSignal"\);/.test(start)
+      && /const catchWhy = recomputing \? t\("tr\.cloud\.recomputing"\) : !read \? t\("tr\.opt\.catchNeedRead"\) : sigWait \? sigWhy\(\) : null;/.test(start)
+      // 0.1.60 讀到帳、等訊號:轉圈＋正在算、1 分鐘後逾時句＋〔重新整理〕(行為在 check_shell_start_box.js)
+      && /const sigWait = !recomputing && read && !plan0,/.test(start) && /t\("tr\.opt\.catchComputing"\)/.test(start) && /t\("tr\.opt\.catchLate"\)/.test(start)
       && /disabled: catchOff, why: catchWhy, ok: t\("tr\.startCatchUp"\), onOk: \(\) => catchUp\("catch"\) \},/.test(start)
       // 0.1.58:按下去再查一次,重算中或單變了就不送、框留著重畫(行為在 check_shell_start_box.js)
       && /if \(trRecomputing\(r2\) \|\| !p2 \|\| !trCatchSame\(p2, plan0\)\) \{ trackFeature\("start_catch_chg"\); trAskStart\(opener, true, true, pre\); return; \}/.test(start)
@@ -1665,8 +1674,8 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       && /TR\.pending\.want === "released" \? t\("tr\.releasing"\)/.test(fnS("trStateText")) && /TR\.pending\.want === "released" \? t\("tr\.releasing"\)/.test(fnS("trShortState")));
     ok("§8 running + Z 的狀態行不寫「自動下單執行中」", /let s = trNoAmounts\(r\) \? t\("tr\.runningZ"\) : t\("tr\.autoOn"\);/.test(fnS("trStateText")));
     { const S2 = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8");
-      ok("§8 破壞性次鈕的字:en「Close positions and release」(不讀成「關掉這個框」,同網頁);zh 跟頁首鈕同一個字「平倉並解除暫停」(ux §3.2)", /"tr\.relCloseGo": "Close positions and release"/.test(S2) && /"tr\.relCloseGo": "平倉並解除暫停"/.test(S2)
-        && /"tr\.releaseClose": "平倉並解除暫停"/.test(S2) && /"tr\.releaseClose": "Close positions and release"/.test(S2) && !/Close and release/.test(S2)); }
+      ok("§8 破壞性次鈕的字:en「Close Positions and Release」(不讀成「關掉這個框」,同網頁);zh 跟頁首鈕同一個字「平倉並解除暫停」(ux §3.2)", /"tr\.relCloseGo": "Close Positions and Release"/.test(S2) && /"tr\.relCloseGo": "平倉並解除暫停"/.test(S2)
+        && /"tr\.releaseClose": "平倉並解除暫停"/.test(S2) && /"tr\.releaseClose": "Close Positions and Release"/.test(S2) && !/Close and release/.test(S2)); }
     const css = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.css"), "utf8");
     ok("視覺稽核 2-4:停用的實心鈕有一條比填色亮一階的框(只靠填色對 darkBody 只有 1.5:1)", /\.btn-fill:disabled(?:, [^{,]+)* \{ background: var\(--surface-muted\); color: var\(--ink-3\); border: 1px solid var\(--color-greyMedium\); cursor: not-allowed; opacity: 1; \}/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "app.css"), "utf8")));
     ok("稽核 R5:原因行收掉 / 重建之前,焦點在那條「部位」連結上就先交給標題(不掉到 BODY);標頭早退拿掉主鈕時同理",
@@ -3020,15 +3029,15 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     const run = (env, report) => { ctx.TR = { env, st: { alive: true, running: true, report }, pending: null }; vm.runInContext("var TR = this.TR", ctx);
       return [vm.runInContext("trExecState(TR.st)", ctx), vm.runInContext('trStateText("running")', ctx)]; };
     const two = run("local", rep({ TXFJ6: { size: 2 } })), none = run("local", rep({})), noPos = run("local", rep(undefined));
-    ok("A 統一 2 口在倉(這台電腦、Windows):狀態句 = 自動下單執行中 · 統一有 2 口在倉，接著電源時電腦保持清醒;沒部位就只有前半句", two[0] === "running" && two[1] === "自動下單執行中 · 統一有 2 口在倉，接著電源時電腦保持清醒"
+    ok("A 統一 2 口在倉(這台電腦、Windows):狀態句 = 自動下單執行中 · 統一有 2 口在倉(0.1.60 去掉睡眠那半句);沒部位就只有前半句", two[0] === "running" && two[1] === "自動下單執行中 · 統一有 2 口在倉"
       && none[1] === "自動下單執行中" && noPos[1] === "自動下單執行中", J([two, none, noPos]));
     const fail = run("local", rep({ TXFJ6: { size: 1 } }, false));
-    ok("A 讀帳失敗前綴照接、清醒那段在最尾;Z(沒策略設金額)不接", /^串接失敗 · 自動下單執行中 · 統一有 1 口在倉，接著電源時電腦保持清醒$/.test(fail[1]) && run("local", rep({ TXFJ6: { size: 1 } }, true, {}))[1] === t_zh("tr.runningZ"), fail[1]);
-    ok("A 雲端視角不接;Mac 不接", run("cloud", rep({ TXFJ6: { size: 2 } }))[1].indexOf("清醒") < 0
+    ok("A 讀帳失敗前綴照接、清醒那段在最尾;Z(沒策略設金額)不接", /^串接失敗 · 自動下單執行中 · 統一有 1 口在倉$/.test(fail[1]) && run("local", rep({ TXFJ6: { size: 1 } }, true, {}))[1] === t_zh("tr.runningZ"), fail[1]);
+    ok("A 雲端視角不接;Mac 不接", run("cloud", rep({ TXFJ6: { size: 2 } }))[1].indexOf("在倉") < 0
       && ((ctx.window.blave.platform = "darwin"), run("local", rep({ TXFJ6: { size: 2 } }))[1] === "自動下單執行中"));
     ctx.window.blave.platform = "win32"; vm.runInContext('LANG = "en"', ctx);
-    ok("A en:lot(s) open at President, this computer stays awake while plugged in;兩語都不講平倉", run("local", rep({ TXFJ6: { size: 3 } }))[1] === "Auto-trading running · 3 lot(s) open at President, this computer stays awake while plugged in"
-      && !/平倉|close/i.test(vm.runInContext('STRINGS.zh["tr.presAwake"] + STRINGS.en["tr.presAwake"]', ctx)));
+    ok("A en:lot(s) open at President(0.1.60 去掉睡眠那半句);兩語都不講平倉、不講睡眠", run("local", rep({ TXFJ6: { size: 3 } }))[1] === "Auto-trading running · 3 lot(s) open at President"
+      && !/平倉|close|清醒|睡|awake|sleep/i.test(vm.runInContext('STRINGS.zh["tr.presAwake"] + STRINGS.en["tr.presAwake"]', ctx)));
     ok("A 橫幅退場:index.html 沒有 #pres-banner、president.js / trade.js 沒有 presBannerPaint、CSS 沒有 .pres-banner、pres.held.* 兩個 key 退役",
       !/pres-banner/.test(fs.readFileSync(path.join(R, "index.html"), "utf8")) && !/presBannerPaint|pres\.held\./.test(pres + src) && !/pres-banner/.test(fs.readFileSync(path.join(R, "president.css"), "utf8"))
       && !vm.runInContext('"pres.held.lead" in STRINGS.zh || "pres.held.sub" in STRINGS.zh || "pres.held.lead" in STRINGS.en', ctx));

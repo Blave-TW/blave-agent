@@ -1012,12 +1012,6 @@ function libPaintGone() {
 function libNoDataText(s, why) {
   return libJoin(t(libNeeds(s) === "required" ? "lib.need.data" : "lib.need.unknown"), why === "no_balance" ? t("lib.why.noBalance") : why === "no_plan" ? t("lib.why.noPlan") : why === "plan_failed" ? t("lib.why.planFailed") : why === "unknown" ? t("lib.why.unknown") : "");
 }
-// 訪客看要資料的免費策略,鈕下那句的兩個數字(試用天數、Starter 每 30 天價;沒登入讀公開價目)。方案制之前或讀不到就不出
-function libLoginUseVars() {
-  if (!libPlanMo() || typeof planVars !== "function") return null;
-  const v = planVars();
-  return v.t && v.pr ? { t: String(v.t), p: libTwd(v.pr) } : null;
-}
 // 有試用資格又沒卡(方案制的 no_card)時的試用天數與每 30 天價,鈕下續扣句與報價比對用;任一讀不到 null(照舊出框 1)
 function libTrialTerms(c) {
   if (!c || c.why !== "no_card" || !libPlanMo() || typeof planVars !== "function") return null;
@@ -1145,12 +1139,11 @@ function libPaintCta(s) {
   const bbGone = c.state === "paid" && !!bb && bb.kind === "wallet" && bb.code === "unavailable";
   switch (relogin && ["free", "owned", "paid"].includes(c.state) ? "relogin" : bbGone ? "bbGone" : c.state) {
     case "relogin": row.appendChild(libSignInBtn("fault.authBtn")); break;
-    case "signedOut": {   // 鈕寫動作與金額(spec library-free-data-one-step §2.1;金額寫實刷的 TWD);鈕下:要資料的免費 → 試用與方案價(下面訊息槽),其餘空白
+    case "signedOut": {   // 鈕寫動作與金額(spec library-free-data-one-step §2.1;金額寫實刷的 TWD);鈕下空白(試用與方案價那句 Wei 11-23 拿掉:字太多)
       const key = libSignedOutKey(s, c.paid);
       // C(不用資料的付費策略):登入後沒卡、報價金額等於鈕上就直接開付款頁(沒有續扣)。換算幣(en 價格寫 USD)一律出框,同網頁與已登入那條
       const dc = key === "lib.bb.loginBuy" && !libFx() && libNeeds(s) === "none" && Number.isInteger(s.price) && s.price > 0;
       row.appendChild(libSignInBtn(null, null, t(key, { p: key === "lib.bb.loginBuy" ? libTwd(s.price) : "" }), dc ? s.price : undefined));
-      if (key === "lib.bb.loginUse") { const v = libLoginUseVars(); if (v) note.textContent = t("lib.bb.loginUseNote", v); }
       break;
     }
     case "noData": row.appendChild(libGateBtn(c.why)); note.classList.add("up"); note.textContent = libNoDataText(s, c.why); break;

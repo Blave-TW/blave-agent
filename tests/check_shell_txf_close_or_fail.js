@@ -116,6 +116,6 @@ ok("拒單 token market_closed 換 tr.err.marketClosed", /market_closed: "tr\.er
     "tr.closePos", "tr.closeTitle", "tm.txfOpenKept2", "tr.ov.evTxfOpenKept", "tr.ov.evCloseFromPaused"];
   ok("拿掉的句子兩語都不在", GONE.every((k) => g(zh, k) === undefined && g(en, k) === undefined), GONE.filter((k) => g(zh, k) !== undefined || g(en, k) !== undefined));
   const SIX = ["tr.ov.evManualCloseLag", "tr.ov.evManualCloseQueued", "tr.ov.evManualCloseQueuedSoon", "tm.evCloseLagNote", "tm.evCloseQueuedNote", "tm.evCloseQueuedSoonNote"];
-  ok("六句手動平倉點名停止框那顆「暫停並關閉部位」", SIX.every((k) => g(zh, k).indexOf("「暫停並關閉部位」") >= 0 && g(en, k).indexOf("“Pause and close positions”") >= 0), SIX.map((k) => g(zh, k)));
+  ok("六句手動平倉點名停止框那顆「暫停並關閉部位」", SIX.every((k) => g(zh, k).indexOf("「暫停並關閉部位」") >= 0 && g(en, k).indexOf("“Pause and Close Positions”") >= 0), SIX.map((k) => g(zh, k)));
   ok("結果不明的全部平倉那句仍點名停止框那顆", g(zh, "tr.ov.evUnconfirmedCloseAllNote").indexOf("暫停並關閉部位") >= 0); }
 console.log(red ? `\n${red} FAILED` : "\nALL PASS"); process.exit(red ? 1 : 0);

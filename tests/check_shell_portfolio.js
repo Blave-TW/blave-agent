@@ -478,6 +478,14 @@ ok("必改 3:存金額框的策略列用 trCloseTag / trCtCloseTag(「平倉」�
       // spec 0158-catchup-intro §1.3:預選補齊要分得出「沒有單」和「不知道」
       ok("trCatchPlan:讀過帳沒有單 → { text: null, n: 0, key: \"\" };有一筆 → n = 1、key 是「方向標的 數量」(不含股名,同網頁);沒連交易所(不知道)→ null",
         none === '{"text":null,"n":0,"key":"","items":[]}' && JSON.stringify(one.items) === '[{"k":"+BTCUSDT","q":100,"exact":false}]' && !!one && one.n === 1 && /tr\.opt\.catchWill/.test(one.text) && one.key === "+BTCUSDT 100 USDT" && unknown === null, [none, one, unknown]); }
+    // 稽核 release-0160-e 必修 1:送單後等快照(SnapshotLag,trPosPending)時帳上讀不到——不能把帳上當 0 列整筆補齊單(同網頁 pfCatchUnread)
+    { const rp = ctx.TR.st.report, keepV = rp.account.venues.binance; ctx.TR.st.report.config.amounts.btc = 500;
+      const before = vm.runInContext("trCatchPlan(TR.st.report)", ctx);
+      rp.account.venues.binance = { ok: false, error: { type: "SnapshotLag", stage: "get_positions" }, equity: 10000, currency: "USDT", positions: null };
+      const lagPlan = vm.runInContext("trCatchPlan(TR.st.report)", ctx), lagWait = vm.runInContext("trWaitStranded(TR.st.report)", ctx), lagUnread = vm.runInContext("trPosUnread(TR.st.report)", ctx);
+      rp.account.venues.binance = keepV; ctx.TR.st.report.config.amounts.btc = 400;
+      ok("SnapshotLag:trPosUnread 為真;trCatchPlan → null(不知道,不列單)、trWaitStranded → 0;快照正常時照列(對照組)",
+        !!before && before.n === 1 && lagUnread === true && lagPlan === null && lagWait === 0 && vm.runInContext("trPosUnread(TR.st.report)", ctx) === false, J([before && before.n, lagUnread, lagPlan, lagWait])); }
     { const S = vm.runInContext("trCatchSame", ctx), I = (...xs) => ({ items: xs.map(([k, q, exact]) => ({ k, q, exact: !!exact })) });
       // 稽核 0158 B3(收窄):只放過捨入雜訊,畫面上的數字(口數、股數、金額取整)不同就算變了
       ok("trCatchSame:兩邊不知道 = 同;一邊不知道 = 變;1,200.3 對 1,199.8(都寫 1,200)= 同;1,200 → 1,212(1%)、→ 1,248(4%)、→ 1,201 都算變;口數 2 → 3 變;多一筆、翻向、口數與金額混用都算變",

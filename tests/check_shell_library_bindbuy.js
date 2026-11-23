@@ -237,7 +237,7 @@ ok("④ IPC:綁卡即購買只收自家頁面;記號拿到這支終態才清,並
       var t = (k, v) => String(STR[LANG][k] === undefined ? "?" + k : STR[LANG][k]).replace(/\\{(\\w+)\\}/g, (m, n) => (v && v[n] != null ? v[n] : m));
       var box = new E("div"), $ = (id) => (id === "lib-cta" ? box : null), pub = O.pub === undefined ? { trial: { auto_topup_min: 50, auto_topup_amount: 300 } } : O.pub;
       var LIB = { dlFail: null, buyRead: O.buyRead, bbRes: new Map(O.bb ? [[7, O.bb]] : []) }, libPlanMo = () => true, planVars = () => ({ t: 14, pr: 1440 });
-      var libCtx = () => O.ctx, libCtaOf = (s) => libCta(s, O.ctx), libLoginUseVars = () => null, libGateBtn = () => new E("button", "btn-fill", "gate");
+      var libCtx = () => O.ctx, libCtaOf = (s) => libCta(s, O.ctx), libGateBtn = () => new E("button", "btn-fill", "gate");
       var libSignInBtn = (k, c, label, direct) => { const b = new E("button", "btn-fill", label); b.on.click = () => calls.push("signin:" + direct); return b; };
       var libPlanBuy = (s, b, x) => calls.push("plan:" + J(x)), libBindBuy = (s, b, x) => calls.push("bind:" + J(x)), libBuyBox = (s, st) => calls.push("buybox:" + st), libAsk = () => calls.push("ask");
       var J = (x) => (x === undefined ? "-" : JSON.stringify(x));
@@ -543,6 +543,11 @@ ok("④ IPC:綁卡即購買只收自家頁面;記號拿到這支終態才清,並
     const H = mk([{ mark: { id: 7, at: 0 }, res: res({ status: "failed", amount_twd: null }) }], { id: 7, purchased: false });
     H.LIB.bbWait = { id: 7, q: { kind: "planpay", plan: true, free: false }, until: 1e9 }; await H.libBbPoll();
     ok("⑥ 方案單刷卡失敗(結果不帶 plan,靠等待的那張單認)→ lib_bindplan:failed", H.events.join() === "lib_bindplan:failed", H.events.join()); }
+  // Wei 11-23(字太多):訪客看要資料的免費策略,〔登入並使用〕下面不再寫試用與方案價那句;訊息槽空著就藏起來,不留間距
+  { const g = paintRun({ s: { price: 0, blave_data: "required" }, ctx: { running: false, env: "local", signedIn: false, cloud: null, pending: null, noNew: null, buying: null, installedName: null, bindWait: null, bbOk: null, planMo: true, planTwd: 1440, planBlock: null, dataAccess: null, why: null, noCard: null, bal: null } });
+    ok("⑦ 訪客〔登入並使用〕:鈕下沒有任何一行(訊息槽隱藏)", g.btn === STR.zh["lib.bb.loginUse"] && g.lines.length === 0, J(g));
+    ok("⑦ lib.bb.loginUseNote 與只為它存在的 libLoginUseVars 全部拿掉(library.js、兩張 .po、strings.js)", !/loginUseNote|libLoginUseVars/.test(src)
+      && !/lib\.bb\.loginUseNote/.test(read(path.join(SHELL, "i18n", "zh.po")) + read(path.join(SHELL, "i18n", "en.po")) + read(path.join(R, "strings.js")))); }
   console.log(red ? `\n${red} 條沒過` : "\n全部通過");
   process.exit(red ? 1 : 0);
 })();

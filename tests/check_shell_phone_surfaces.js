@@ -271,15 +271,15 @@ const t = (k, v) => (v ? k + JSON.stringify(v) : TPL[k] || k);
   ok("剛配對 ✕ 之後主行程又推來還帶舊那一批的狀態:不閃回;下一批照出", n8.box.hidden === false && n8.shown.join() === NOTE.id + ",devN0000002:1730530001000" && n8.closed.join() === NOTE.id);
   { const r = await nrun(PHN(NOTE), async (S, d) => { S.phNoticePaint(); await tick(); S.x(); S.phNoticePaint(); d.box.flashAfter = d.box.hidden; });
     ok("剛配對 ✕ 後同一批再推來:那一列維持收起", r.box.flashAfter === true); }
-  ok("剛配對:〔到網站撤銷〕在這一列裡熱區上緣只到 −3(折行不蓋前一行),設定頁那顆不動;✕ 在 #ws-update 出現時上緣收到 −4;zh 句子 text-wrap: pretty",
+  ok("剛配對:〔到網站撤銷〕在這一列裡熱區上緣只到 −3(折行不蓋前一行),設定頁那顆不動;#ws-update 拿掉(0.1.60)後沒有上面那一格要讓,✕ 熱區照 −8;zh 句子 text-wrap: pretty",
     /\.ph-notice \.ph-web::before \{ inset: -3px -4px -12px; \}/.test(css) && /\.ph-web::before \{ inset: -15px -4px; \}/.test(css)
-    && /\.ws-update:not\(\[hidden\]\) \+ \.ph-notice \.ph-notice-x::before \{ top: -4px; \}/.test(css) && /\.ph-notice \.fault-body:lang\(zh\) \{ text-wrap: pretty; \}/.test(css));
+    && !/ws-update/.test(css) && /\.ph-notice \.fault-body:lang\(zh\) \{ text-wrap: pretty; \}/.test(css));
   const wrap = html.slice(html.indexOf('<div class="chat-input-wrap">'), html.indexOf('<div class="chat-input">'));
-  ok("剛配對:位置在聊天欄輸入框上方、#ws-update 下一層自己一列;role=status、字不掛 data-i18n、✕ 讀屏名稱沿用 set.close、16 的 x 圖示",
-    wrap.indexOf('id="ws-update"') >= 0 && wrap.indexOf('id="ph-notice"') > wrap.indexOf('id="ws-update"') && /<div class="ph-notice" id="ph-notice" role="status" hidden>\s*<span class="fault-mark" aria-hidden="true"><\/span>\s*<div class="fault-body" id="ph-notice-t"><\/div>\s*<button type="button" class="ph-notice-x" id="ph-notice-x" data-i18n-aria="set\.close"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"\/><\/svg><\/button>/.test(wrap));
-  ok("剛配對:樣子跟回合失敗卡同一組(13px、ink-2、行高 1.6、紅記號、不加框);✕ 視覺 28 熱區 44、ink-3;離輸入框 8、離 #ws-update 4",
+  ok("剛配對:位置在聊天欄輸入框上方、輸入列裡第一列(#ws-update 0.1.60 拿掉);role=status、字不掛 data-i18n、✕ 讀屏名稱沿用 set.close、16 的 x 圖示",
+    !/ws-update/.test(html) && /^<div class="chat-input-wrap">\s*<!--[\s\S]*?-->\s*<div class="ph-notice"/.test(wrap) && /<div class="ph-notice" id="ph-notice" role="status" hidden>\s*<span class="fault-mark" aria-hidden="true"><\/span>\s*<div class="fault-body" id="ph-notice-t"><\/div>\s*<button type="button" class="ph-notice-x" id="ph-notice-x" data-i18n-aria="set\.close"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"\/><\/svg><\/button>/.test(wrap));
+  ok("剛配對:樣子跟回合失敗卡同一組(13px、ink-2、行高 1.6、紅記號、不加框);✕ 視覺 28 熱區 44、ink-3;離輸入框 8(#ws-update 拿掉,不再有離它 4 的那條)",
     /\.msg\.fault, \.ph-notice \{ display: flex; align-items: flex-start; gap: var\(--space-8\); font-size: 13px; line-height: 1\.6; color: var\(--ink-2\); \}/.test(css)
-    && /\.ph-notice \{ margin: 0 0 var\(--space-8\); \}/.test(css) && /\.ws-update:not\(\[hidden\]\) \+ \.ph-notice \{ margin-top: var\(--space-4\); \}/.test(css)
+    && /\.ph-notice \{ margin: 0 0 var\(--space-8\); \}/.test(css) && !/\+ \.ph-notice \{ margin-top/.test(css)
     && /\.ph-notice-x \{[^}]*width: 28px; height: 28px;[^}]*color: var\(--ink-3\);/.test(css) && /\.ph-notice-x::before \{ content: ""; position: absolute; inset: -8px; \}/.test(css) && !/\.ph-notice[^{]*\{[^}]*(border:|background: var\(--color-red|color: var\(--color-red)/.test(css));
   ok("剛配對:字照設計 §7.3 逐字(zh / en;en 不分單複數)", po(0, "ph.newPhone") === "{name} 剛配對，現在能叫這台電腦做事。" && po(0, "ph.newPhones") === "{name} 和另外 {more} 支手機剛配對，現在能叫這台電腦做事。"
     && po(1, "ph.newPhone") === "{name} was just paired and can now control this computer." && po(1, "ph.newPhones") === "{name} and {more} more were just paired and can now control this computer." && po(0, "ph.revokeWeb") === null);

@@ -142,7 +142,7 @@
   transition: color var(--motion-fast) var(--ease-standard);
 }
 .btn-quiet:hover { color: var(--ink); }
-/* 停用:同 .ws-update / .rp-tab 的灰階退場(會停用的文字鈕:關於的「檢查更新」「重新啟動以完成更新」;
+/* 停用:同 .rp-tab 的灰階退場(會停用的文字鈕:關於的「檢查更新」「重新啟動以完成更新」;
    資料來源的 ✕ 有自己的 .src-rm:disabled,權重較高、不受影響) */
 .btn-quiet:disabled, .btn-quiet:disabled:hover { color: var(--ink-disabled); cursor: not-allowed; text-decoration: none; }
 .cn-rows { margin-top: var(--space-12); }
@@ -279,23 +279,9 @@
 .msg.ai th, .msg.ai td { padding: var(--space-8) var(--space-12); text-align: left; border-bottom: 1px solid var(--border-hairline); font-variant-numeric: tabular-nums; overflow-wrap: normal; }
 .msg.ai th { color: var(--ink-3); font-weight: 600; }
 .chat-input-wrap { flex: none; padding: var(--space-16) var(--space-24) var(--space-24); }
-/* 更新那一格(重新啟動以完成更新 / 更新中…):逐條照網頁 web/.../workspace.css 的 .ws-update——輸入列右上方靠右一行 12px 安靜文字連結
-   (無框無底無點、不用橘),熱區靠 min-height 44px,hover 灰字轉亮 + 底線,停用灰階退場、原因在 title */
-.ws-update { display: flex; align-items: center; width: fit-content; margin-left: auto; min-height: 44px;
-  padding: 0 var(--space-4); font-size: 12px; line-height: 1.5; color: var(--ink-2); text-underline-offset: 3px;
-  transition: color var(--motion-fast) var(--ease-standard); }
-.ws-update[hidden] { display: none; }
 /* 回合中按 Enter 的那一行(#71):12px --ink-2,在輸入框正上方;空的時候不佔位 */
 .ta-wait { margin: 0 0 var(--space-6); font-size: 12px; line-height: 1.5; color: var(--ink-2); }
 .ta-wait:empty { display: none; }
-.ws-update:hover { color: var(--ink); }
-.ws-update:hover span { text-decoration: underline; }   /* flex item 不吃容器的 text-decoration 傳播:畫在 span 上 */
-.ws-update:disabled, .ws-update:disabled:hover { color: var(--ink-disabled); cursor: not-allowed; }
-.ws-update:disabled:hover span { text-decoration: none; }
-/* 「更新中…」(雲端主機正在換檔):不可點的狀態字,沒有時鐘、沒有百分比。不是停用,不退成停用灰 */
-.ws-update.is-status { cursor: default; }
-.ws-update.is-status:hover { color: var(--ink-2); }
-.ws-update.is-status:hover span { text-decoration: none; }
 .chat-input {
   /* 直向:上 textarea、下工具列。外框、半徑、內距都不變,總高約 +36px。 */
   display: flex; flex-direction: column; align-items: stretch; gap: var(--space-4);
@@ -742,6 +728,7 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
 .rp-ho-acts .btn-quiet { font-size: inherit; min-height: 44px; }
 .rp-ho-acts .btn-quiet::before { inset: auto; left: 50%; top: 50%; width: max(44px, calc(100% + 8px)); height: 44px; transform: translate(-50%, -50%); }
 .rp-ho-note .spin16 { vertical-align: -3px; margin-right: var(--space-8); }
+.rp-ho-note.ink { color: var(--ink); }   /* 剛加進策略組合、還沒開始下單那句:給錯過的人看,升正文墨色(先例:自動下單頁重開那條原因行) */
 /* 並排比較(hoCmpTable;spec §4):hidden 容器,〔看兩邊數字〕aria-controls 開合。數字 mono 靠右、不上紅綠;資料來源那格可折行 */
 .rp-ho-cmp { margin: var(--space-4) 0 0; overflow-x: auto; }
 .ho-cmp { border-collapse: collapse; font-size: 12px; }
@@ -1439,6 +1426,10 @@ html.ws-sc .side-rail { flex: 1 1 auto; }
 .cf-opt.off, .cf-opt.off input { cursor: not-allowed; }
 .cf-opt.off, .cf-opt.off:hover, .cf-opt.off:has(input:checked) { background: var(--bg-body); }   /* 鎖住:底一律灰(選中的留框),同網頁 .is-off */
 .cf-opt.off .cf-opt-t, .cf-opt.off .cf-opt-d { color: var(--ink-3); }
+/* 補齊等第一個訊號(trAskStart sigWhy):那一句本身就是停用原因,留 --ink-2;Loader inline 階 16/2,框 --border-frame、轉動段 --ink-2 */
+.cf-opt.off .cf-opt-d .cf-wait { color: var(--ink-2); }
+.cf-opt-d .cf-wait .spin16 { border-color: var(--border-frame); border-top-color: var(--ink-2); margin-right: var(--space-6); vertical-align: -3px; }
+.cf-opt-d .cf-wait .btn-quiet { font-size: inherit; }
 .cf-opt.off input { border-color: var(--border-hairline); background: var(--surface-card); }
 /* 鎖住、已選:底退成卡面色,中間的點要換成看得到的灰(亮色下 --control-fill-text 是白點配白底;同網頁鎖住態) */
 .cf-opt.off input:checked::after { background: var(--color-greyMedium); }
@@ -1687,8 +1678,6 @@ html.ws-sc .side-rail { flex: 1 1 auto; }
 .cs-item[aria-disabled="true"] { cursor: not-allowed; }
 .cs-item[aria-disabled="true"] .cs-name { color: var(--ink-disabled); }
 .btn-quiet[aria-disabled="true"], .btn-quiet[aria-disabled="true"]:hover { color: var(--ink-disabled); cursor: not-allowed; text-decoration: none; }
-.ws-update[aria-disabled="true"]:not(.is-status), .ws-update[aria-disabled="true"]:not(.is-status):hover { color: var(--ink-disabled); cursor: not-allowed; }
-.ws-update[aria-disabled="true"]:hover span { text-decoration: none; }
 .busy-why { margin: 0; font-size: 12px; line-height: 1.5; color: var(--ink-2); }
 .busy-why[hidden] { display: none; }
 /* 補救連結(停止／查看):主墨＋greyDark 底線(同 mockup .lk、網頁同一顆),跟灰色的原因句分得開;借用別人原因行(版本、轉出、掃描)時同一個樣子 */
@@ -1970,10 +1959,9 @@ html[data-platform="win32"] .flag-pop.sg-pick { width: calc(224px + var(--scroll
 .msg.fault.two-quiet .fault-act { column-gap: var(--space-16); }
 .fault-sub { margin-top: var(--space-8); font-size: 12px; line-height: 1.5; color: var(--ink-3); }
 /* 輸入框上方那一列「剛配對」(設計 account-security-mails §7.3):回合失敗卡同一組,加右上 ✕(16 圖示、視覺 28、熱區 44)。
-   左右對齊輸入框(同在 .chat-input-wrap 裡),離輸入框 8、離上面的 #ws-update 4 */
+   左右對齊輸入框(同在 .chat-input-wrap 裡),離輸入框 8 */
 .ph-notice { margin: 0 0 var(--space-8); }
 .ph-notice[hidden] { display: none; }
-.ws-update:not([hidden]) + .ph-notice { margin-top: var(--space-4); }
 .ph-notice .fault-body { flex: 1; }
 .ph-notice .fault-body:lang(zh) { text-wrap: pretty; }   /* 「做／事。」別單字落行 */
 /* 〔到網站撤銷〕折到第二行時熱區不往上蓋住句子(設定頁那顆的 −15 是給 44 高的列);下緣讓 .chat-input 蓋過去 */
@@ -1981,7 +1969,6 @@ html[data-platform="win32"] .flag-pop.sg-pick { width: calc(224px + var(--scroll
 .ph-notice-x { flex: none; position: relative; width: 28px; height: 28px; margin: -4px -6px 0 0; display: flex; align-items: center; justify-content: center;
   border-radius: var(--radius-sm); color: var(--ink-3); transition: color var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard); }
 .ph-notice-x::before { content: ""; position: absolute; inset: -8px; }
-.ws-update:not([hidden]) + .ph-notice .ph-notice-x::before { top: -4px; }   /* 不壓到上面〔重新啟動以完成更新〕的熱區 */
 .ph-notice-x:hover { background: var(--surface-muted); color: var(--ink); }
 .fault-sub code, .cn-hint code { font-family: var(--font-mono); color: var(--ink-2); }
 /* disabled 原本完全沒有樣式:鈕鎖住之後外觀不變,看不出按下去有沒有生效(設計師 M7) */

@@ -1642,7 +1642,7 @@ msgid "tr.autoOn"
 msgstr "自動下單執行中"
 
 msgid "tr.presAwake"
-msgstr "統一有 {n} 口在倉，接著電源時電腦保持清醒"
+msgstr "統一有 {n} 口在倉"
 
 msgid "tr.halted"
 msgstr "已暫停"
@@ -2054,7 +2054,7 @@ msgid "set.awake.leadOff"
 msgstr "電腦睡著時，自動下單停止。"
 
 msgid "set.awake.leadOffWin"
-msgstr "電腦睡著時，自動下單停止。統一期貨有部位時，接著電源的電腦仍會保持清醒。"
+msgstr "電腦睡著時，自動下單停止。統一、群益有部位時，電腦仍不會自動睡眠。"
 
 # {broker} = 綁的那家台灣期貨券商全名(cap.venue / pres.venue)
 msgid "tr.quote.live"
@@ -3108,6 +3108,10 @@ msgstr "交易所拒絕了這筆單，打開 Blave 看原因"
 # 這台電腦｜雲端(線 B 第一刀;字以 blave-canon designer/strings-desktop-local-and-cloud-2026-09.md 為準)
 msgid "env.aria"
 msgstr "環境"
+
+# 中欄頂列首頁鈕的可及名稱(只給 aria-label;不加 tooltip,spec home-button-0160 §4)
+msgid "nav.home"
+msgstr "首頁"
 
 msgid "env.local"
 msgstr "這台電腦"
@@ -4918,9 +4922,6 @@ msgstr "開始更新"
 msgid "up.restart"
 msgstr "重新啟動以完成更新"
 
-msgid "up.applying"
-msgstr "更新中…"
-
 # 按了「重新啟動以完成更新」並確認、主行程正在收工 / 安裝(main.js restarting):聊天那一格、關於列、選單列那一行都換這句,停用(設計複驗 0.1.10)
 msgid "up.restarting"
 msgstr "重新啟動中…"
@@ -5820,9 +5821,6 @@ msgstr "登入並使用"
 
 msgid "lib.bb.loginInstall"
 msgstr "登入並安裝"
-
-msgid "lib.bb.loginUseNote"
-msgstr "方案每 30 天 {p}，新用戶可試用 {t} 天。"
 
 msgid "lib.bb.renewNote"
 msgstr "之後每 30 天 {p}，可隨時取消。"
@@ -12226,8 +12224,16 @@ msgstr "{side}{sym} {n}"
 msgid "tr.opt.catchNeedRead"
 msgstr "讀到帳戶後才能補齊。"
 
-msgid "tr.opt.catchNeedSignal"
-msgstr "策略算完訊號後才能補齊。"
+# 啟動框〔補齊部位〕讀到帳、訊號還沒算出來:框開著時 2 秒讀一次、最多 1 分鐘(前面有轉圈;spec add-then-start-0160 補記)
+msgid "tr.opt.catchComputing"
+msgstr "正在算訊號…"
+
+# 等了 1 分鐘還沒算出來:後面接〔重新整理〕(tr.opt.catchRetry)。原因待後端給,先只寫現況
+msgid "tr.opt.catchLate"
+msgstr "等了 1 分鐘還沒算出訊號。"
+
+msgid "tr.opt.catchRetry"
+msgstr "重新整理"
 
 msgid "p3.set.used"
 msgstr "已用 {p}%"
@@ -12257,6 +12263,18 @@ msgstr "開雲端主機會結束試用。"
 # 策略頁〔自動下單〕金額框、這支還沒在策略組合裡、存了會送單時的標題＝主鈕(不送單時用 po.add「加到策略組合」;canon confirm-modal)
 msgid "sp.cf.addFire"
 msgstr "加入並下單"
+
+# 策略頁金額框、這支還沒在策略組合裡、已連接且沒在跑也沒暫停時的標題＝主鈕:存完接著開啟動框(spec add-then-start-0160 A-1)
+msgid "sp.cf.addStart"
+msgstr "加入並啟動下單"
+
+# 策略頁說明行:這次從金額框加進來、還沒開始下單(取消了接著開的啟動框、或沒開成);開始下單或離開這支就收(A-3)
+msgid "sp.addedIdle"
+msgstr "已加進策略組合，還沒開始下單。"
+
+# 同上,下單暫停中
+msgid "sp.addedHalted"
+msgstr "已加進策略組合，下單暫停中。"
 
 # 策略頁金額框輸入格下:這支目前版的樣本外效率落在門檻下才出(沒跑過、過時不出)。只講事實、不寫建議(canon confirm-modal)
 msgid "sp.oosFail"

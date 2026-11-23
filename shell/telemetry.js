@@ -425,7 +425,12 @@ const EVENTS = {
     // 0.1.60 送上雲端沒主機時開通卡的〔留在這台電腦〕(renderer/trade.js;spec p3-0160 R5-5):取消待送、切回本機
     "cloud_stay_local",
     // 0.1.60 Mac 連接框台灣期貨段的〔改用雲端主機〕(renderer/trade.js;QA 0158 P3-10):關連接框、開加購框預選 Windows
-    "cx_mac_tw_cloud"] },
+    "cx_mac_tw_cloud",
+    // 0.1.60 策略頁金額框「加入並啟動下單」存完接著開出啟動框(renderer/portfolio.js spGoCheck;spec add-then-start-0160,api 白名單要先上)。
+    // 這種開法不再記 sp_start_opened(那個只記按頁首鈕開的)
+    "sp_start_chained",
+    // 0.1.60 中欄頂列首頁鈕(renderer/trade.js envGoHome;spec home-button-0160 §5,api 白名單要先上):真的換了頁才送,已在歡迎頁按不送
+    "top_home"] },
 };
 // `claude auth status` 的 authMethod 原值 → cli_auth 的 how(隨包 CLI 2.1.281 的 auth status 只會給這六個)。唯一的一份:
 // 主行程 detectAgents 算好放進 out.claude.how,畫面與主行程都讀那一欄。null／缺 = none,表外 = other

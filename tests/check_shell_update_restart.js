@@ -355,7 +355,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const po = { zh: fs.readFileSync(path.join(SHELL, "i18n", "zh.po"), "utf8"), en: fs.readFileSync(path.join(SHELL, "i18n", "en.po"), "utf8") };
   const W = { zh: { "tm.updateBody": "重新啟動後，這台電腦不會再下單，也不會平倉。部位留在{venue}，重開後要按「啟動下單」。", "tm.move.title": "把 Blave 移到「應用程式」資料夾？",
       "tm.move.body": "在這裡 Blave 無法自動更新。移過去後會自動重新開啟。", "tm.move.go": "移到應用程式", "tm.move.no": "不要移" },
-    en: { "tm.updateBody": "After the restart, this computer places no more orders and closes no positions. Positions stay at {venue}, and it won't trade again until you press Start trading.",
+    en: { "tm.updateBody": "After the restart, this computer places no more orders and closes no positions. Positions stay at {venue}, and it won't trade again until you press Start Trading.",
       "tm.move.title": "Move Blave to the Applications folder?", "tm.move.body": "Blave can’t update itself from here. It reopens after the move.", "tm.move.go": "Move to Applications", "tm.move.no": "Don’t Move" } };
   t("五個 key 兩語逐字在 .po(spec §1 / §4;tm.updateBody 0.1.36 改成兩句、去分號)", ["zh", "en"].every((l) => !/[；;]/.test(W[l]["tm.updateBody"])) && ["zh", "en"].every((l) => Object.keys(W[l]).every((k) => po[l].includes('msgid "' + k + '"\nmsgstr "' + W[l][k] + '"\n'))));
   const trSrc = fs.readFileSync(path.join(SHELL, "renderer", "trade.js"), "utf8");

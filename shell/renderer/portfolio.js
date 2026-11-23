@@ -226,23 +226,33 @@ function spView(cloud) {
        「設定」做成連結(到自動下單 › 設定分頁)。金鑰被拒排在鎖住／沒配之前(同 web:不會自己過去,先處理);讀帳失敗排在連接中之後 */
     const failStop = hasAcct && trFailStopped(state, r);
     const usable = state === "unknown" ? !!(S.st && S.st.alive) : cloud ? envCloudKind(S.st) === "running" : trChannelUp(S.st);
-    const v = spHead({ noBt: !d.stats, typeB: typeof xpIsTypeB === "function" && xpIsTypeB(d), market, unread, locked: !!(row && row.locked), configured,
+    const x = { noBt: !d.stats, typeB: typeof xpIsTypeB === "function" && xpIsTypeB(d), market, unread, locked: !!(row && row.locked), configured,
       setup, presContinue: setup && S.env === "local" && (ids[0] === "president" || CAPL_LOCAL_ON), connecting: spCxOn(S, now), hasAcct, routeDirty,
       failKey: failStop && trKeyBad(S.env), failRead: failStop, failNote: failStop ? { key: "cx.failStopped", go: "set" } : null,
       unsaved: routeDirty && trUnsaved(), zvOff: !!gv.zv.off, firing: trCfFiring(S.st, S.pending) && hasAcct, goKey: gv.key, goOff: !usable,
-      offNote: gv.zv.off ? spOffNote(S, name, r || {}) : null, goNote: !gv.zv.off && gv.zv.reason ? { key: gv.zv.reason, vars: gv.zv.book ? { n: trBookQty(gv.zv.book) } : null } : null });
+      offNote: gv.zv.off ? spOffNote(S, name, r || {}) : null, goNote: !gv.zv.off && gv.zv.reason ? { key: gv.zv.reason, vars: gv.zv.book ? { n: trBookQty(gv.zv.book) } : null } : null };
+    const v = spHead(x);
+    /* 金額框主鈕寫不寫「加入並啟動下單」(spec add-then-start-0160 A-1):假設這支已經配了,頁頭會落在可按的〔啟動下單〕、而且不是暫停中。
+       同一張表判,不另寫一套;存完接不接啟動框只看這個(spAfterSave) */
+    if (v.st === "add") { const h = spHead(Object.assign({}, x, { configured: true }));
+      v.addStart = h.st === "start" && !!h.btn && !h.btn.off && h.btn.key === "tr.start" && trExecState(S.st) !== "halted"; }
     if (v.st === "route" && S.spErr) v.note = { text: S.spErr, err: true };   // 〔儲存〕直送失敗:沒有框可重開,原因換在這一行(錯誤色,同框裡那句)
     if (S.spSaved && S.spSaved.name === name && now - S.spSaved.at < SP_SAVED_MS) v.saved = true;   // spSavedPaint:另一段畫,不蓋掉說明句
+    /* 這次從金額框加進來、還沒開始下單(A-3):頁頭在〔啟動下單〕那一態才講;原因句(goNote)優先、啟動框開著時不講(框關掉才是給錯過的人看的)。
+       換到別支或開始下單就收(離開策略頁在 poAddSync 收) */
+    const ad = S.spAdded;
+    if (ad && (ad.name !== name || v.st === "running")) S.spAdded = null;
+    else if (ad && ad.show && !v.note && v.st === "start" && $("del-scrim").hidden) v.note = { key: trExecState(S.st) === "halted" ? "sp.addedHalted" : "sp.addedIdle", ink: true };
     return Object.assign(v, { name, env: S.env, market, paper: v.mark ? trCfPaperOnly() : null });
   });
 }
 // 說明下一行(#rp-ho-note,同送上雲端回報那一格):整句原因;句子裡的「策略組合」做成文字鈕(同自動下單頁的原因行)
 function spPaintNote(note) {
   const n = $("rp-ho-note"); if (!n) return;
-  n.textContent = ""; n.hidden = !note; n.classList.remove("err"); if (!note) return;
-  n.classList.toggle("err", !!note.err);
-  // 句子裡的「策略組合」做成連結;sp.unsaved 不做(旁邊就是〔到策略組合〕,同一個地方不給兩個入口)
-  const text = note.text != null ? note.text : t(note.key, note.vars || undefined), word = t("po.nav"), at = note.text != null || note.key === "sp.unsaved" ? -1 : text.toLowerCase().indexOf(word.toLowerCase());
+  n.textContent = ""; n.hidden = !note; n.classList.remove("err", "ink"); if (!note) return;
+  n.classList.toggle("err", !!note.err); n.classList.toggle("ink", !!note.ink);
+  // 句子裡的「策略組合」做成連結;sp.unsaved 不做(旁邊就是〔到策略組合〕,同一個地方不給兩個入口);剛加進去那句(ink)講現況,不給入口
+  const text = note.text != null ? note.text : t(note.key, note.vars || undefined), word = t("po.nav"), at = note.text != null || note.key === "sp.unsaved" || note.ink ? -1 : text.toLowerCase().indexOf(word.toLowerCase());
   // fail 態:句子裡的「設定」做成連結,到自動下單 › 設定分頁(帳戶與金鑰在那裡)
   if (note.go === "set") { const w = t("tr.tab.set"), i = text.indexOf(w);
     if (i >= 0) { const g = trEl("button", "btn-quiet", w); g.type = "button"; g.addEventListener("click", () => trOpen("set")); n.append(text.slice(0, i), g, text.slice(i + w.length)); return; } }
@@ -290,8 +300,8 @@ async function spAmt(S, v, b) {
   if (now.st !== "add") return;
   const name = v.name, tw = v.market === "tw", base = trBase() || {}, x = TR.list.find((y) => y.name === name) || {}, cloud = S.env === "cloud", head0 = spHeadSig(now);
   trCfOpen({ stored: base, opener: b, from: "sp", track: tw ? "po_add_saved" : "sp_amt_saved", oosFail: spOosFail(cloud ? RPC : RP, name),
-    input: { name, initial: Number(base[name]) > 0 ? trFmt(Number(base[name])) : "", kind: trRowTxfNew(name) ? "lots" : "amount", oneLeg: !tw && !x.portfolio, tw },
-    toPo: tw ? null : (amt) => spToPo(S, name, amt), onSaved: () => { spAfterSave(S, name, v.market); spSavedPaint(S, name, head0); } });
+    input: { name, initial: Number(base[name]) > 0 ? trFmt(Number(base[name])) : "", kind: trRowTxfNew(name) ? "lots" : "amount", oneLeg: !tw && !x.portfolio, tw, addStart: !!now.addStart },
+    toPo: tw ? null : (amt) => spToPo(S, name, amt), onSaved: (_s, _st, chain) => { spAfterSave(S, name, v.market, chain); spSavedPaint(S, name, head0); } });
   if (TR_CF.cur && TR_CF.cur.ctx === delCtx && !$("del-scrim").hidden) trackFeature(tw ? "po_add" : "sp_auto_open");
 }
 // 頁首動作槽「看起來是哪一態」:存完跟存前一樣才需要另外講「已儲存」
@@ -316,9 +326,11 @@ async function spToPo(S, name, amt) {
   await poAdd(S, name, false);
 }
 /* 存成功之後(spec §2、§4):統一開通中 → 自動下單頁(主鈕是「繼續」);沒綁帳戶 → 台股到策略組合看目標持股、其他接連接框
-   (那一刻重讀 venue;連接中不再開一個要他再填一次金鑰);綁模擬、沒在跑 → 路由齊了就開啟動框;真錢停在〔啟動下單〕由用戶按 */
-function spAfterSave(S, name, market) {
+   (那一刻重讀 venue;連接中不再開一個要他再填一次金鑰)。chain = 按下去的主鈕寫的是「加入並啟動下單」(trCfOpen 回報,spec add-then-start-0160 A-2):
+   模擬、真錢都接著開啟動框(spGoCheck 的守門照舊);鈕上沒講就不開 */
+function spAfterSave(S, name, market, chain) {
   if (S !== TR_BAGS[ENV.cur]) return;
+  S.spAdded = { name, show: !chain };
   trWith(S, () => {
     const r = trReport(), now = Date.now();
     if (envHeadState(S.st, now) === "setup") { trOpen(); return; }
@@ -327,9 +339,12 @@ function spAfterSave(S, name, market) {
       if (!spCxOn(S, now)) spCxOpen(S, $("rp-go"), name);
       return;
     }
-    if (trCfPaperOnly() && !trCfFiring(S.st, S.pending)) { S.spGo = { name, at: now }; spGoCheck(S); }
+    if (chain && !trCfFiring(S.st, S.pending)) { S.spGo = { name, at: now, chain: true }; spGoCheck(S); }
+    else S.spAdded.show = true;
   });
 }
+// 啟動框關掉(啟動框的 onCancel,trade.js):剛加進去那句要當場出,不等下一輪輪詢
+function spStartClosed() { if (typeof hoPaint === "function" && !$("rp").hidden) hoPaint(); }
 // 接連接框:只有這一刻沒綁任何帳戶才開(這條路不換綁,spec §7-1)。連接框送出那一下開始「連接中」,爆發輪詢縮短等待
 function spCxOpen(S, b, name) {
   if (S !== TR_BAGS[ENV.cur] || trWith(S, () => trVenueIds(trReport()).length > 0)) return;
@@ -362,16 +377,19 @@ function spCxCheck() {
    在跑了就不開(記號出來就好);等不到(同連接中的上限)就放掉 */
 function spGoCheck(S) {
   const g = S.spGo; if (!g) return;
-  if (Date.now() - g.at >= TR_CX_SAVED_MS) { S.spGo = null; return; }
+  // 放掉(等太久、在跑、暫停中)或開過了:從金額框接過來的那一支,說明行改講「還沒開始下單」(A-3)
+  const drop = () => { S.spGo = null; if (g.chain && S.spAdded && S.spAdded.name === g.name) S.spAdded.show = true; };
+  if (Date.now() - g.at >= TR_CX_SAVED_MS) { drop(); return; }
   if (S !== TR_BAGS[ENV.cur] || $("rp").hidden || !$("del-scrim").hidden || !$("cx-scrim").hidden) return;
   const v = spView(S.env === "cloud"); if (!v || v.name !== g.name) return;
-  if (v.st === "running") { S.spGo = null; return; }
+  if (v.st === "running") { drop(); return; }
   // 暫停中(HALT)不自動開:暫停是用戶自己的決定,不替他再問一次要不要恢復;〔啟動下單〕就在原位(設計稽核 sp-autotrade §4-2,Wei 照建議)。
   // 首綁不會觸發 HALT(runtime 只有換綁才 trip_halt),正常的模擬首綁照開
-  if (trWith(S, () => trExecState(S.st)) === "halted") { S.spGo = null; return; }
+  if (trWith(S, () => trExecState(S.st)) === "halted") { drop(); return; }
   if (v.st !== "start" || !v.btn || v.btn.off || v.btn.key !== "tr.start") return;
-  S.spGo = null;
-  if (trWith(S, () => trGoClick($("rp-go"))) === "start") trackFeature("sp_start_opened");
+  drop();
+  // 從金額框接著開的另記 sp_start_chained;sp_start_opened 只記按頁首鈕開的(spec add-then-start-0160 埋點)
+  if (trWith(S, () => trGoClick($("rp-go"))) === "start") trackFeature(g.chain ? "sp_start_chained" : "sp_start_opened");
 }
 /* 按「加到策略組合」:只建草稿(同選擇策略框按確定,psApply)——這支勾進表、金額空著、游標在金額格,**不送任何指令寫設定**;
    不存就離開 = 組合沒變。唯一副作用:這支沒有最新那一根的預覽就請機器背景重算(stats_refresh,F2;同碼不定版),儲存框要它換算股數。
@@ -380,7 +398,7 @@ function spGoCheck(S) {
 // 策略頁開著時,頁頭跟著輪詢的狀態換(trPoll 每輪叫;只有 spView 的結果變了才重畫頁首那一排)。這台電腦的清單沒載入過就先讀一次(鎖不鎖看它)
 let PO_ADD_SIG = null;
 function poAddSync() {
-  if ($("rp").hidden) { PO_ADD_SIG = null; return; }
+  if ($("rp").hidden) { PO_ADD_SIG = null; TR_BAGS.local.spAdded = null; TR_BAGS.cloud.spAdded = null; return; }
   const cloud = ENV.cur === "cloud", S = TR_BAGS[cloud ? "cloud" : "local"], B = cloud ? RPC : RP;
   if (!cloud && !S.listLoaded && !S.spListing) { S.spListing = true; trLoadStrategies(S).then(() => { S.listLoaded = true; }, () => {}).finally(() => { S.spListing = false; }); }
   const sig = JSON.stringify([cloud, LANG, B && B.name, spView(cloud)]);

@@ -97,6 +97,69 @@ if (!process.versions.electron) {
   const SP_EV = ["sp_auto_open", "sp_amt_saved", "sp_cx_opened", "sp_start_opened", "sp_cloud_icon", "sp_pull_icon"];
   ok("② 埋點六個 sp_* 都有送出點、名字 ≤16", SP_EV.every((n) => new RegExp('trackFeature\\([^;\\n]*"' + n + '"').test(tr + po + ho) && n.length <= 16), J(SP_EV.filter((n) => !new RegExp('trackFeature\\([^;\\n]*"' + n + '"').test(tr + po + ho))));
 
+  // ── ②b 0.1.60「加入並啟動下單」(spec add-then-start-0160 A):金額框存完接不接啟動框只看鈕上寫了沒;接的那一條只能走 trGoClick(啟動框),
+  //      不直送任何指令;取消之後說明行講「已加進策略組合，還沒開始下單。」
+  {
+    const sv = fnOf(po, "spView"), cfo = fnOf(tr, "trCfOpen");
+    ok("②b addStart 用 spHead 同一張表判:假設已配會落在可按的〔啟動下單〕、而且不是暫停中(不另寫一套)",
+      /if \(v\.st === "add"\) \{ const h = spHead\(Object\.assign\(\{\}, x, \{ configured: true \}\)\);\n\s*v\.addStart = h\.st === "start" && !!h\.btn && !h\.btn\.off && h\.btn\.key === "tr\.start" && trExecState\(S\.st\) !== "halted"; \}/.test(sv));
+    // 用真的 spHead 跑一次 A-1 那張表:這支沒配時,換成已配會是哪一態
+    const AS = (o) => { if (typeof ctx.spHead !== "function") return null; const h = ctx.spHead(Object.assign({ market: "crypto", configured: true, hasAcct: true, goKey: "tr.start" }, o)); return h.st === "start" && !!h.btn && !h.btn.off && h.btn.key === "tr.start"; };
+    ok("②b A-1:已連接沒在跑 → 加入並啟動下單;在跑、沒帳戶、通道不通、要確認帳戶、統一開通中、綁的那家下不了 → 不是",
+      AS({}) === true && AS({ firing: true }) === false && AS({ hasAcct: false }) === false && AS({ goOff: true }) === false && AS({ goKey: "tr.acct.btn" }) === false
+      && AS({ setup: true, presContinue: true }) === false && AS({ zvOff: true }) === false && AS({ connecting: true }) === false);
+    ok("②b 金額框標題＝主鈕:沒在組合、不送單、addStart → sp.cf.addStart;送單 → sp.cf.addFire;其餘 po.add",
+      /const addKey = \(fire\) => \(fire \? "sp\.cf\.addFire" : inp && inp\.addStart \? "sp\.cf\.addStart" : "po\.add"\);/.test(cfo)
+      && /const okText = \(fire\) => t\(addNew \? addKey\(fire\) : fire \? "tr\.cf\.titleFire" : "tr\.save"\);/.test(cfo) && /const title = t\(addNew \? addKey\(fire\) : fire/.test(cfo));
+    ok("②b 存完回報 chain = 按下去那一刻鈕上寫的是「加入並啟動下單」(沒在組合、沒送單、addStart)",
+      /opt\.onSaved\(sending, stored, addNew && !firedAt && !!inp\.addStart\);/.test(cfo) && /addStart: !!now\.addStart \}/.test(fnOf(po, "spAmt"))
+      && /onSaved: \(_s, _st, chain\) => \{ spAfterSave\(S, name, v\.market, chain\);/.test(fnOf(po, "spAmt")));
+    const chainSrc = fnOf(po, "spAfterSave") + fnOf(po, "spGoCheck") + fnOf(po, "spStartClosed");
+    ok("②b 真錢確認不可跳過:接著開的那條只走 trGoClick(→ 啟動框),這幾支沒有任何直送指令", /trGoClick\(\$\("rp-go"\)\)/.test(chainSrc)
+      && !/trSend|tradeSend|trRun|trAskStart|resume|restart_reconciler/.test(chainSrc));
+    // 真的 spAfterSave／spGoCheck 跑在替身上
+    const run = (o) => {
+      const W = { feats: [], go: [], painted: 0, S: { env: "local", st: {}, pending: null, spGo: null, spAdded: null }, scr: { "del-scrim": true, "cx-scrim": true, rp: false }, now: 1e12 };
+      const env = { TR_BAGS: { local: W.S, cloud: {} }, ENV: { cur: "local" }, TR_CX_SAVED_MS: 180000, trWith: (_S, f) => f(), trReport: () => ({}), envHeadState: () => o.head || "running",
+        trVenueIds: () => (o.noAcct ? [] : ["binance"]), trCfFiring: () => !!o.firing, trCfPaperOnly: () => !!o.paper, spCxOn: () => false, spCxOpen: () => W.go.push("cx"), poOpen: () => W.go.push("po"), trOpen: () => W.go.push("trOpen"),
+        $: (id) => ({ hidden: W.scr[id] !== undefined ? W.scr[id] : true }), spView: () => ({ name: "btc", st: o.st || "start", btn: { key: "tr.start", off: false } }),
+        trExecState: () => (o.halted ? "halted" : "running"), trGoClick: () => { W.go.push("trGoClick"); return "start"; }, trackFeature: (n) => W.feats.push(n), hoPaint: () => { W.painted++; },
+        Date: { now: () => W.now } };
+      const names = Object.keys(env);
+      const M = new Function(...names, fnOf(po, "spAfterSave") + "\n" + fnOf(po, "spStartClosed") + "\n" + fnOf(po, "spGoCheck") + "\nreturn { spAfterSave, spGoCheck, spStartClosed };")(...names.map((k) => env[k]));
+      return { W, M };
+    };
+    { const { W, M } = run({}); M.spAfterSave(W.S, "btc", "crypto", true);
+      ok("②b 真錢、鈕寫「加入並啟動下單」:存完接著走 trGoClick 開啟動框、記 sp_start_chained(不記 sp_start_opened);說明那句在框開著時不出、關掉後出",
+        W.go.join() === "trGoClick" && W.feats.join() === "sp_start_chained" && W.S.spGo === null && J(W.S.spAdded) === J({ name: "btc", show: true }), J(W)); }
+    { const { W, M } = run({}); M.spAfterSave(W.S, "btc", "crypto", false);
+      ok("②b 真錢、鈕寫「加到策略組合」:存完不開任何框、不排 spGo;說明那句直接出", W.go.length === 0 && W.S.spGo === null && W.feats.length === 0 && J(W.S.spAdded) === J({ name: "btc", show: true }), J(W)); }
+    { const { W, M } = run({ paper: true }); M.spAfterSave(W.S, "btc", "crypto", false);
+      ok("②b 模擬、鈕上沒寫要啟動(例如暫停中開的框):存完不開啟動框(舊版模擬一律自動開)", W.go.length === 0 && W.S.spGo === null && W.feats.length === 0, J(W)); }
+    { const { W, M } = run({ halted: true }); M.spAfterSave(W.S, "btc", "crypto", true);
+      ok("②b 存完時已經暫停:不開啟動框、放掉排程、說明那句出(暫停中那一版由 spView 選)", W.go.length === 0 && W.S.spGo === null && W.S.spAdded.show === true && W.feats.length === 0, J(W)); }
+    { const { W, M } = run({ st: "unread" }); M.spAfterSave(W.S, "btc", "crypto", true);
+      ok("②b 雲端等回報(頁頭還不是〔啟動下單〕):排著等、說明那句先不出", W.go.length === 0 && !!W.S.spGo && W.S.spGo.chain === true && W.S.spAdded.show === false, J(W));
+      W.now += 180000; M.spGoCheck(W.S);
+      ok("②b …等到上限放掉:不開框、說明那句改出", W.go.length === 0 && W.S.spGo === null && W.S.spAdded.show === true, J(W)); }
+    { const { W, M } = run({ firing: true }); M.spAfterSave(W.S, "btc", "crypto", true);
+      ok("②b 存完時已經在跑:不開啟動框", W.go.length === 0 && W.S.spGo === null, J(W)); }
+    { const { W, M } = run({}); W.S.spGo = { name: "btc", at: W.now }; M.spGoCheck(W.S);
+      ok("②b 模擬連接框接上後那條(沒帶 chain)照舊記 sp_start_opened", W.feats.join() === "sp_start_opened" && W.go.join() === "trGoClick", J(W)); }
+    { const { W, M } = run({}); M.spStartClosed(); W.scr.rp = true; M.spStartClosed();
+      ok("②b 啟動框關掉:策略頁開著才當場重畫頁首", W.painted === 1, W.painted); }
+    ok("②b 說明行:只在〔啟動下單〕那一態、沒有別的原因句、啟動框關著時出;暫停中換暫停那句;換到別支或開始下單就收;離開策略頁(poAddSync)收",
+      /if \(ad && \(ad\.name !== name \|\| v\.st === "running"\)\) S\.spAdded = null;/.test(sv)
+      && /else if \(ad && ad\.show && !v\.note && v\.st === "start" && \$\("del-scrim"\)\.hidden\) v\.note = \{ key: trExecState\(S\.st\) === "halted" \? "sp\.addedHalted" : "sp\.addedIdle", ink: true \};/.test(sv)
+      && /if \(\$\("rp"\)\.hidden\) \{ PO_ADD_SIG = null; TR_BAGS\.local\.spAdded = null; TR_BAGS\.cloud\.spAdded = null; return; \}/.test(fnOf(po, "poAddSync")));
+    ok("②b 那一句升 --ink、不把「策略組合」做成連結", /n\.classList\.toggle\("ink", !!note\.ink\)/.test(fnOf(po, "spPaintNote")) && /note\.key === "sp\.unsaved" \|\| note\.ink \? -1/.test(fnOf(po, "spPaintNote"))
+      && /\.rp-ho-note\.ink \{ color: var\(--ink\); \}/.test(css));
+    ok("②b 啟動框取消叫 spStartClosed;原地重畫不算取消", /const onCancel = \(\) => \{ if \(typeof spStartClosed === "function"\) spStartClosed\(\); \};/.test(fnOf(tr, "trAskStart"))
+      && /const redraw = \(\) => \{ if \(\(changed \|\| refresh\) && delCtx && delCtx\.startBox\) delCtx\.acted = true; \};/.test(fnOf(tr, "trAskStart")));
+    ok("②b 埋點 sp_start_chained 有送出點、在 telemetry.js 白名單 0.1.60 那段(首頁鈕 top_home 之前)", /trackFeature\(g\.chain \? "sp_start_chained" : "sp_start_opened"\)/.test(po)
+      && /"sp_start_chained",\n\s*\/\/ 0\.1\.60 中欄頂列首頁鈕[^\n]*\n\s*"top_home"\] \},/.test(fs.readFileSync(path.join(SHELL, "telemetry.js"), "utf8")));
+  }
+
   const bin = GATE.bin(SHELL, "③");
   if (!bin) { console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0); }
   // 開發版規矩:鑰匙圈用假的、BLAVE_HOME 與 user-data 隔離在暫存目錄(window.blave 本來就是假的,這兩道是保險)

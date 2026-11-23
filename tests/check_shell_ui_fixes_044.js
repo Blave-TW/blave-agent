@@ -23,7 +23,7 @@ if (!process.versions.electron) {
     "tr.noAccount": ["還沒連接下單帳戶", "No trading account connected"],
     "tr.fogConnect": ["連上帳戶，策略就能自動下單。", "Connect an account and your strategies can trade on their own."],
     "tr.cloud.fogConnect": ["雲端主機要自己連一次帳戶，連上就能自動下單。", "The cloud machine needs its own account. Once connected, strategies can trade on their own."],
-    "tr.onboard": ["先連接下單帳戶，再按上方「解除暫停」、設金額。", "Connect a trading account, then press Release pause above and set amounts."],
+    "tr.onboard": ["先連接下單帳戶，再按上方「解除暫停」、設金額。", "Connect a trading account, then press Release Pause above and set amounts."],
     "tr.cloud.onboardExtra": ["這台電腦連的帳戶不會帶過來，雲端要自己連一次。", "The account connected on this computer doesn’t carry over. The cloud needs its own."],
     "pv.f.out.m": ["試用結束後自動開始計費，每 {pd} 天 {p} TWD。", null],
     "pv.e.sub.m": ["試用結束自動扣第一期，每 {pd} 天 {p} TWD。試用期間取消就不扣。", null],
