@@ -416,6 +416,9 @@ const EVENTS = {
     "clarify_click", "clarify_undo",
     // 0.1.60 報告頁「這一輪沒有產出新報告。」後面的〔查看〕:切回框送出的那一條對話(renderer/reports.js;api 白名單要先上)
     "rpt_nonew_view",
+    // 0.1.60 更新雲端主機改送 workspace_update 直接指令(spec cloud-workspace-update-command-0160 §7.1,同 api 順序,api 先上):cloud_upd_ok 從這版起＝指令 ack ok;
+    // cloud_upd_legacy = 舊 runtime 退回本機回合那條(歸零再拿掉);cloud_upd_dot = 左下「雲端主機有新版」的點當天第一次被看見;cloud_upd_dot_go = 點亮著時按了選單「設定」
+    "cloud_upd_legacy", "cloud_upd_dot", "cloud_upd_dot_go",
     // 0.1.60 聊天欄 agent 圖(renderer/app.js;spec chat-image-strip-0160,api 白名單要先上):chat_img_zoom = 打開放大檢視;
     // chat_img_scroll = 某條膠捲第一次被橫向捲動,每條每次載入一次
     "chat_img_zoom", "chat_img_scroll",

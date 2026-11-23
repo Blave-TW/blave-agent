@@ -157,6 +157,7 @@ def run(repo, ws, mode, head, *extra, script=None):
 
 
 STATUS = "state/workspace_update.json"  # the run's own status line for the desktop — not a workspace write
+LOCK = "state/workspace_update.lock"     # the run's own lock (empty file) — not a workspace write either
 
 
 def snapshot(ws):
@@ -165,7 +166,7 @@ def snapshot(ws):
         for n in fn:
             p = os.path.join(dp, n)
             rel = os.path.relpath(p, ws)
-            if rel != STATUS:
+            if rel not in (STATUS, LOCK):
                 out[rel] = read(p) if not os.path.islink(p) else "->"
     return out
 
@@ -776,6 +777,47 @@ try:
     o, left, row, _ = stub_drop("    sys.stderr.buffer.write(b'\\xff\\xfe \\xe4\\xb8\\xad'); sys.exit(1)\n")
     check(o.get("rowless") is True and not left,
           f"undecodable stderr does not raise out of the update ({o})")
+
+    # 14. state/workspace_update.lock (spec cloud-workspace-update-command-0160 §2.3, M2): the
+    #     button (runtime/ws_update.py) and a chat update must not overwrite each other's status.
+    #     The apply that loses prints locked and writes NOTHING — not even `applying`, which is
+    #     how the lock is proven to come before the first status write.
+    import fcntl
+    repo14, v1n, head14 = make_official()
+    ws14 = make_workspace(repo14, v1n)
+    unit("inactive")
+    write(os.path.join(ws14, STATUS), '{"state": "applying", "outcome": null, "from": "x", "ts": 1}')
+    write(os.path.join(ws14, "state/execution/hold"), "999 1")  # the other run's hold
+    status_before = read(os.path.join(ws14, STATUS))
+    held = open(os.path.join(ws14, "state/workspace_update.lock"), "a+b")
+    fcntl.flock(held.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    tree_before = snapshot(ws14)
+    r = run(repo14, ws14, "apply", head14, "--restart-ok", "--allow", "AGENTS.md")
+    check(r == {"mode": "apply", "outcome": "stopped", "reason": "another update is running on this machine",
+                "locked": True},
+          f"apply while another update holds the lock: one JSON line with locked ({r})")
+    check(read(os.path.join(ws14, STATUS)) == status_before and snapshot(ws14) == tree_before
+          and read(os.path.join(ws14, "state/execution/hold")) == "999 1",
+          "…the other run's status is byte-for-byte untouched, nothing written, its hold not dropped")
+    held.close()
+    # audit P3-2: the runtime's probe holds the lock for an instant — a lock that goes away within
+    # the retry window is waited out, not answered with locked
+    import threading
+    held = open(os.path.join(ws14, "state/workspace_update.lock"), "a+b")
+    fcntl.flock(held.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    threading.Timer(0.5, held.close).start()
+    r = run(repo14, ws14, "apply", head14, "--restart-ok", "--allow", "AGENTS.md")
+    st14 = json.loads(read(os.path.join(ws14, STATUS)))
+    probe = open(os.path.join(ws14, "state/workspace_update.lock"), "a+b")
+    try:
+        fcntl.flock(probe.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        released = True
+    except OSError:
+        released = False
+    probe.close()
+    check(r["outcome"] == "updated" and "locked" not in r and st14["state"] == "done"
+          and st14["outcome"] == "updated" and released,
+          f"a lock released 0.5 s later is waited out (P3-2): applying → done as before, and the lock is released when it ends ({r.get('outcome')})")
 
     # 13. the string probes of production code, against the real files — a
     #     rename turns the whole fleet's behaviour over with every test green

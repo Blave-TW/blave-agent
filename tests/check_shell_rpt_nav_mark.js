@@ -44,7 +44,8 @@ function env(view) {
   const STR = { "rpt.nav": "報告", "rpt.newMark": "有新報告", "ws.settings": "設定", "am.docs": "說明文件" };
   const run = (mark) => {
     vm.runInNewContext(cutFn(app, "amPaint") + "\namPaint();", { $: (id) => (id === "side-menu" ? menu : { hidden: true }), LANG: "zh", t: (k) => STR[k] || k, document: { createElement: mk },
-      amSignedIn: () => false, amMark: () => mark, rptBag: () => ({ open: false }), libExtIcon: () => mk("svg"), acct: null, oauthPending: false, planLoginBusy: false });
+      amSignedIn: () => false, amMark: () => mark, rptBag: () => ({ open: false }), libExtIcon: () => mk("svg"), acct: null, oauthPending: false, planLoginBusy: false,
+      upDotNow: () => ({ on: false, key: null }) });
     return menu.children.find((b) => b.children[0] && b.children[0].textContent === "報告");
   };
   const on = run(true), off = run(false);

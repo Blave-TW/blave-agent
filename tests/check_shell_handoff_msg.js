@@ -89,8 +89,9 @@ const wire = (code, detail) => REFUSED + ": " + code + ": " + detail;
     && N("`import *` could rebind STRATEGY_NAME (strategy.py)") === '{"key":"ho.err.nameStar","vars":{"x":"strategy.py"}}'
     && N('strategy.py needs exactly one STRATEGY_NAME = "momo" at the top level') === '{"key":"ho.err.nameLiteral","vars":{"x":"strategy.py"}}');
   t("這台電腦讀檔就擋下(kind local):代碼在 error、檔名在 detail", E({ ok: false, kind: "local", error: "TOO_LARGE", detail: "big.py" }) === '{"key":"ho.err.files","vars":{"x":"big.py"}}');
-  t("雲端 runtime 太舊:unknown command／UNKNOWN_COMMAND／BAD_COMMAND → 更新那句,不退回 agent", ["UNKNOWN_COMMAND", "BAD_COMMAND"].every((e) => E({ ok: false, kind: "undelivered", error: e }) === '{"key":"ho.err.old"}')
-    && E({ ok: false, kind: "rejected", error: "ValueError: unknown command 'strategy_import'" }) === '{"key":"ho.err.old"}' && /raise ValueError\(f"unknown command \{cmd!r\}"\)/.test(clSrc));
+  t("雲端 runtime 太舊:機器回 unknown command → ho.err.old(會自己補上那句),不退回 agent", E({ ok: false, kind: "rejected", error: "ValueError: unknown command 'strategy_import'" }) === '{"key":"ho.err.old"}' && /raise ValueError\(f"unknown command \{cmd!r\}"\)/.test(clSrc));
+  // 0.1.60 Q7 A:api 擋下的 400(UNKNOWN_COMMAND／BAD_COMMAND)跟雲端主機無關,不講「主機程式還不支援」
+  t("api 回 UNKNOWN_COMMAND／BAD_COMMAND → ho.err.retry,不是 ho.err.old", ["UNKNOWN_COMMAND", "BAD_COMMAND"].every((e) => E({ ok: false, kind: "undelivered", error: e }) === '{"key":"ho.err.retry"}'));
   t("送出了沒回條 → unknown;沒送出 → 交給 trSendError;其餘 → 稍後再試", E({ ok: false, kind: "unknown", error: "UNKNOWN_RESULT" }) === '{"key":"ho.err.unknown"}'
     && E({ ok: false, kind: "undelivered", error: "MACHINE_NOT_RUNNING" }) === '{"key":"$send"}' && E({ ok: false, kind: "rejected", error: wire("CHECK_FAILED", "crontab") }) === '{"key":"ho.err.retry"}' && E(null) === '{"key":"ho.err.retry"}');
   t("點名的字不帶換行、最多 80 字", hoErr({ ok: false, kind: "rejected", error: wire("BAD_FILES", "a\nb" + "x".repeat(200)) }).vars.x.length === 80 && !/\n/.test(hoErr({ ok: false, kind: "rejected", error: wire("BAD_FILES", "a\nb") }).vars.x)); }

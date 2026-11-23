@@ -116,7 +116,9 @@ function hoErr(r) {
   if (!r || typeof r !== "object") return { key: "ho.err.retry" };
   const e = String(r.error || "");
   if (r.kind === "unknown") return { key: "ho.err.unknown" };
-  if (e === "UNKNOWN_COMMAND" || e === "BAD_COMMAND" || /unknown command/i.test(e)) return { key: "ho.err.old" };
+  // 機器回 unknown command = 雲端 runtime 太舊(會自動更新);api 擋下的 400 跟雲端主機無關,講通用那句
+  if (e === "UNKNOWN_COMMAND" || e === "BAD_COMMAND") return { key: "ho.err.retry" };
+  if (/unknown command/i.test(e)) return { key: "ho.err.old" };
   const m = /^(?:[A-Za-z]\w*:\s*)?([A-Z_]{3,24}):\s*([\s\S]*)$/.exec(e);
   const code = r.kind === "local" ? e : m ? m[1] : null, detail = r.kind === "local" ? String(r.detail || "") : m ? m[2] : "";
   if (code === "NO_STRATEGY_NAME") { const w = hoNameWhy(detail.replace(/[\r\n]+/g, " ")); return { key: w.key, vars: { x: w.x.slice(0, 80) } }; }

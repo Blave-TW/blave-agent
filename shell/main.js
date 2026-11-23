@@ -4569,9 +4569,9 @@ app.whenReady().then(() => {
      最低版本閘不套在這裡:它擋的是**這台電腦**的下單碼,雲端跑的是主機上的 runtime(規格 §4.2-1)。 */
   const cloudDenied = { ok: false, error: "NOT_ALLOWED", kind: "undelivered" };
   const CLOUD_ONLY = require("./cloudcmd").CLOUD_ONLY_COMMANDS;
-  // 沒有 update:用本機 app 不觸發雲端 agent 回合(Wei 09-22),雲端更新改由本機 agent 經 MCP 去做。
+  // 沒有 update:它開雲端 agent 回合(Wei 09-22),已收掉;更新雲端主機走 workspace_update 直接指令,不開任何回合。
   // 沒有 restart_reconciler:主機重開後對帳器停著的情況,機器端的 resume / resume_wait 自己會把它起來(command_listener._start_after_restart_stop)
-  const CLOUD_SHIPPED = ["halt", "close_all", "resume", "resume_wait", "amounts", "execution", "delete_strategy", "credentials_remove", "close_then_unbind", "retest_accounts", "book_account_confirm", "version_restore", "stats_refresh", "manage_optimize", "manage_backtest", "manage_cancel", "rename_strategy"];
+  const CLOUD_SHIPPED = ["halt", "close_all", "resume", "resume_wait", "amounts", "execution", "delete_strategy", "credentials_remove", "close_then_unbind", "retest_accounts", "book_account_confirm", "version_restore", "stats_refresh", "manage_optimize", "manage_backtest", "manage_cancel", "rename_strategy", "workspace_update"];
   handle("cloud-send", async (_e, cmd, args, requestId) => {
     if (typeof cmd !== "string" || cmd === "credentials" || !(require("./daemon").UI_COMMANDS.has(cmd) || CLOUD_ONLY.indexOf(cmd) >= 0) || CLOUD_SHIPPED.indexOf(cmd) < 0) return cloudDenied;
     const rid = typeof requestId === "string" && require("./cloudcmd").REQUEST_ID_RE.test(requestId) ? requestId : null;

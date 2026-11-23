@@ -82,6 +82,9 @@ EXEMPT_CATEGORIES = {
 }
 # (file, function, the open's path argument, category, why) — one row per read point
 EXEMPT = [
+    ('runtime/ws_update.py', '_read_json', 'path', 'helper',
+     "the `python -I` update child's plain read (atomic_file is not on its path); the listener side goes through atomic_file.load_json"),
+    ('runtime/ws_update.py', 'read_version', 'os.path.join(workspace, "VERSION")', 'code', 'workspace VERSION, written last by the update itself'),
     ('lib/iterate.py', 'plan', '(sdir / "strategy.py").read_bytes', 'code', 'strategy source, read once to classify it'),
     ('lib/iterate.py', '_source', 'p.read_bytes', 'code', 'strategy source, hashed against stats.json code_hash'),
     ('lib/account_bitget.py', 'load_json', 'path',

@@ -61,6 +61,11 @@ Rules (the same as the references):
 - state/workspace_update.json (apply only): "applying" before the first check,
   then the final "done" / "failed" with what happened — the runtime forwards it
   in the report for the desktop's 更新中… and the one line after.
+- state/workspace_update.lock (apply only): taken BEFORE any status write and held
+  to the end. Two updates at once — the desktop's button (runtime/ws_update.py) and
+  a chat update — are the lock's whole reason: the one that does not get it prints
+  {"outcome": "stopped", "locked": true} and writes nothing at all (no status, no
+  hold), so the running one's status is never overwritten.
 - VERSION last, only if everything succeeded.
 - Tamper checks: the clone must be at --expect-head with the official origin,
   and every official file (VERSION included) must match that commit's own blob
@@ -125,6 +130,10 @@ DROP_TW_DEFERRED = ("import sys; sys.path.insert(0, sys.argv[1]); from lib impor
 BUSY_POLL_S = 5
 TW_DROP_RETRY_DELAYS = (0, 0.5, 2)
 STATUS_FILE = "state/workspace_update.json"
+LOCK_FILE = "state/workspace_update.lock"  # = runtime/ws_update.LOCK_REL
+LOCKED = object()
+LOCK_TRIES = 10       # × LOCK_RETRY_S: a lock held for an instant (the runtime's probe) is waited out
+LOCK_RETRY_S = 0.2
 
 
 class Stop(Exception):
@@ -465,6 +474,46 @@ def status_doc(result, v_from=None, v_to=None):
     }
 
 
+def take_lock(workspace):
+    """The open lock file (held until closed), LOCKED when another update holds it, None
+    when the file cannot even be opened — then the run goes on unlocked, as before."""
+    path = os.path.join(workspace, LOCK_FILE)
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        fh = open(path, "a+b")
+    except OSError:
+        return None
+    for attempt in range(LOCK_TRIES):
+        try:
+            if IS_WINDOWS:
+                import msvcrt
+                fh.seek(0)
+                msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return fh
+        except OSError:
+            if attempt + 1 < LOCK_TRIES:
+                time.sleep(LOCK_RETRY_S)
+    fh.close()
+    return LOCKED
+
+
+def release_lock(fh):
+    """Windows wants the byte unlocked before the handle goes (closing alone frees it at
+    an unspecified later moment); flock goes with the close."""
+    try:
+        if IS_WINDOWS:
+            import msvcrt
+            fh.seek(0)
+            msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)
+    except OSError:
+        pass
+    finally:
+        fh.close()
+
+
 def pending_path(workspace):
     return os.path.join(workspace, "state", "update_restart_pending.json")
 
@@ -534,7 +583,12 @@ def main(argv=None):
     result = {"mode": a.mode, "outcome": None}
     v_from, v_to = (read_version(os.path.join(workspace, "VERSION")),
                     read_version(os.path.join(clone, "VERSION")))
+    lock = None
     if a.mode == "apply":
+        lock = take_lock(workspace)
+        if lock is LOCKED:
+            return {"mode": "apply", "outcome": "stopped",
+                    "reason": "another update is running on this machine", "locked": True}
         write_status(workspace, {"state": "applying", "outcome": None, "from": v_from, "to": v_to})
     try:
         _run(a, clone, workspace, result)
@@ -553,6 +607,8 @@ def main(argv=None):
             drop_hold(workspace)
     if a.mode == "apply":
         write_status(workspace, status_doc(result, v_from, v_to))
+    if lock is not None:
+        release_lock(lock)
     return result
 
 

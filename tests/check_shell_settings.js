@@ -54,12 +54,13 @@ eval(busyFn("busyLock") + "\n" + busyFn("busyLocked") + "\n" + busyFn("busyOn"))
 eval(require("./_tabs_stub").SRC.replace("function csAnyTurn", "function csAnyTurnStub"));   // 單分頁(csSendAway 等);busyOn 用上面那支
 const told = [], busySlot = (id, anchor) => ({ id, anchor }), busyTell = (slot, kind) => { told.push([slot.id, kind]); }, busySendTell = () => told.push(["ta-wait", "send"]), busyStopThen = (fn) => fn();
 eval("var UPD = " + src.match(/var UPD = (\{[^\n]*\});/)[1]);
-eval(["UP_SESSION_IDLE_MS", "UP_RETRY_MS", "UP_WU_STATES", "UP_WU_DIR_RE", "UP_SAID_KEY"].map((k) => src.match(new RegExp("^const " + k + " = [^\\n]*;", "m"))[0].replace(/^const /, "var ")).join("\n"));
+eval(["UP_SESSION_IDLE_MS", "UP_DIRECT_MAX_MS", "UP_RETRY_MS", "UP_WU_STATES", "UP_WU_DIR_RE", "UP_SAID_KEY"].map((k) => src.match(new RegExp("^const " + k + " = [^\\n]*;", "m"))[0].replace(/^const /, "var ")).join("\n"));
 var CS_BOOTED = false, UP_CHECKING = false, UP_CLOUD_BUSY = false;
 var sideCvPaint = () => {};   // 左下角帳號那一格(app.js;acctPaintAcct 叫它),行為在 check_shell_prompt_slot.js
 var UP_LINE_OF = new WeakMap();
-eval(["upObserve", "upMachineGone", "upWu", "upPlan", "upCloudWhere", "upDoneLine", "upBackupLine", "upRich", "upPaintLine", "upSayLines", "upSayLine", "upRelang", "upView", "upLocalTurn", "upCloudTurn", "upNow", "upTurnEnded", "upPaint", "acctPaintAcct"].map(fnSrc).join("\n"));
-eval(["upCheck", "upCloudRefresh", "upCloudUpdate", "upCloudSend", "upInstall"].map((n) => "async " + fnSrc(n)).join("\n"));
+const dwu2 = (st, w) => ({ ...st, report: { ...(st.report || {}), workspace_update: w } });
+eval(["upObserve", "upMachineGone", "upWu", "upPlan", "upDotPlan", "upCloudWhere", "upDoneLine", "upBackupLine", "upRich", "upPaintLine", "upSayLines", "upSayLine", "upRelang", "upView", "upLocalTurn", "upCloudTurn", "upNow", "upDirect", "upCloudAnchor", "upCloudSay", "upTurnEnded", "upPaint", "acctPaintAcct"].map(fnSrc).join("\n"));
+eval(["upCheck", "upCloudRefresh", "upCloudUpdate", "upCloudSend", "upCloudDirect", "upInstall"].map((n) => "async " + fnSrc(n)).join("\n"));
 // 0.1.36 側欄更新膠囊(spec desktop-update-pill §3;0.1.54 改圓鈕,spec sidebar-conversion §3.3,字只在 aria-label 與 title):真的那幾支;更新 modal 本體(upModal)用假的記下參數,行為在 check_shell_update_pill.js
 var UP_PILL_DAY_KEY = "ws_upd_pill_day", UP_BOX = null, UP_AUTO = true; const modals = [];
 const upModal = (kind, data, opener, done) => { modals.push({ kind, data, done }); };
@@ -337,6 +338,72 @@ ok("報告的 workspace_update 是不可信輸入:state 不認得 / 不是物件
   // 沒有 workspace_update 欄位的主機:只剩版號追上推得的那一句
   { const n = msgs().length; UPD.lagCv = null; UPD.done = null; paint(idle, cloud({ cloud: { config_version: "2026-09-22-p" } })); paint(idle, cloud());
     ok("退路:原本落後、之後版號追上 → 「雲端主機已更新到 {cv}。」一次;再追上同一版不重講", msgs().length === n + 1 && last().textContent === 'up.done.cloud{"cv":"2026-09-24-b"}' && (paint(idle, cloud()), msgs().length === n + 1)); }
+  { // 0.1.60 直接指令那條(spec cloud-workspace-update-command-0160 §4.2-3,M8、M3):這一次的結果用狀態轉移認,不比時鐘。
+    // prevTs = 按下當下報告裡那一份的 ts;之後第一份 ts 不同的終態就是這次的(漏掉 applying 也算);機器時鐘快慢 10 分鐘都一樣出
+    const nowS = Math.floor(Date.now() / 1000);
+    const dwu = (o) => cloud({ cloud: { latest_config_version: o.state === "done" ? "2026-09-24-b" : "2026-09-25-a" }, report: { can_ws_update: true, workspace_update: { from: "2026-09-22-p", to: null, restarted: false, replaced_changed: [], backup_dir: null, restart_stopped: false, version_written: false, ...o } } });
+    const press = (prevTs) => Object.assign(UPD, { done: null, cloudSid: null, wuResult: null, session: { startAt: Date.now(), fromCv: "2026-09-24-b", nv: "2026-09-25-a", direct: true, prevTs, sawApplying: false } });
+    for (const [label, skew, outcome, want] of [["機器時鐘慢 10 分鐘", -600, "stopped", "up.done.failedNone"], ["機器時鐘快 10 分鐘", 600, "error", "up.done.failedPartial"]]) {
+      const t0 = nowS + skew, n = msgs().length;
+      paint(idle, dwu({ state: "failed", outcome: "stopped", ts: t0 - 100 }));   // 開 app 時就有的舊 failed:不講
+      const nOpen = msgs().length;
+      press(t0 - 100);
+      paint(idle, dwu({ state: "failed", outcome: "stopped", ts: t0 - 100 }));
+      const stillOld = msgs().length === nOpen && !!UPD.session;
+      paint(idle, dwu({ state: "applying", outcome: null, ts: t0, phase: "fetch" }));
+      const saw = !!UPD.session && UPD.session.sawApplying === true;
+      paint(idle, dwu({ state: "failed", outcome, ts: t0 + 5 })); paint(idle, dwu({ state: "failed", outcome, ts: t0 + 5 }));
+      ok(`M8 ${label}:舊 failed(ts = prevTs)不講;applying 之後的 failed 講一次(${want}),同一個 ts 不重講,session 收掉`,
+        nOpen === n && stillOld && saw && msgs().length === n + 1 && last().textContent === want && UPD.session === null && UPD.wuResult === t0 + 5);
+      if (process.env.DBG) console.log(JSON.stringify({ nOpen, n, stillOld, saw, m: msgs().length, l: last() && last().textContent, s: UPD.session, r: UPD.wuResult }));
+    }
+    { const n = msgs().length; press(nowS - 50);
+      paint(idle, dwu({ state: "failed", outcome: "partial", ts: nowS }));
+      ok("M8 快速失敗:報告漏掉 applying、直接看到 failed(ts ≠ prevTs)也講;partial → failedPartial(M3)", msgs().length === n + 1 && last().textContent === "up.done.failedPartial"); }
+    { const n = msgs().length; press(nowS - 40);
+      paint(idle, dwu({ state: "failed", outcome: null, ts: nowS + 1 }));
+      ok("M3 沒有 outcome → failedPartial(不說什麼都沒動)", msgs().length === n + 1 && last().textContent === "up.done.failedPartial"); }
+    { const n = msgs().length; Object.assign(UPD, { session: null, wuResult: null });
+      paint(idle, dwu({ state: "failed", outcome: "stopped", ts: nowS + 2 }));
+      ok("沒按過(舊路、或別台電腦按的):failed 不講——舊路由 agent 在聊天講", msgs().length === n); }
+    { const n = msgs().length; press(nowS + 2);
+      paint(idle, dwu({ state: "done", outcome: "updated", to: "2026-09-24-b", ts: nowS + 9 }));
+      ok("直接指令那條成功:照舊講 up.done.cloud,session 收掉", msgs().length === n + 1 && last().textContent === 'up.done.cloud{"cv":"2026-09-24-b"}' && UPD.session === null); }
+    { const m = { session: { direct: true, startAt: 0, prevTs: 1, sawApplying: false }, cloudSid: null };
+      upObserve(m, { config_version: "a", latest_config_version: "b" }, false, true, UP_SESSION_IDLE_MS - 1, { state: "applying", ts: 1 });
+      const alive = !!m.session && m.session.lastTurnAt === undefined;
+      upObserve(m, { config_version: "a", latest_config_version: "b" }, false, false, UP_SESSION_IDLE_MS + 1, { state: "applying", ts: 1 });
+      const pastOld = !!m.session;   // 稽核 P3-6:機器端最長約 57 分鐘,30 分鐘就收會漏講那次的失敗
+      upObserve(m, { config_version: "a", latest_config_version: "b" }, false, true, UP_DIRECT_MAX_MS + 1, { state: "applying", ts: 1 });
+      ok("直接指令那條:對著雲端的回合不延長;兜底 60 分鐘(過了 30 分鐘還在),到了就收", alive && pastOld && UP_DIRECT_MAX_MS === 60 * 60000 && m.session === null); }
+    ok("M3 字:failedNone／failedPartial zh／en 定稿", STR.zh["up.done.failedNone"] === "雲端主機沒有更新，什麼都沒動。再按一次「更新雲端主機」。"
+      && STR.zh["up.done.failedPartial"] === "雲端主機沒更新完成。再按一次「更新雲端主機」就會接著做。"
+      && STR.en["up.done.failedNone"] === "The cloud machine wasn’t updated and nothing changed. Press Update Cloud Machine again."
+      && STR.en["up.done.failedPartial"] === "The cloud update didn’t finish. Press Update Cloud Machine again to pick up where it stopped.");
+    Object.assign(UPD, { session: null, wuResult: null, done: null, lagCv: null });
+  }
+  { // 0.1.60 upPlan 三處(spec §4.2):直接指令那條不看 cloudTurn;送出後 3 分鐘內畫 applying;舊路照舊鎖
+    const lagSt2 = cloud({ cloud: { latest_config_version: "2026-09-25-a" } });
+    const pd = plan(idle, lagSt2, { cloudTurn: true, direct: true }), pl = plan(idle, lagSt2, { cloudTurn: true });
+    ok("直接指令(報告 can_ws_update):對著雲端的回合在跑,〔更新雲端主機〕不鎖;舊 runtime 照舊鎖", pd.cloud.link && pd.cloud.link.disabled === false && pl.cloud.link && pl.cloud.link.disabled === true);
+    const ses = { session: { direct: true, startAt: 1000, prevTs: null, sawApplying: false } };
+    const p1 = plan(idle, lagSt2, { mem: ses, now: 1000 + 60000, direct: true }), p2 = plan(idle, lagSt2, { mem: ses, now: 1000 + 181000, direct: true });
+    ok("送出後 3 分鐘內:關於列第二行寫「更新中…」、輸入列那一格也是;滿 3 分鐘還沒認到結果 → 連結放回來(重送)",
+      p1.cloud.status[0] === "up.row.applying" && !p1.cloud.link && p1.slot && p1.slot.kind === "applying" && p2.cloud.link && p2.cloud.status[0] === "up.row.cloudNew");
+    // 提示點(設計師 spec cloud-update-dot-0160 §1、§6)
+    const D = (p, seen) => upDotPlan(p, seen === undefined ? null : seen);
+    ok("提示點:有新版 → 亮,key = 最新版號;看過這一版不亮;出了更新一版再亮", D(plan(idle, lagSt2)).on && D(plan(idle, lagSt2)).key === "2026-09-25-a"
+      && !D(plan(idle, lagSt2), "2026-09-25-a").on && D(plan(idle, cloud({ cloud: { latest_config_version: "2026-09-26-a" } })), "2026-09-25-a").on);
+    const bare = D(plan(idle, cloud({ cloud: { latest_config_version: null, config_supports_wf: false } })));
+    ok("提示點:讀不到最新版號(有新版不帶號)→ 亮,key = bare:現版號", bare.on && bare.key === "bare:2026-09-24-b");
+    ok("提示點:鈕被鎖(舊路對著雲端的回合在跑)照亮;換檔中、送出後 3 分鐘內、版號一樣只是重開沒確認停住(cloudStale)、已是最新、停機都不亮",
+      D(pl).on && !D(plan(idle, dwu2(lagSt2, { state: "applying", ts: 5 }))).on && !D(p1).on
+      && !D(plan(idle, cloud({ report: { reconciler: { stopped: { reason: "machine_restart", gated: false } } } }))).on
+      && !D(plan(idle, cloud())).on && !D(plan(idle, cloud({ cloud: { latest_config_version: "2026-09-25-a" } }, "stopped"))).on);
+    ok("upDotPlan 是純函式、跟 upPlan 放一起;看過記在 localStorage(cloud_upd_dot_seen),setCat(display) 排 upDotSeen(等 setOpen 回來才判,planOpen 路過一般不算)",
+      /const UP_DOT_SEEN_KEY = "cloud_upd_dot_seen";/.test(src) && /if \(cat === "display" && typeof upDotSeen === "function"\) upDotSeen\(\);/.test(src)
+      && /if \(SET_OPENING && n < 100\)/.test(fnSrc("upDotSeen")) && /pane\.hidden \|\| \$\("set-scrim"\)\.hidden/.test(fnSrc("upDotSeen")));
+  }
   { // app 換版後第一次啟動、蓋過改動(主行程 syncOfficialOnUpdate 只在那時給):同 §3 的格式,「開啟資料夾」由主行程開 Finder
     const n = msgs().length, BK = { ...idle, backup: { n: 1, dir: ".official-backup/2026-09-22-p-20260924T0630/" } };
     paint(BK, cloud()); paint(BK, cloud());
@@ -355,16 +422,18 @@ ok("報告的 workspace_update 是不可信輸入:state 不認得 / 不是物件
       && has(enS, "up.row.cloud", "Cloud machine {cv}") && has(enS, "up.row.cloudOff", "Cloud machine (stopped)") && has(enS, "up.row.latest", "Up to date") && has(enS, "up.restart", "Restart to finish updating") && has(enS, "tm.updateReady", "Restart to finish updating"));
     ok("字(§3):事後那一行 zh / en", has(zhS, "up.done.cloud", "雲端主機已更新到 {cv}。") && has(zhS, "up.done.cloudRestarted", "雲端主機已更新到 {cv}，自動下單已用新版重新啟動。") && has(zhS, "up.done.replaced", "你改過的 {n} 個官方檔換成了官方版，舊的在 {dir}（{view}）。")
       && has(zhS, "up.done.view", "查看") && has(zhS, "up.backup", "Blave 已更新到 {av}。你改過的 {n} 個官方檔換成了官方版，舊的在 {dir}（{view}）。") && has(zhS, "up.backup.open", "開啟資料夾")
-      && has(zhS, "up.done.restartDeferred", "雲端主機的新檔已就位，但自動下單仍在跑舊版；等這筆單完成後再說一次「更新」就會重啟。") && has(enS, "up.done.restartDeferred", "The cloud machine has the new files, but auto-trading is still on the old code; once this order finishes, say 更新 again and it will restart.") && has(zhS, "up.done.restartFailed", "雲端主機的新檔已就位，但自動下單重新啟動失敗，仍在跑舊版。再說一次「更新」就會再試。") && has(zhS, "up.done.paused", "雲端主機已更新到 {cv}。自動下單仍暫停，按「啟動下單」才會繼續。")
+      && has(zhS, "up.done.restartDeferred", "雲端主機的新檔已就位，自動下單仍在跑舊版。這筆單完成後，再按一次「更新雲端主機」就會重啟。") && has(enS, "up.done.restartDeferred", "The new files are on the cloud machine, but auto-trading is still on the old code. Once this order finishes, press Update Cloud Machine again to restart it.") && has(zhS, "up.done.restartFailed", "雲端主機的新檔已就位，但自動下單重新啟動失敗，仍在跑舊版。再按一次「更新雲端主機」就會再試。") && has(zhS, "up.done.paused", "雲端主機已更新到 {cv}。自動下單仍暫停，按「啟動下單」才會繼續。")
       && has(enS, "up.done.cloud", "Cloud machine updated to {cv}.") && has(enS, "up.done.replaced", "{n} official files you had changed were replaced; the old copies are in {dir} ({view}).") && has(enS, "up.done.view", "view") && has(enS, "up.backup.open", "Open folder"));
     { // 0.1.11 設計稽核 S1:三句事後那一行講「自動下單」(跟 agent 的回覆句同一組字);restartDeferred 跟兩份 reference 的 restart_deferred 句逐字相同
       const V = require("vm").runInNewContext(S2.replace(/^const STRINGS/m, "var STRINGS") + "\nSTRINGS"), ref = ["updating.md", "cloud-handoff.md"].map((f) => fs.readFileSync(path.join(R, "..", "..", "references", f), "utf8"));
       const said = ["up.done.cloudRestarted", "up.done.restartFailed", "up.done.restartDeferred"].flatMap((k) => ["zh", "en"].map((l) => V[l][k]));
-      ok("S1 up.done.cloudRestarted / restartFailed / restartDeferred = 定稿(zh / en),沒有「下單程式」/ order program;restartDeferred 跟 updating.md、cloud-handoff.md 逐字相同",
+      // 0.1.60(spec cloud-workspace-update-command-0160 §5.2):電腦版改叫人再按〔更新雲端主機〕,不再跟 agent 的「再說一次更新」逐字相同;
+      // agent 那句(對話那條)照舊留在兩份 reference
+      ok("S1 up.done.cloudRestarted / restartFailed / restartDeferred = 定稿(zh / en),沒有「下單程式」/ order program;兩句「再按一次」講按鈕,agent 那句照舊在 reference",
         V.en["up.done.cloudRestarted"] === "Cloud machine updated to {cv}; auto-trading restarted on the new version."
-        && V.en["up.done.restartFailed"] === "The cloud machine has the new files, but auto-trading failed to restart and is still on the old code; say 更新 again to retry."
-        && !said.some((x) => /下單程式|order program/.test(x))
-        && ref.every((d) => d.includes("「" + V.zh["up.done.restartDeferred"] + "」 / \"" + V.en["up.done.restartDeferred"] + "\""))); }
+        && V.en["up.done.restartFailed"] === "The new files are on the cloud machine, but auto-trading failed to restart and is still on the old code. Press Update Cloud Machine again to retry."
+        && !said.some((x) => /下單程式|order program|說一次「更新」|say 更新/.test(x))
+        && ref.every((d) => d.includes("「雲端主機的新檔已就位，但自動下單仍在跑舊版；等這筆單完成後再說一次「更新」就會重啟。」"))); }
     ok("S0–S7 那一套的字全清掉(up.c.* 只剩 up.c.msg;up.chat / up.update / up.latestAt / tm.cloudUpdate* 都不在)", !/"up\.c\.(unreach|stopped|note|noteLong|available|checking|seeChat|needsUpdate|running|runningShort|onCloud|runNote|noReport|done|doneFrom|chatRunning|chatDone)"/.test(S2)
       && !/"up\.(app|latest|latestAt|checking|downloading|downloadingPct|ready|blocked|error|staging|update|updating|chat|installLocal)"|"tm\.cloudUpdate(Stale)?"/.test(S2)); }
 

@@ -395,8 +395,9 @@ try:
     check(not os.path.exists(os.path.join(mws, "state", "update_restart_pending.json")),
           "mutation goes red: a deferred restart leaves no record, so the next run would not restart")
 
-    mrepo, mv1, mhead = make_official(mutant('    if a.mode == "apply":\n        write_status(workspace, {"state": "applying"',
-                                             '    if False:\n        write_status(workspace, {"state": "applying"',
+    # (0.1.60: the applying write now sits after take_lock, inside the same `if a.mode == "apply":`)
+    mrepo, mv1, mhead = make_official(mutant('        write_status(workspace, {"state": "applying", "outcome": None, "from": v_from, "to": v_to})\n',
+                                             '        pass\n',
                                              "the applying write dropped"))
     mws = make_workspace(mrepo, mv1)
     muw = load_script(mrepo)

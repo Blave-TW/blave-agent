@@ -3286,6 +3286,9 @@ msgstr "暫停沒送到，雲端還在交易。再按一次，一直失敗就到
 msgid "tr.cloud.cmdRejected"
 msgstr "雲端主機沒有接受這個指令（{err}）。"
 
+msgid "tr.cloud.updRunning"
+msgstr "雲端主機正在更新，更新完再按「啟動下單」。"
+
 msgid "tr.cloud.noMachine"
 msgstr "現在沒有雲端主機，指令沒有送出。"
 
@@ -4880,10 +4883,10 @@ msgid "up.cf.title"
 msgstr "把雲端主機更新到最新版"
 
 msgid "up.cf.lede"
-msgstr "雲端主機會從 {cv} 換到 {lv}。過程要幾分鐘，在聊天裡跑，做完會說一聲。"
+msgstr "雲端主機會從 {cv} 換到 {lv}，要幾分鐘。"
 
 msgid "up.cf.ledeBare"
-msgstr "雲端主機會換成最新版。過程要幾分鐘，在聊天裡跑，做完會說一聲。"
+msgstr "雲端主機會換成最新版，要幾分鐘。"
 
 msgid "up.cf.body1"
 msgstr "自動下單正在跑：動到下單程式時，會等沒有單在送出的空檔，再用新版重新啟動。"
@@ -4901,7 +4904,7 @@ msgid "up.cf.d2"
 msgstr "一直等不到空檔，就只換檔，自動下單先留在舊版。"
 
 msgid "up.cf.d3"
-msgstr "沒更新完成會在聊天說明原因，再按一次就會接著做。"
+msgstr "沒更新完成，再按一次就會接著做。"
 
 msgid "up.cf.d4"
 msgstr "你改過的官方檔會換成官方版，舊檔備份在主機的 .official-backup/。"
@@ -4969,10 +4972,22 @@ msgid "up.done.replaced"
 msgstr "你改過的 {n} 個官方檔換成了官方版，舊的在 {dir}（{view}）。"
 
 msgid "up.done.restartFailed"
-msgstr "雲端主機的新檔已就位，但自動下單重新啟動失敗，仍在跑舊版。再說一次「更新」就會再試。"
+msgstr "雲端主機的新檔已就位，但自動下單重新啟動失敗，仍在跑舊版。再按一次「更新雲端主機」就會再試。"
 
 msgid "up.done.restartDeferred"
-msgstr "雲端主機的新檔已就位，但自動下單仍在跑舊版；等這筆單完成後再說一次「更新」就會重啟。"
+msgstr "雲端主機的新檔已就位，自動下單仍在跑舊版。這筆單完成後，再按一次「更新雲端主機」就會重啟。"
+
+msgid "up.done.failedNone"
+msgstr "雲端主機沒有更新，什麼都沒動。再按一次「更新雲端主機」。"
+
+msgid "up.done.failedPartial"
+msgstr "雲端主機沒更新完成。再按一次「更新雲端主機」就會接著做。"
+
+msgid "up.err.noGit"
+msgstr "雲端主機少了更新要用的元件，請聯絡我們。"
+
+msgid "up.dot"
+msgstr "雲端主機有新版"
 
 msgid "up.done.view"
 msgstr "查看"
@@ -11256,7 +11271,7 @@ msgid "ho.err.unknown"
 msgstr "還沒收到雲端的回覆，結果不確定。稍後看清單上有沒有 {to}。"
 
 msgid "ho.err.old"
-msgstr "雲端主機的程式還沒更新到這一版。它會自己更新，幾分鐘後再試。"
+msgstr "雲端主機的程式還不支援搬策略。通常幾分鐘內會自動補上，到時再試。"
 
 msgid "ho.err.retry"
 msgstr "這次沒搬成，稍後再試。"

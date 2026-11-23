@@ -206,7 +206,11 @@ const ackCalls = (w) => w.posts.filter((p) => p.u.indexOf("/ack") >= 0).length;
   t("delete_strategy 只收 {name},name 過機器端那條 regex;update 不再是這個 app 送的指令(用本機 app 不觸發雲端 agent 回合)",
     M.cloudArgsOk("delete_strategy", { name: "btc_4h-v2" }) && !M.cloudArgsOk("delete_strategy", { name: "../x" }) && !M.cloudArgsOk("delete_strategy", { name: "a".repeat(65) })
     && !M.cloudArgsOk("delete_strategy", { name: "a", x: 1 }) && !M.cloudArgsOk("delete_strategy", {}) && !M.cloudArgsOk("delete_strategy", { name: 3 })
-    && !M.cloudArgsOk("update", {}) && !M.cloudArgsOk("halt", {}) && !M.cloudArgsOk("delete_strategy", null) && JSON.stringify(M.CLOUD_ONLY_COMMANDS) === '["delete_strategy"]');
+    && !M.cloudArgsOk("update", {}) && !M.cloudArgsOk("halt", {}) && !M.cloudArgsOk("delete_strategy", null) && JSON.stringify(M.CLOUD_ONLY_COMMANDS) === '["delete_strategy","workspace_update"]');
+  // 0.1.60 更新雲端主機改送機器直接指令:不收任何參數(沒有 ref、沒有 --allow 清單;機器與 api 兩邊也都拒)
+  t("workspace_update 只收空物件:任何參數、陣列、null 都拒",
+    M.cloudArgsOk("workspace_update", {}) && !M.cloudArgsOk("workspace_update", { ref: "main" }) && !M.cloudArgsOk("workspace_update", { allow: [] })
+    && !M.cloudArgsOk("workspace_update", []) && !M.cloudArgsOk("workspace_update", null) && !require("../shell/daemon").UI_COMMANDS.has("workspace_update"));
 
   // ── 雲端連交易所(S5)──
   { const shape = (k, s) => /^[A-Za-z0-9]{8,}$/.test(k) && /^[A-Za-z0-9]{8,}$/.test(s);

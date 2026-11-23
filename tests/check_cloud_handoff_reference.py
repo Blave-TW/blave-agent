@@ -407,6 +407,11 @@ UPD_NEEDLES = {
     "safe moment: no execution in flight, reconciler not mid-round": "it restarts only when nothing is mid-order — no execution in flight (`state/execution/inflight/*.json`, written by `lib/execute.py` for TWAP / chase / custom) and the reconciler not inside a round (`state/execution/round`)",
     "deferred: files on disk, restart owed, VERSION old": "Still busy → `\"outcome\": \"restart_deferred\"`",
     "deferred: run U6 again, then say so — never ask": "still deferred → say so (U9) and stop, never ask",
+    # M1 (spec cloud-workspace-update-command-0160 §5.3): the first apply replaced the changed_here files, so the
+    # second one must take a fresh plan's list — the old --allow makes the script stop
+    "deferred: fresh plan before the second apply, no stale --allow": "run U3 again, then U6 once more with the NEW `changed_here` (no `--allow` when it is empty",
+    "apply locked: another update runs, nothing written, no loop": "Output `\"locked\": true` (`\"outcome\": \"stopped\"`) means another update is already running on that machine (the app's button, or another conversation): nothing was written.",
+    "fixed message only from an older app / older cloud runtime": "The fixed message now arrives only from an older app, or when the cloud machine's software is too old for the direct way — it is still the ask, exactly as before.",
     "status file is the machine's, not the agent's": "you do not read or write that file",
     "clone verified file by file against the commit": "every official file (`VERSION` included) is byte for byte that commit's own",
     "a planted file is not official": "the list of files comes from the commit itself, so a file planted in the clone's folder is not official and is never copied",
@@ -529,6 +534,8 @@ def upd2_fails(upd):
         "--wait-busy always": "**`--wait-busy 600` always**",
         "safe moment is the script's, never a question": "**Safe moment — the script's, never a question:**",
         "deferred: say so and stop, never ask": "still deferred → say so in step 5 and stop. Never ask whether to restart; never wait for the user.",
+        "deferred: fresh plan before the second apply": "Then run step 2 again and step 4 once more with the NEW `changed_here` (no `--allow` when it is empty",
+        "apply locked: nothing written, no loop": "Output `\"locked\": true` means another update is already running on this machine",
         "one-line reply": "5. **Reply — exactly one line**",
         "changed files told afterwards (zh)": "「你改過的 {n} 個官方檔換成了官方版，舊的在 `{backup}`。」",
         "deferred / failed line (zh)": "「雲端主機的新檔已就位，但自動下單仍在跑舊版；等這筆單完成後再說一次「更新」就會重啟。」",
@@ -892,7 +899,16 @@ wb = win_ssh.group(1) if win_ssh else ""
 subs = re.findall(r"^     - ([^\n]*)$", wb, re.M)
 pwsh = next((x for x in subs if x.startswith("You have a tool named `PowerShell` and no tool named `Bash`")), "")
 codex = next((x for x in subs if x.startswith("Your only shell is Codex's own shell tool")), "")
-check(len(subs) == 2 and "look at your tool names" in wb and "the shell is PowerShell" not in DOC and "(the Codex engine)" not in DOC
+# 0.1.60: an update typed in chat needs no Git any more — the app's button does it on the cloud machine itself;
+# the fixed message (old app, or a cloud runtime without workspace_update) keeps the two stops below
+upd_btn = next((x for x in subs if x.startswith("**Updating the cloud machine, asked in the user's own words**")), "")
+check(subs.index(upd_btn) == 0 if upd_btn else False, "step 2.2 Windows: the update bullet comes first")
+check("no tool named `Bash`" in upd_btn and "設定 › 一般" in upd_btn and "更新雲端主機" in upd_btn
+      and "Settings › General" in upd_btn and "Update Cloud Machine" in upd_btn and "fixed message" in upd_btn
+      and "the two lines below apply as written" in upd_btn,
+      "step 2.2 Windows: an update typed in chat → press Settings › General › Update Cloud Machine (no Git); the "
+      "app's fixed message still gets the Git / engine stop")
+check(len(subs) == 3 and "look at your tool names" in wb and "the shell is PowerShell" not in DOC and "(the Codex engine)" not in DOC
       and "Git for Windows" in pwsh and "https://git-scm.com/downloads/win" in pwsh and "重開 Blave 再說一次" in pwsh
       and "reopen Blave and ask me again" in pwsh and "Never tell them to switch engines" in pwsh
       and "設定 › 模型接入" not in pwsh and "Settings › Model access" not in pwsh

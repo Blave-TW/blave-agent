@@ -1008,7 +1008,7 @@ html.ws-sc .side-rail { flex: 1 1 auto; }
 #ws-conn.av::before { inset: -9px -1px -9px -17px; }   /* 同齒輪:往右不長、往左多長 16,扣掉 1px 框 */
 .ic-btn.av:hover, .ic-btn.av[aria-expanded="true"], #rail-set[aria-expanded="true"] { background: var(--surface-muted); color: var(--ink); }
 .av .ic { width: 16px; height: 16px; stroke-width: 1.75; }
-.am-dot { position: absolute; top: -1px; right: -1px; width: 6px; height: 6px; border-radius: var(--radius-pill); background: var(--ink-2); box-shadow: 0 0 0 2px var(--bg-body); pointer-events: none; }
+.am-dot { position: absolute; top: -1px; right: -1px; width: 6px; height: 6px; border-radius: var(--radius-pill); background: var(--ink-2); outline: 2px solid var(--bg-body); pointer-events: none; }   /* 缺口圈用 outline:不是陰影(canon 陰影只三種) */
 .side-menu { position: fixed; z-index: 40; width: 240px; padding: var(--space-6); background: var(--surface-card); border-radius: var(--radius-lg); box-shadow: var(--shadow-md); }
 .side-menu[hidden] { display: none; }
 .am-who { margin: 0; padding: var(--space-6) calc(var(--space-4) + var(--space-6)); font-size: 12px; color: var(--ink-3); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
@@ -1023,6 +1023,7 @@ html.ws-sc .side-rail { flex: 1 1 auto; }
 .am-i:hover .v { color: var(--ink-2); }
 .am-i .ic { flex: none; margin-left: auto; width: 12px; height: 12px; stroke-width: 2; color: var(--ink-3); }
 .am-i .nav-new { margin-left: auto; }
+.am-i .v .nav-new { margin: 0 var(--space-6) 0 0; vertical-align: middle; }   /* 「設定」列:點在值的前面、同一行(雲端主機有新版) */
 .am-gap { height: var(--space-8); }
 @media (prefers-reduced-motion: reduce) { .am-i, .am-i .v { transition: none; } }
 .ph-pop {
