@@ -136,4 +136,35 @@ ok("稽核 C1:雲端視角不叫人重開 Blave,講主機那一句;讀不到帳�
   ok("登入停了不算啟動中(那一態有自己的句子與〔重新登入〕)", !boot(rep({ worker_running: false }), T0 + 1000));
   ok("設定 › 帳戶那一列與標頭的失敗清單都看 trSpBooting", /&& !\(!ro && trSpBooting\(r, id, Date\.now\(\)\)\) \? trLiveEntry\(r, id\) : null;/.test(trade)
     && /!\(typeof trSpBooting === "function" && trSpBooting\(r, id, Date\.now\(\)\)\); \}\); \}/.test(trade)); }
+// 11-23 夜盤實測:每次送單後 ORDER_SETTLE_S 內 lib 拒讀部位(SnapshotLag),帳戶讀取器回 ok:false＋equity 數字＋positions null,
+// 頁首寫「串接失敗」、總權益「—」。部位未知不是串接失敗:權益照畫、部位寫「—」＋「等永豐回報中…」,部位照舊不當 0(lesson 16)
+{ const pure = trade.slice(trade.indexOf("/* ── 純邏輯("), trade.indexOf("/* ── 純邏輯到此"));
+  const pc = { SINOPAC_LOCAL_ON: true, spWip: () => false, spLoginStopped: () => false, spRetryAt: () => null, Date, Object, Array, String, Number, Math, JSON, isFinite, Set, Map };
+  vm.createContext(pc); vm.runInContext(pure.replace(/^const /gm, "var "), pc);
+  ["trPosPending", "trEqOk"].forEach((n) => { if (typeof pc[n] !== "function") pc[n] = () => undefined; });   // 修前沒有這兩支:照樣跑完、報紅
+  const lagCls = (/^class (SnapshotLag)\(RuntimeError\):/m.exec(libAcct) || [])[1];
+  const lag = { ok: false, equity: 50010, currency: "TWD", accounts: { futures: 50010 }, available: 41000, positions: null, holdings: null,
+    error: { stage: "get_positions", type: lagCls || "?", msg: "永豐部位快取尚未跟上最近一次下單" } };
+  const rep = (e) => ({ venues: { sinopac: { credentials: true, pair: true, order: true, account: true } }, account: { read_at: 1, venues: { sinopac: e } } });
+  ok("lib 的類別名就是外殼認的那個(SnapshotLag)", lagCls === "SnapshotLag" && /e\.error\.type === "SnapshotLag" && e\.error\.stage === "get_positions"/.test(trade));
+  ok("SnapshotLag(只有部位在等):不列串接失敗、權益照讀、保證金照畫", pc.trPosPending(lag) && pc.trFailedIds(rep(lag)).length === 0
+    && pc.trEqOk(lag) && pc.trLiveTotal(lag) === 50010 && !!pc.trMarginModel(lag, 1), pc.trFailedIds(rep(lag)));
+  const eqFail = Object.assign({}, lag, { equity: null, accounts: null, error: { stage: "get_equity", type: "RuntimeError", msg: "x" } });
+  const noEq = Object.assign({}, lag, { equity: null, accounts: null });
+  const other = Object.assign({}, lag, { error: { stage: "get_positions", type: "RuntimeError", msg: "sinopac: TXF is open in several contract months" } });
+  ok("其他讀帳失敗照舊是串接失敗:權益讀不到、SnapshotLag 卻沒有權益、部位讀失敗但不是 SnapshotLag",
+    [eqFail, noEq, other].every((e) => !pc.trPosPending(e) && !pc.trEqOk(e) && pc.trFailedIds(rep(e)).length === 1));
+  ok("部位仍是讀不到(ok 不改):自動下單頁不把它當 0——帳上與差額寫「—」、表底一句、細節行與策略外不畫",
+    lag.ok === false && /const posPend = recon && !firstRead && trVenueIds\(r\)\.some\(\(id\) => trPosPending\(trLiveEntry\(r, id\)\)\);/.test(trade)
+    && /else if \(firstRead \|\| posPend\) row\.append\(dash\(false\), dash\(false\)\);/.test(trade)
+    && /const outside = recon && !firstRead && !posPend \?/.test(trade) && /if \(trade && !firstRead && !posPend && covered\(sym\)\)/.test(trade)
+    && /if \(posPend\) frag\.appendChild\(trEl\("div", "pf-foot", t\("sp\.posPending"\)\)\);/.test(trade)
+    && /function trLivePositions\(r\) \{[\s\S]{0,120}if \(!e \|\| !e\.ok \|\| !e\.positions\) return;/.test(trade)
+    && /function trCfBookBad\(r\) \{\n  if \(!trVenueIds\(r\)\.some\(\(id\) => \{ const e = trLiveEntry\(r, id\); return !!e && e\.ok === false; \}\)\) return false;/.test(trade));
+  ok("總權益、資產頁、設定 › 帳戶那一列看 trEqOk／trPosPending,不看 e.ok",
+    /function trEquity\(\) \{ const e = trLiveEntry\(trReport\(\), trVenueId\(\)\); return trEqOk\(e\) \? trLiveTotal\(e\) : null; \}/.test(trade)
+    && /const v = trEqOk\(e\) \? \(twd \?/.test(trade) && /\(\(!!e && !e\.ok && !trPosPending\(e\)\) \|\| !!\(bn && bn\.verdict\)/.test(trade)
+    && /else if \(trEqOk\(e\) && !failed\) st\.appendChild/.test(trade) && /else if \(e && !e\.ok && !capWip && !trPosPending\(e\)\) \{/.test(trade));
+  const S = fs.readFileSync(path.join(R, "strings.js"), "utf8"), pp = [...S.matchAll(/"sp\.posPending": "([^"]*)"/g)].map((m) => m[1]);
+  ok("「等永豐回報中…」中英都有、刪節號單個 …", pp.length === 2 && pp.includes("等永豐回報中…") && pp.includes("Waiting for SinoPac to report…"), pp); }
 console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0);

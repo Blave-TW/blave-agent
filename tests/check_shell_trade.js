@@ -1841,7 +1841,8 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
         "pres.s.setupRun", "pres.s.orderRun", "pres.s.probeRun", "pres.s.workerRun",   // 統一清單列右側(renderer/president.js 同 capRow)
         "sp.s.setupRun", "sp.s.loginRun", "sp.s.simRun", "sp.s.simWait", "sp.s.workerRun",   // 永豐清單列右側(renderer/sinopac.js 同 capRow)
         "tr.presBooting",    // 標題下狀態行:統一下單程式剛起、第一筆帳戶回報還沒回來(trPresBooting),不掛在任何控件上
-        "tr.typecPending"];  // 投資組合還沒有權重時表格格子裡的字(機器在算第一輪,Wei 10-15 改「計算中…」),不掛在任何控件上
+        "tr.typecPending",   // 投資組合還沒有權重時表格格子裡的字(機器在算第一輪,Wei 10-15 改「計算中…」),不掛在任何控件上
+        "sp.posPending"];    // 自動下單 › 部位表底:永豐剛送單、部位還在等回報(trPosPending),不掛在任何控件上
       const prog = Object.keys(S2.zh).filter((k) => /中…$/.test(S2.zh[k]) && STATUS_ONLY.indexOf(k) < 0);
       const RD = path.join(__dirname, "..", "shell", "renderer");
       const files = fs.readdirSync(RD).filter((f) => f.endsWith(".js") && f !== "strings.js" && f !== "i18n.js");

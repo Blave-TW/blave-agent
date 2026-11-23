@@ -650,7 +650,7 @@ check(entry["ok"] is False and entry.get("error") and os.path.exists(_marker),
 os.rename(acct_mod._SNAPSHOT + ".away", acct_mod._SNAPSHOT)
 entry = account_reader.read_venue(SJ, {})
 check(entry["positions"] is None and entry["ok"] is False and entry["error"]["type"] == "SnapshotLag"
-      and entry["equity"] == 50010.0,
+      and entry["error"]["stage"] == "get_positions" and entry["equity"] == 50010.0,
       "account_reader: a read inside the settle window leaves positions unknown, never {} (M0-b's [])", entry)
 with open(vault.LAST_ORDER_PATH, "w") as f:
     f.write(repr(now - 3600))

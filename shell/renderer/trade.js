@@ -57,6 +57,10 @@ function trLiveEntry(r, id) {
   const a = r && r.account && r.account.venues;
   return (a && a[id]) || null;
 }
+/* 永豐送單後 ORDER_SETTLE_S 內 lib 拒讀部位(SnapshotLag;references/sinopac-broker.md lesson 16:部位未知、不是平的):
+   帳戶讀取器已讀到權益、positions 留 null、ok 照舊 false。這不算串接失敗、權益照畫;ok 不改——部位一律照讀不到處理,不能當 0 */
+function trPosPending(e) { return !!e && e.ok === false && !!e.error && typeof e.error === "object" && e.error.type === "SnapshotLag" && e.error.stage === "get_positions" && typeof e.equity === "number" && isFinite(e.equity); }
+function trEqOk(e) { return !!e && (e.ok === true || trPosPending(e)); }
 /* 畫面上的淨值 = 整個帳戶:accounts(各錢包)加總,沒有才退回 equity(同雲端 pfLiveTotal、平台 agent_equity_snapshot)。
    equity 只是下單那個錢包(Binance = U 本位合約的保證金餘額),錢放在現貨 / 資金 / 理財時單看它就像錢不見了 */
 function trLiveTotal(e) {
@@ -82,7 +86,7 @@ function trWalletRows(e) {
    更新時間:margin_updated_at(統一 worker 解析 update_date/time)→ 退回帳戶讀取器那輪的 read_at */
 const TR_MARGIN_KEYS = ["available", "initial_margin", "maintenance_margin"];
 function trMarginModel(e, readAt) {
-  if (!e || typeof e !== "object" || e.ok !== true) return null;
+  if (!e || typeof e !== "object" || !trEqOk(e)) return null;
   const has = (k) => Object.prototype.hasOwnProperty.call(e, k), num = (v) => (typeof v === "number" && isFinite(v) ? v : null);
   if (!TR_MARGIN_KEYS.some(has)) return null;
   const rows = TR_MARGIN_KEYS.filter(has).map((k) => ({ key: k, value: num(e[k]) }));
@@ -209,7 +213,7 @@ function trAcctErr(err) {
   const m = /^([a-z_]+):\s*(.*)$/i.exec(String(err || ""));
   return m ? { stage: m[1], msg: m[2] } : { stage: "—", msg: String(err || "") };
 }
-function trFailedIds(r) { return trVenueIds(r).filter((id) => { const e = trLiveEntry(r, id); return !!e && !e.ok && !trCapWip(r, id) && !trPresWip(r, id) && !(typeof trSpWip === "function" && trSpWip(r, id)) && !(typeof trSpRetryAt === "function" && trSpRetryAt(r, id) !== null) && !(id === "president" && trPresBooting(r, Date.now())) && !(typeof trSpBooting === "function" && trSpBooting(r, id, Date.now())); }); }
+function trFailedIds(r) { return trVenueIds(r).filter((id) => { const e = trLiveEntry(r, id); return !!e && !e.ok && !trPosPending(e) && !trCapWip(r, id) && !trPresWip(r, id) && !(typeof trSpWip === "function" && trSpWip(r, id)) && !(typeof trSpRetryAt === "function" && trSpRetryAt(r, id) !== null) && !(id === "president" && trPresBooting(r, Date.now())) && !(typeof trSpBooting === "function" && trSpBooting(r, id, Date.now())); }); }
 /* 綁著的只有開通中的統一、對帳器也沒在跑 = 開通還沒做完(0.1.18 Wei 實測:存了帳密、憑證 ok、probe 還在跑,頁面就講
    「串接失敗 · 已暫停 · Blave 重開過」)。對帳器在跑的不算:開通過、之後 worker 才失敗的那種照一般狀態機走,暫停鈕要在。
    機器重開相關的兩態(停著 / 沒停住)一律優先於 setup:那是真錢警示,開通中也不能藏。
@@ -1906,7 +1910,7 @@ function trCcy() { const id = trVenueId(), e = trLiveEntry(trReport(), id); retu
 function trUnit() { return trCcy(); }   // 「模擬」記號只留頂列與動到錢的確認框標題;單位寫幣別本身(同雲端版)
 // 數字後面接帳戶幣;幣別未知(null)就只有數字
 function trWithUnit(s) { const c = trUnit(); return c ? s + " " + c : s; }
-function trEquity() { const e = trLiveEntry(trReport(), trVenueId()); return e && e.ok ? trLiveTotal(e) : null; }
+function trEquity() { const e = trLiveEntry(trReport(), trVenueId()); return trEqOk(e) ? trLiveTotal(e) : null; }
 function trFmt(v, signed) {
   if (typeof v !== "number" || !isFinite(v)) return null;
   const a = Math.abs(v), dp = Math.abs(a - Math.round(a)) < 0.005 ? 0 : 2;
@@ -4808,9 +4812,11 @@ function poSigTable(r, stored, states, mode) {
   const twClosed = recon ? trTwClosedKeys(last) : new Set(), gatedK = recon ? trGatedKeys(last) : new Set(), awaitK = recon ? trAwaitKeys(last) : new Map();
   // 綁了但第一次讀帳還沒回來(沒有對帳快照、綁定的交易所也還沒有任何讀帳結果):帳上與差額寫「—」,不畫一個手上沒有的 0(帳上本來有部位的人會以為要整筆下單)
   const firstRead = recon && trFirstReadPending(r);
+  // 永豐剛送單、部位還在等回報(trPosPending):帳上與差額同樣寫「—」,表底講一句;不能畫成 0(會以為整筆還要下)
+  const posPend = recon && !firstRead && trVenueIds(r).some((id) => trPosPending(trLiveEntry(r, id)));
   // Blave 帳本上有、已經沒有策略要的(對帳器會平掉):列成目標 0。帳上有、帳本沒有的(用戶自己的):區尾「策略外」,目標與差額「—」
   const extra = recon ? Object.keys(mine).filter((k) => mine[k] && !(k in target)) : [];
-  const outside = recon && !firstRead ? Object.keys(bk.unmanaged).filter((k) => bk.unmanaged[k] && !/@spot$/.test(k) && !(k in target)) : [];   // 策略要的標的不另列「策略外」:那一列底下寫「另有手動 N」
+  const outside = recon && !firstRead && !posPend ? Object.keys(bk.unmanaged).filter((k) => bk.unmanaged[k] && !/@spot$/.test(k) && !(k in target)) : [];   // 策略要的標的不另列「策略外」:那一列底下寫「另有手動 N」
   const waiting = Object.keys(stored).filter((n) => { const x = TR.list.find((y) => y.name === n) || {}, st = (states || {})[n];
     return x.portfolio === true && !(st && st.weights && typeof st.weights === "object") && !(TR.just && TR.just.removed && TR.just.removed[n] && Date.now() - TR.just.removed[n] < ENV_JUST_MS); });
   const fundedN = Object.keys(stored).filter((n) => stored[n] > 0).length, picked = Object.keys(stored).length > 0;
@@ -4904,7 +4910,7 @@ function poSigTable(r, stored, states, mode) {
     row.append(sc, tc);
     if (trade) {
       if (!covered(sym)) { const tip = !usNo(sym); row.append(dash(tip), dash(tip)); }
-      else if (firstRead) row.append(dash(false), dash(false));
+      else if (firstRead || posPend) row.append(dash(false), dash(false));
       else if (notYet) { row.append(trEl("td", "n", numText(lot, mine[sym] || 0))); const dd = row.appendChild(trEl("td", "n na", "—")); dd.title = t("tr.sigNotYet"); }
       else {
         // 沒回報這個標的 = 帳上就是 0:畫成「—」會把「差額正等著下單」這個最重要的事實藏掉
@@ -4934,7 +4940,7 @@ function poSigTable(r, stored, states, mode) {
     /* 只管自己的部位(帳本模式)時,同一標的帳戶比帳本多出來的是手動部位(Wei 10-14,同網頁 5d93c656):帳上、差額照舊只算策略那份,
        這一列底下多一行「另有手動 N」(tooltip:對帳不會動它)。交易所的均價／未實現／保證金是整個帳戶那一檔的,拆不出策略那份——
        細節行尾註明「含手動」,這一列也不進表底合計 */
-    if (trade && !firstRead && covered(sym)) { const as = mine[sym] || 0, sh = {}; detRow(sym, tb, lot, as, trManualPart(r, sym, lot, bk, sh) || 0, sh.acct); }
+    if (trade && !firstRead && !posPend && covered(sym)) { const as = mine[sym] || 0, sh = {}; detRow(sym, tb, lot, as, trManualPart(r, sym, lot, bk, sh) || 0, sh.acct); }
     if (!trade && contribs[sym] && contribs[sym].length >= 2) trNetRows(sym, contribs[sym], sc, tb, lot, trZoneUnit(z), cols);
   }
   // 帳上不是 0 的列底下:均價 · 未實現 · 保證金(槓桿),只寫讀得到的那幾樣;一樣都沒有就不加這一行。未實現與保證金取整到元、未實現帶正負號(同網頁 pfFmtSignedAmt)
@@ -4979,6 +4985,7 @@ function poSigTable(r, stored, states, mode) {
   }
   if (footN) frag.appendChild(foot);
   if (outside.length) frag.appendChild(trEl("div", "pf-foot", t("tr.unmanagedTip")));
+  if (posPend) frag.appendChild(trEl("div", "pf-foot", t("sp.posPending")));
   /* 下單失敗:每個還欠著單的標的各掛它最新的那一筆(trLiveOrderErrs,同網頁),掛在那一列底下(靠右,跟著差額);整台機器的平倉沒做成("*")放表底。
      音量各筆自己算(spec 丙案):對帳器在跑、而且是最近一輪的失敗 = 紅字「下單失敗:…」;否則降成灰字「上次下單失敗:…」帶時間。
      狀態跟頁頭同一個來源(envHeadState):雲端讀不到新狀態時兩處才不會一紅一灰 */
@@ -5052,12 +5059,12 @@ function trPaintAssets() {
     row.appendChild(trEl("span", "who", trVenueLabel(id, true)));
     const amt = trEl("span", "amt"); amt.appendChild(trEl("span", "lbl", t("tr.equity")));
     const ccy = (e && e.currency) || trUnit(), twd = ccy === "TWD";   // TWD 不給小數(canon Numbers:價格 = 整數 + 幣別後綴;同網頁 fmtAmount)
-    const v = e && e.ok ? (twd ? trTwd(trLiveTotal(e)) : trFmt2(trLiveTotal(e))) : null;
+    const v = trEqOk(e) ? (twd ? trTwd(trLiveTotal(e)) : trFmt2(trLiveTotal(e))) : null;
     amt.appendChild(document.createTextNode(v == null ? "—" : v));
     if (v != null && ccy) amt.appendChild(trEl("span", "ccy", ccy));
     row.appendChild(amt); box.appendChild(row);
     // 錢包分佈(同雲端 buildAccountBlock):這份清單就是「錢在哪」的答案,常駐展開
-    const wallets = e && e.ok ? trWalletRows(e) : [];
+    const wallets = trEqOk(e) ? trWalletRows(e) : [];
     if (wallets.length) {
       box.appendChild(trEl("div", "pf-wallets-cap", t("tr.acctBreakdown")));
       const list = trEl("div", "pf-wallets");
@@ -5269,10 +5276,10 @@ function trPaintSet() {
   // 群益本機入口受 CAPL_LOCAL_ON 管:關掉的版本遇到留下的綁定不給「繼續」(框裡的步驟不在),只留解除綁定
   const caplW = !ro && id === CAPITAL && trCapWip(r, id), caplStop = !ro && trCaplStopped(r, id) && CAPL_LOCAL_ON;
   const capWip = (ro && trCapWip(r, id)) || presW || caplW || spW;
-  const failed = !capWip && !spRetry && ((!!e && !e.ok) || !!(bn && bn.verdict) || presLogin || spLogin), st = trEl("span", "cn-st" + (capWip ? " cx-wait" : spRetry ? " is-calm" : failed ? "" : e ? " on" : " cx-wait"));
+  const failed = !capWip && !spRetry && ((!!e && !e.ok && !trPosPending(e)) || !!(bn && bn.verdict) || presLogin || spLogin), st = trEl("span", "cn-st" + (capWip ? " cx-wait" : spRetry ? " is-calm" : failed ? "" : e ? " on" : " cx-wait"));
   if (capWip) st.appendChild(trEl("span", "cap-dot"));
   else if (spRetry) { const m = trEl("span", "fault-mark"); m.setAttribute("aria-hidden", "true"); st.appendChild(m); }
-  else if (e && e.ok && !failed) st.appendChild(trEl("i", "dot"));
+  else if (trEqOk(e) && !failed) st.appendChild(trEl("i", "dot"));
   else if (failed) { const m = trEl("span", "fault-mark"); m.setAttribute("aria-hidden", "true"); st.appendChild(m); }
   else { const sp = trEl("span", "spin16"); sp.setAttribute("aria-hidden", "true"); st.appendChild(sp); }
   st.appendChild(trEl("span", "", capWip ? t("cap.pending") : presLogin ? t("tr.s.presStopped") : spLogin ? t("sp.st.stopped") : spRetry ? t("sp.st.retry") : failed ? t("cx.failShort") : e ? t("cx.connected") : t("cx.connecting")));
@@ -5325,7 +5332,7 @@ function trPaintSet() {
   else if (spLogin) box.appendChild(errLine(spReasonText(r)));   // 原因句同 §4 那一類(不帶券商原文)
   // 重試中不重講原因:頁首那句已帶下一次重試的時間
   else if (spRetry) { /* noop */ }
-  else if (e && !e.ok && !capWip) {
+  else if (e && !e.ok && !capWip && !trPosPending(e)) {
     const ae = trAcctErr(e.error);
     // 帳戶模式擋下(Bitget 統一帳戶還沒開放;OKX 不支援合約):讀帳戶就會擋,講怎麼改,不出原文
     if (trErrToken(ae.msg) === "bitget_uta_unsupported") box.appendChild(errLine(t("cx.err.bitgetUtaBound")));

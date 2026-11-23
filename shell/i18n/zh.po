@@ -12108,6 +12108,10 @@ msgstr "主機上的永豐下單程式沒有回應。一直這樣就在聊天請
 msgid "sp.acct.readFail"
 msgstr "讀不到永豐帳戶，稍後會自動再讀。"
 
+# 自動下單 › 部位表底:永豐剛送單、部位還在等券商回報(SnapshotLag,ORDER_SETTLE_S 內),帳上與差額寫「—」;不是串接失敗
+msgid "sp.posPending"
+msgstr "等永豐回報中…"
+
 msgid "sp.err.notSigned"
 msgstr "永豐說帳戶還沒簽署或在審核中。"
 

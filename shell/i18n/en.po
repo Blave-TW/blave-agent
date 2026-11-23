@@ -12064,6 +12064,10 @@ msgstr "SinoPac’s order engine on the host isn’t responding. If it stays thi
 msgid "sp.acct.readFail"
 msgstr "Couldn’t read the SinoPac account. Retrying shortly."
 
+# 自動下單 › 部位表底:永豐剛送單、部位還在等券商回報(SnapshotLag,ORDER_SETTLE_S 內),帳上與差額寫「—」;不是串接失敗
+msgid "sp.posPending"
+msgstr "Waiting for SinoPac to report…"
+
 msgid "sp.err.notSigned"
 msgstr "SinoPac says the account isn’t signed yet or is in review."
 
