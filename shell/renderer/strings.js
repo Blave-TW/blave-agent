@@ -718,7 +718,7 @@ const STRINGS = {
     "tr.mkt.noAuto": "No auto-trading",
     "tr.amountAria": "Amount ({ccy})",
     "tr.noStrategies": "No strategy is ready to trade yet. Ask the agent for one — once it has a backtest you can give it a size.",
-    "tr.usLockNew": "Saving won’t add it to the portfolio.",
+    "tr.usLockNew": "Saving won’t add it to Portfolio.",
     "tr.usLockStored": "Saving will be refused. Uncheck it in Pick Strategies first.",
     "tr.typeC": "Blave needs an update",
     "tr.typeCHost": "The machine needs an update",

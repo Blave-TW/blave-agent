@@ -3911,12 +3911,15 @@ function trAmountTable(names, stored, states) {
       const usLock = !(stored[n] > 0) && trUsSaveRefused(trReport(), n);
       const usNo = usLock || (isC ? trUsNoAuto(trReport(), null, [n]) && (!(tc || draftTc) || (tc || draftTc).keys.every((k) => trUsNoAuto(trReport(), k, [n])))
         : !txf && trUsNoAuto(trReport(), sym || null, [n]));
+      // 「不能自動下單」掛原因句,同策略頁頭那個狀態詞(portfolio.js;spec p3-0160-decisions R3-1、P2 (2))
+      const noAutoTag = () => { const w = trEl("span", "mkt-tag no-auto has-tip", t("tr.mkt.noAuto")), d = trEl("span", "sr-only", t("sp.usWhy"));
+        d.id = "tr-tip-" + (++trTipSeq); w.tabIndex = 0; w.title = t("sp.usWhy"); w.setAttribute("aria-describedby", d.id); first.append(w, d); };
       const row = document.createElement("tr");
       const first = trEl("td", "key");
       first.appendChild(trStratName(n));
       // 市場標籤:剛選進、還沒回報、清單也沒寫市場的不猜(不先標「合約」)
-      if (isC || market) first.appendChild(trEl("span", "mkt-tag", isC ? t("po.mktPortfolio") : usNo ? t("tr.mkt.noAuto") : t(trMktKey(sym, market === "spot", !!txf))));
-      if (usNo && isC) first.appendChild(trEl("span", "mkt-tag", t("tr.mkt.noAuto")));
+      if (isC || market) { if (!isC && usNo) noAutoTag(); else first.appendChild(trEl("span", "mkt-tag", isC ? t("po.mktPortfolio") : t(trMktKey(sym, market === "spot", !!txf)))); }
+      if (usNo && isC) noAutoTag();
       // 草稿列(選擇策略框或策略頁「加到策略組合」勾進來、還沒存):標「未儲存」;存了會送單時下面再一句(spec F4)
       if (!(n in stored)) { first.appendChild(trEl("span", "mkt-tag unsaved", t("po.unsaved"))); if (trCfWillOrder(n, trPvOf(trReport(), n) || st, trContracts())) first.appendChild(trEl("span", "pf-note live", t("po.willOrder"))); }
       // 標的格:台指期列可以換合約(安靜觸發器,canon › Dropdown menu);換倉中掛小標。窄欄時同一份在策略名下那行

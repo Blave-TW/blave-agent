@@ -1161,4 +1161,24 @@ for (const lang of ["zh", "en"]) {
   const dp = poMap(path.join(__dirname, "..", "shell", "i18n", lang + ".po")), wp = poMap(path.join(webDir, "app", "translations", lang, "LC_MESSAGES", "messages.po"));
   ok(`餘額 tooltip p3.set.balTip ${lang} 跟網頁 bc_plan_wallet_fact 逐字一致`, typeof dp["p3.set.balTip"] === "string" && dp["p3.set.balTip"] === wp["bc_plan_wallet_fact"], dp["p3.set.balTip"] + " vs " + wp["bc_plan_wallet_fact"]);
 }
+// 0.1.60(稽核 web-0160 列的逐字對照):更新雲端主機直接指令、美股訊號列、現金列、轉出句泡泡、美股狀態詞原因句、已配置徽章、重掃句。
+// set.ccy、mg.applyDiffSet、mg.why.alloc、mg.why.pickTitle 上面的設定與合句段已比過。兩處不是逐字:美股拒絕句電腦版多一個 {more}(網頁一次只拒一支),
+// 拿掉再比;重掃句網頁走 python-format,字面的 % 寫成 %%,比之前還原。任一邊沒有這個 key 也算紅
+const P0160_PAIRS = { "tr.cloud.updRunning": "workspace_pf_rej_upd_running", "up.row.applying": "workspace_upd_applying",
+  "up.done.cloud": "workspace_upd_done_cloud", "up.done.cloudRestarted": "workspace_upd_done_restarted", "up.done.paused": "workspace_upd_done_paused",
+  "up.done.restartFailed": "workspace_upd_done_restart_failed", "up.done.restartDeferred": "workspace_upd_done_restart_deferred",
+  "up.done.failedNone": "workspace_upd_done_failed_none", "up.done.failedPartial": "workspace_upd_done_failed_partial",
+  "up.err.noGit": "workspace_upd_err_no_git", "up.cf.ledeBare": "workspace_upd_cf_lede_bare", "up.cf.d3": "workspace_upd_cf_d3",
+  "tr.usLockNew": "workspace_pf_us_lock_new", "tr.usLockStored": "workspace_pf_us_lock_stored",
+  "tr.usSymbol.rejected": "workspace_pf_rej_us_symbol", "tr.usVenue.rejected": "workspace_pf_rej_us_venue", "tr.acct.cash": "workspace_pf_acct_cash",
+  "xp.msgLabel.xq": "workspace_xp_msg_label_xq", "xp.msgLabel.mc": "workspace_xp_msg_label_mc", "xp.msgLabel.pine": "workspace_xp_msg_label_pine",
+  "sp.usWhy": "workspace_sp_us_why", "ver.live": "workspace_ver_live", "ver.drift": "workspace_ver_drift",
+  "rob.msgRescan": "workspace_rob_msg_rescan", "rob.msgRescan1": "workspace_rob_msg_rescan1" };
+const P0160_MORE = ["tr.usSymbol.rejected", "tr.usVenue.rejected"];
+for (const lang of ["zh", "en"]) {
+  const dp = poMap(path.join(__dirname, "..", "shell", "i18n", lang + ".po")), wp = poMap(path.join(webDir, "app", "translations", lang, "LC_MESSAGES", "messages.po"));
+  const dv = (k) => (P0160_MORE.includes(k) && typeof dp[k] === "string" && dp[k].split("{more}").length === 2 ? dp[k].replace("{more}", "") : dp[k]);
+  const bad = Object.entries(P0160_PAIRS).filter(([d, w]) => typeof dp[d] !== "string" || !dp[d] || typeof wp[w] !== "string" || dv(d) !== wp[w].replace(/%%/g, "%"));
+  ok(`0.1.60 批 ${lang}:${Object.keys(P0160_PAIRS).length} 句兩邊逐字一致(美股拒絕句電腦版恰好一個 {more})`, bad.length === 0, bad.map(([d, w]) => d + "「" + dp[d] + "」 vs " + w + "「" + wp[w] + "」").join(";"));
+}
 console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0);

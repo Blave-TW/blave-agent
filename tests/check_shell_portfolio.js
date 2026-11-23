@@ -1094,7 +1094,7 @@ ok("優化表不再講台指期進位超配(0.1.44 拿掉):程式、門檻常數
   && /t\("mg\.lotsUnderFoot", \{ amt \}\)/.test(psrc));
 ok("等待那一行只剩回測(寫「回測：」,在回測區標題列下);優化不等,「優化：」那句拿掉(spec portfolio-optimize-lite §8-1)", /t\("mg\.waitPrefixBt"\) \+ \(n === 1/.test(cutF(psrc, "mgBuildPage")) && !fs.readFileSync(path.join(R, "strings.js"), "utf8").includes('"mg.waitPrefixOpt"'));
 ok("投資組合還沒算出成分(沒有權重):金額表部位寫「—」(tooltip tr.sigNotYet),不是空手", /const cNotYet = isC && !tc && !noSig;/.test(src) && /trPaintPosCell\(tgt, a, pos, tc, \{ noSig, notYet: notYet \|\| cNotYet, txf, sentOn, clamped: paperShort \? "paper" : \(tc && tc\.clamped\) \|\| null \}\);/.test(src));
-ok("剛選進、還沒回報、清單沒寫市場:金額表與部位表都不先標「合約」", /if \(isC \|\| market\) first\.appendChild\(trEl\("span", "mkt-tag"/.test(src) && /if \(!guess\) c\.appendChild\(trEl\("span", "mkt-tag"/.test(src));
+ok("剛選進、還沒回報、清單沒寫市場:金額表與部位表都不先標「合約」", /if \(isC \|\| market\) \{ if \(!isC && usNo\) noAutoTag\(\); else first\.appendChild\(trEl\("span", "mkt-tag"/.test(src) && /if \(!guess\) c\.appendChild\(trEl\("span", "mkt-tag"/.test(src));
 // runtime NEEDS_ROUTING 閘門改成任何沒路由的成員都擋(金額 0 也算):只有金額 0 的成員沒路由也落 Z
 { const ctx = vm.createContext({ TR: { list: [] } }); const pure = src.slice(src.indexOf("/* ── 純邏輯("), src.indexOf("/* ── 純邏輯到此"));
   vm.runInContext(pure.replace(/^const /gm, "var "), ctx);

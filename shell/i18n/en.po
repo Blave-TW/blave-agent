@@ -2217,7 +2217,7 @@ msgstr "No strategy is ready to trade yet. Ask the agent for one — once it has
 
 # 配置表上存了必被拒(US_SYMBOL)的美股訊號列:金額格鎖住,沒存過的這一列存檔時不送(trade.js trUsSaveRefused)
 msgid "tr.usLockNew"
-msgstr "Saving won’t add it to the portfolio."
+msgstr "Saving won’t add it to Portfolio."
 
 # 同上,但已經存在設定裡的舊列:照送、整份存檔會被拒,出口是取消勾選
 msgid "tr.usLockStored"

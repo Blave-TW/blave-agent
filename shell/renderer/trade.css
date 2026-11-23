@@ -297,6 +297,8 @@ html.ws-sc .side-gate { display: none; }
 .pf-tbl td.unmanaged { font-family: var(--font-sans); font-size: 12px; }   /* 「不歸 Blave 管」是字不是數:Han 不進 mono */
 .trv .ccy, .del-body .ccy { margin-left: var(--space-4); font-size: 11px; color: var(--ink-3); font-family: var(--font-sans); }
 .mkt-tag { margin-left: var(--space-8); white-space: nowrap; font-size: 11px; color: var(--ink-3); font-family: var(--font-sans); }
+.mkt-tag.has-tip { cursor: help; text-decoration: underline dotted var(--color-greyLightMedium); text-underline-offset: 3px; }
+[data-theme="dark"] .mkt-tag.has-tip { text-decoration-color: var(--ink-3); }
 .pf-note { display: block; font-size: 12px; color: var(--ink-3); }
 .amt-inw { display: inline-flex; align-items: center; gap: var(--space-6); }
 /* 九位數(300,000,000)放得下;格子只放數字,單位在區標題(units spec §9.6) */

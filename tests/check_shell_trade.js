@@ -2479,12 +2479,22 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
         // 0.1.28 美股純代號的市場標籤(設計師 desktop-0128-misc-review §1):A 型取代「合約」,投資組合「投資組合」後面接
         { const keyOf = (list, report, states, n) => { ctx.TR = bag("okx", {}, { list, picked: new Set(list.map((x) => x.name)) }); Object.assign(ctx.TR.st.report, { quote_ccy: {}, states: states || {} }, report || {});
             const all = flat(vm.runInContext("TR = this.TR; trAmountTable(trNames(), trBase(), this.STATES)", Object.assign(ctx, { STATES: states || {} })));
-            const k = all.filter((x) => x.tag === "td" && /(^| )key( |$)/.test(x.className || x.cls || "")); return k.length === 1 ? k[0].kids.filter((c) => /(^| )mkt-tag$/.test(c.className || c.cls || "")).map((c) => c.textContent) : null; };
+            const k = all.filter((x) => x.tag === "td" && /(^| )key( |$)/.test(x.className || x.cls || "")); return k.length === 1 ? k[0].kids.filter((c) => /(^| )mkt-tag( |$)/.test(c.className || c.cls || "") && !/(^| )unsaved( |$)/.test(c.className || c.cls || "")).map((c) => c.textContent) : null; };
+          // 「不能自動下單」掛原因句(spec p3-0160-decisions R3-1、P2 (2)):has-tip、可聚焦、title 與 aria-describedby 指到的 sr-only 同一句 sp.usWhy
+          const tipOf = (list, report, states) => { ctx.TR = bag("okx", {}, { list, picked: new Set(list.map((x) => x.name)) }); Object.assign(ctx.TR.st.report, { quote_ccy: {}, states: states || {} }, report || {});
+            const all = flat(vm.runInContext("TR = this.TR; trAmountTable(trNames(), trBase(), this.STATES)", Object.assign(ctx, { STATES: states || {} })));
+            const k = all.filter((x) => x.tag === "td" && /(^| )key( |$)/.test(x.className || x.cls || "")); if (k.length !== 1) return null;
+            return k[0].kids.filter((c) => /(^| )no-auto( |$)/.test(c.className || c.cls || "")).map((w) => { const id = w.getAttribute ? w.getAttribute("aria-describedby") : (w.attrs || {})["aria-describedby"]; const d = k[0].kids.find((x) => x.id === id);
+              return { tip: /(^| )has-tip( |$)/.test(w.className || w.cls || ""), tab: w.tabIndex, title: w.title, sr: d ? d.textContent + "|" + (d.className || d.cls) : null }; }); };
           const a = keyOf([{ name: "us_a", hasBacktest: true, symbol: "AMZN", market: "swap" }], { strategy_kinds: { us_a: { type: "A", market: "us_stock" } } }, null, "us_a");
           const c = keyOf([C({ name: "us_c", twd: false, srcMarket: "us_stock" })], {}, { us_c: { weights: { AMZN: 0.5, GOOGL: 0.5 }, market: "spot" } }, "us_c");
           const b = keyOf([{ name: "c_a", hasBacktest: true, symbol: "BTCUSDT", market: "swap" }], { strategy_kinds: { c_a: { type: "A", market: "crypto" } } }, null, "c_a");
           ok("配置列市場標籤:美股 A 型只出 tr.mkt.noAuto;美股投資組合 po.mktPortfolio 後接 tr.mkt.noAuto;加密照舊合約",
-            J(a) === J(["tr.mkt.noAuto"]) && J(c) === J(["po.mktPortfolio", "tr.mkt.noAuto"]) && J(b) === J(["tr.mkt.swap"]), J([a, c, b])); }
+            J(a) === J(["tr.mkt.noAuto"]) && J(c) === J(["po.mktPortfolio", "tr.mkt.noAuto"]) && J(b) === J(["tr.mkt.swap"]), J([a, c, b]));
+          const ta = tipOf([{ name: "us_a", hasBacktest: true, symbol: "AMZN", market: "swap" }], { strategy_kinds: { us_a: { type: "A", market: "us_stock" } } });
+          const tc = tipOf([C({ name: "us_c", twd: false, srcMarket: "us_stock" })], {}, { us_c: { weights: { AMZN: 0.5, GOOGL: 0.5 }, market: "spot" } });
+          const good = (x) => Array.isArray(x) && x.length === 1 && x[0].tip && x[0].tab === 0 && x[0].title === "sp.usWhy" && x[0].sr === "sp.usWhy|sr-only";
+          ok("配置列「不能自動下單」標籤掛 sp.usWhy:A 型與投資組合都是 has-tip、tabIndex 0、title 與 aria-describedby 同一句", good(ta) && good(tc), J([ta, tc])); }
         const two = zt([C({ name: "c_new", twd: false }), { name: "btc", hasBacktest: true, symbol: "BTCUSDT", market: "swap" }]);
         ok("兩區時未定區的區標題掛原因(title)", two.grp.some((g) => g[0] === "tr.grpUnknown" && g[1] === "tr.ccyAfterRun"), J(two)); }
       /* 查證報告 #1:群益台指期(雲端視角)——這一格是口數不是錢。對齊網頁 TXF_SPECS / txfRefMoney / paintTotal */
@@ -2617,7 +2627,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
         && /b\.id = "tr-pick"; b\.dataset\.fk = "pick";/.test(src) && /rv\.dataset\.fk = "revert";/.test(src) && /sv\.dataset\.fk = "save";/.test(src)
         && /b\.dataset\.fk = "tip:" \+ text;/.test(cutF("trTipLabel"))); }
     ok("接線:金額表名字那一格走 trStratName(其餘三樣不動)",
-      /const first = trEl\("td", "key"\);\n\s*first\.appendChild\(trStratName\(n\)\);\n[^\n]*\n\s*if \(isC \|\| market\) first\.appendChild\(trEl\("span", "mkt-tag"/.test(src)); }
+      /const first = trEl\("td", "key"\);\n\s*first\.appendChild\(trStratName\(n\)\);\n[^\n]*\n\s*if \(isC \|\| market\) \{ if \(!isC && usNo\) noAutoTag\(\); else first\.appendChild\(trEl\("span", "mkt-tag"/.test(src)); }
   /* ── 查證 #1 同類:群益口數在下單紀錄、總覽事件、表下單位那一行(同網頁 :15140、:16054)── */
   { const vm = require("vm");
     const cutF = (n) => { const i = src.indexOf("function " + n + "("); if (i < 0) throw new Error("no " + n); let d = 0; for (let k = src.indexOf("{", i); k < src.length; k++) { if (src[k] === "{") d++; else if (src[k] === "}" && --d === 0) return src.slice(i, k + 1); } throw new Error("no " + n); };
