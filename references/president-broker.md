@@ -303,14 +303,14 @@ print(r["status"], r["symbol"], r["fill_qty"], r["ack"])
   goes out while lots are parked; closes still do. If the park record cannot be saved after a send,
   the row goes to the park file's side file (`<park file>.unsaved`) and HALT is tripped; a restart
   reads it back, and the next save the park file takes merges it in and removes the side file. Until
-  the claim settles that row (its fill booked, or cleared as not filled), pressing Start trading
+  the claim settles that row (its fill booked, or cleared as not filled), pressing Start Trading
   while the park file still refuses it trips HALT again; once it is settled, trading goes on even if
   the park file still refuses. Never delete either file by hand. If the side file is refused too (a
   full disk), the row is kept in the reconciler process only and a restart forgets it.
   **A side file that cannot be read has no way out in the app.** If the side file
   (`state/president_pending_sent.json.unsaved`) exists but cannot be opened, does not parse as a
   JSON object, or holds an entry that is not itself a JSON object (`null`, a number, a string),
-  every press of Start trading is followed by HALT again in the next reconciler round — closes and
+  every press of Start Trading is followed by HALT again in the next reconciler round — closes and
   stops are not sent either — and doing what the pause reason says (check the position, press Start
   trading) only repeats it. This is not something the user did wrong. Confirm it read-only before
   saying so: `state/HALT` has `source` `reconciler` and the "no fill report, may not be booked"

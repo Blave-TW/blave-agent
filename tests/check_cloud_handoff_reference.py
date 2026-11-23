@@ -426,7 +426,7 @@ UPD_NEEDLES = {
     "paused machine: ungated → no restart, not a failure": "Without the gate (`\"restart\": \"skipped_not_gated\"`) it does not restart; that is not a failure.",
     "paused machine: tell the user it stays paused (zh)": "tell the user " + PAUSED_ZH,
     "paused machine: …and that exits and stops won't run (en)": "Auto-trading is still paused, and after the update exits and stops won't run either. Press Start Trading to resume, or close positions at the exchange first.",
-    "paused machine: stays paused until 啟動下單": "the machine stays paused until the user presses 啟動下單 (Start trading) on the Auto trading page",
+    "paused machine: stays paused until 啟動下單": "the machine stays paused until the user presses 啟動下單 (Start Trading) on the Auto trading page",
     "failure told as is (zh)": "and say exactly that: 「新檔已在機器上，但自動下單仍在跑舊版。」",
     "failure told as is (en)": "never \"updated and active\"",
     "restart failed: no VERSION": "Restart failed (`\"outcome\": \"restart_failed\"`) → `VERSION` is not written",
