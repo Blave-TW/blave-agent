@@ -2903,9 +2903,13 @@ function csStartNew(o) {
 const FIXED_PROMPTS = [["wf.msgRun", "wf.msgRunLabel", "wf.msgRunTitle"], ["rob.msgScan", "rob.msgScanLabel", "rob.msgScanTitle"], ["rob.msgRescan", "rob.msgRescanLabel", "rob.msgScanTitle"], ["rob.msgRescan1", "rob.msgRescanLabel", "rob.msgScanTitle"], ["lib.msgLocal", "lib.msgTitle", "lib.msgTitle"], ["lib.msg", "lib.msgTitle", "lib.msgTitle"], ["lib.msgPaid", "lib.msgTitle", "lib.msgTitle"]];   // 策略庫的安裝句:對話名與泡泡走「{名稱} · 安裝並回測」
 function fixedMatch(text, strings) {
   if (typeof text !== "string" || !text) return null;
-  for (const [src, label, title] of FIXED_PROMPTS) for (const l of ["zh", "en"]) for (const legacy of [false, true]) {
+  // 11-23 以前的重新掃描句(scan_grid 流程、「延伸一次」):舊對話裡的原句照樣認得
+  const before1123 = (tpl) => tpl.replace("scan_until_interior", "scan_grid → find_plateau").replace("\u5ef6\u4f38\u91cd\u6383\uff0c\u76f4\u5230\u4e0d\u5728\u908a\u4e0a\u3002", "\u5ef6\u4f38\u4e00\u6b21\u3002")   // 「延伸重掃,直到不在邊上。」→「延伸一次。」,跳脫寫法:比對用的資料不是畫面字
+    .replace("extend and rescan per the lib rule until it is off the edge.", "extend once per the lib rule.");
+  for (const [src, label, title] of FIXED_PROMPTS) for (const l of ["zh", "en"]) for (const era of [false, true]) for (const legacy of [false, true]) {
     let tpl = strings && strings[l] && strings[l][src];
     if (typeof tpl !== "string" || !tpl) continue;
+    if (era) { const old = before1123(tpl); if (old === tpl) continue; tpl = old; }
     // 0.1.45 以前的掃描句只寫代號:舊對話裡的原句照樣認得
     if (legacy) { const old = tpl.replace("「{display_name}」({name})", " {name}").replace("{display_name} ({name})", "{name}"); if (old === tpl) continue; tpl = old; }
     const keys = [];

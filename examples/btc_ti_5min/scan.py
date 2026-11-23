@@ -4,7 +4,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from dotenv import dotenv_values
-from lib.param_scan import percentile_thresholds, scan_grid, find_plateau, on_edge, extend_axis, write_scan, plot_heatmap
+from lib.param_scan import percentile_thresholds, scan_until_interior, write_scan, plot_heatmap
 import strategy as s
 from lib.costs import fee_of  # the strategy's FEE, else its market default
 
@@ -24,27 +24,13 @@ print(f"資料載入: {time.time()-t0:.1f}s  ({len(df):,} bars)\n")
 entry_vals, exit_vals = percentile_thresholds(df['TI'], current=(s.ENTRY_TH, s.EXIT_TH))
 
 # ── 參數掃描 ──────────────────────────────────────────────────────────────────
-def scan(entry_vals, exit_vals):
-    t1   = time.time()
-    grid = scan_grid(df, s.compute_signals, entry_vals, exit_vals, fee=fee_of(s), freq='5min')
-    total = len(entry_vals) * len(exit_vals)
-    print(f"掃描 {len(entry_vals)}×{len(exit_vals)}={total} 組合,耗時 {time.time()-t1:.1f}s  "
-          f"(平均 {(time.time()-t1)/total*1000:.0f}ms / 組合)")
-    return grid, find_plateau(grid, entry_vals, exit_vals)
-
-grid, (best_idx, nbr_mean, best_entry, best_exit, best_sharpe) = scan(entry_vals, exit_vals)
-
-# 穩健點落在網格邊緣 → 往那側沿同步長延伸 5 格、重掃一次(只延伸一次,仍算同一次迭代)
-edges = on_edge(best_idx, grid.shape)
-for axis, side in edges:
-    if axis == 0:
-        entry_vals = extend_axis(entry_vals, side)
-    else:
-        exit_vals  = extend_axis(exit_vals, side)
-if edges and len(entry_vals) * len(exit_vals) > grid.size:   # 真的長大了才重掃(撞到 40 上限或 floor 就不重掃)
-    grid, (best_idx, nbr_mean, best_entry, best_exit, best_sharpe) = scan(entry_vals, exit_vals)
-if on_edge(best_idx, grid.shape):   # 延伸(或延伸不了)後仍在邊緣 → 不再自己擴,交給用戶決定
-    print("⚠️ 穩健點仍在網格邊緣,真正的最佳區可能在掃描範圍外——回報用戶,請用戶決定是否擴大範圍")
+# 穩健點落在網格邊緣 → 往那側沿同步長延伸 5 格重掃,直到不在邊緣(全部算同一次掃描)
+r = scan_until_interior(df, s.compute_signals, entry_vals, exit_vals, fee=fee_of(s),
+                        current=(s.ENTRY_TH, s.EXIT_TH))
+grid, entry_vals, exit_vals, nbr_mean, best_idx = r['grid'], r['row_vals'], r['col_vals'], r['nbr_mean'], r['best_idx']
+best_entry, best_exit, best_sharpe = r['best_row'], r['best_col'], r['best_sharpe']
+if not r['interior']:   # 停在界限／次數／時間仍在邊緣 → 不自己採用,交給用戶決定
+    print(f"⚠️ 穩健點仍在網格邊緣(停止原因 {r['stop']}),真正的最佳區可能在掃描範圍外——回報用戶,請用戶決定")
 
 print(f"穩健參數: ENTRY_TH={best_entry}, EXIT_TH={best_exit}  鄰域 Sharpe={best_sharpe:.3f}  單格 Sharpe={grid[best_idx]:.3f}")
 
@@ -53,7 +39,7 @@ write_scan(grid, entry_vals, exit_vals, nbr_mean, best_idx,
            output_dir=str(Path(__file__).parent),
            row_param='ENTRY_TH', col_param='EXIT_TH', fee=fee_of(s),
            start=s.START, end=df.index[-1].strftime('%Y-%m-%d'),
-           current=(s.ENTRY_TH, s.EXIT_TH))
+           current=(s.ENTRY_TH, s.EXIT_TH), evaluated=r['evaluated'])
 
 plot_heatmap(
     grid, entry_vals, exit_vals,

@@ -465,6 +465,18 @@ if (!process.versions.electron) {
       NEW.startsWith("請掃描策略「台積電 動能」(tw_2330) 的參數") && at("zh", NEW) === "掃描 台積電 動能 的參數" && ctx.fm(NEW, ctx.STRINGS).vars.name === "tw_2330"
       && NEWEN.startsWith("Please rescan the parameters of strategy BTC 均線交叉 (btc_sma) (") && ctx.fm(NEWEN, ctx.STRINGS).vars.name === "btc_sma" && at("en", NEWEN) === "Rescan the parameters of BTC 均線交叉");
     ok("③ B5 舊紀錄:0.1.9 出貨的參數掃描原句(zh / en)照樣換成摘要", at("zh", OLD.zh) === "掃描 BTC 均線交叉 的參數" && at("en", OLD.en) === "Scan the parameters of BTC 均線交叉");
+    // 11-23 重新掃描句改成 scan_until_interior／延伸到不在邊上:之前出貨的原句(zh / en、二維 / 單參數)在舊對話裡照樣換成摘要
+    { const RV = { display_name: "BTC 均線交叉", name: "btc_sma", start: "2020-01-01", end: "2025-01-01", fee: "0.05", rp: "A", r0: "1", r1: "9", cp: "B", c0: "2", c1: "8" };
+      const OLDR = [
+        "請重新掃描策略「BTC 均線交叉」(btc_sma) 的參數（lib.param_scan：scan_grid → find_plateau → write_scan → plot_heatmap）。期間與交易成本照目前回測：2020-01-01 → 2025-01-01、交易成本 0.05%；兩軸沿用上次的 A（1–9）與 B（2–8），穩健點落在邊上時照 lib 規則往外延伸一次。掃完回報尖峰與穩健點。",
+        "請重新掃描策略「BTC 均線交叉」(btc_sma) 的參數（lib.param_scan：scan_grid → find_plateau → write_scan → plot_heatmap，單參數照 lib 文件的一格第二軸寫法）。期間與交易成本照目前回測：2020-01-01 → 2025-01-01、交易成本 0.05%；只有一個參數 A，範圍沿用上次的 1–9，穩健點落在邊上時照 lib 規則往外延伸一次。掃完回報尖峰與穩健點。",
+        "Please rescan the parameters of strategy BTC 均線交叉 (btc_sma) (lib.param_scan: scan_grid → find_plateau → write_scan → plot_heatmap). Use the current backtest's period and trading cost: 2020-01-01 → 2025-01-01, trading cost 0.05%. Keep the previous axes — A 1–9 and B 2–8; if the plateau lands on an edge, extend once per the lib rule. Then report the peak and the robust point.",
+        "Please rescan the parameters of strategy BTC 均線交叉 (btc_sma) (lib.param_scan: scan_grid → find_plateau → write_scan → plot_heatmap; a single parameter uses the one-cell second axis described in the lib docs). Use the current backtest's period and trading cost: 2020-01-01 → 2025-01-01, trading cost 0.05%. There is only one parameter, A; keep the previous range 1–9, and if the plateau lands on an edge, extend once per the lib rule. Then report the peak and the robust point."];
+      const want = at("zh", T("zh", "rob.msgRescan", RV));
+      ok("③ B5 舊紀錄:11-23 以前的重新掃描原句(zh / en、二維 / 單參數)照樣換成摘要,代號抓對;現行句也照樣",
+        typeof want === "string" && want.includes("BTC 均線交叉") && at("zh", T("zh", "rob.msgRescan1", RV)) === want
+          && OLDR.every((x) => at("zh", x) === want && ctx.fm(x, ctx.STRINGS).vars.name === "btc_sma"),
+        OLDR.map((x) => at("zh", x)).join(" | ") + " / want " + want); }
     const odd = ["a.b(c)*+?[x]", "x 做 walk-forward 樣本外驗證：訓練窗 7 天"];
     ok("③ B5 名稱帶 regex 特殊字元、或含模板的分隔字時照樣抓對(錨定 + 最短比對往後擴到整句成立);清單查不到 → 退回代號",
       odd.every((n) => { const m = ctx.fm(T("zh", "wf.msgRun", { name: n, lookback: "365", step: "30" }), ctx.STRINGS); return m && m.vars.name === n && m.vars.lookback === "365" && m.vars.step === "30"; })
