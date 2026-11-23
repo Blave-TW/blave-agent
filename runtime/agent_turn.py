@@ -31,6 +31,7 @@ import ssl
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unicodedata
 import urllib.error
@@ -200,6 +201,11 @@ PROTECTED_EDIT_RULES = [
     # lib/portfolio prefers it over portfolio_config.json, so an agent writing it moves money the user never
     # confirmed. Only the daemon writes it. Bash goes through mirror_bash_denied (audit 2026-10-21 N2).
     "Edit(/manager/amounts.ui.json)",
+    # auto-iterate counters (lib/iterate.py): the turn ledger the runtime writes and each strategy's iterate.json.
+    # Bash goes through iterate_bash_denied; Codex and BYO can still write the workspace (audit M1: misuse only)
+    "Edit(/lib/iterate.py)",
+    "Edit(/state/iterate/**)",
+    "Edit(/strategies/**/iterate.json)",
     # 統一 SDK logs (the login id is the national id) lived here before they moved under
     # credentials/; a machine bound before that keeps a copy until the next unbind
     "Read(/state/president_logs/**)",
@@ -429,6 +435,50 @@ def extract_form(text, cloud, why):
     return _FORM_STRIP_RE.sub("", text).rstrip(), chunk
 
 
+# ── 答案鈕(answers)────────────────────────────────────────────────────────────
+# 等回答的回合,模型在 <await/> 前寫 <answers default="N"> 區塊、一行一個選項(_ANSWERS_RULE,只在 --answer-buttons 時掛)。
+# 不編號;建議的那一個用 default(1 起算)標出,畫面預選它(Wei 11-20)。規則要正文不列選項,所以凡是畫不出鈕的地方
+# (校驗不過、回合被停、外殼沒宣告、Telegram、歷史)都把選項還原成純文字清單接在正文後,不讓選項憑空消失。
+# 上限與兩條 regex 跟顯示端同一份(tests/check_web_desktop_parity.js)。chunk 契約:references/turn-events.md。
+_ANSWERS_BLOCK_RE = re.compile(r"[ \t]*<answers(?:\s+default=\"(\d)\")?\s*>(.*?)</answers>[ \t]*", re.S)
+_ANSWERS_OPEN_TAIL_RE = re.compile(r"[ \t]*<answers\b(?:(?!</answers>).)*$", re.S)
+ANS_MAX_ITEMS = 4
+ANS_MAX_CHARS = 32
+ANS_MIN_ITEMS = 2
+# 控制字元與格式字元(U+202E 這類雙向覆寫):鈕上看到的字不能跟送出的不一樣(稽核 0.1.59 S-2)。電腦版與網頁的 ANS_BAD_CHAR 同一組
+ANS_BAD_CATS = ("Cc", "Cf")
+
+
+def _answers_ok(items):
+    if not ANS_MIN_ITEMS <= len(items) <= ANS_MAX_ITEMS or len(set(items)) != len(items):
+        return False
+    return all(1 <= len(s) <= ANS_MAX_CHARS and not any(unicodedata.category(c) in ANS_BAD_CATS for c in s) for s in items)
+
+
+def extract_answers(text):
+    """(清理後文字, 選項清單或 None, 建議那一個的序號(1 起算)或 None)。剝掉所有 <answers> 區塊(含未閉合尾段);
+    None = 沒有完整區塊。清單不在這裡校驗(畫不畫由 finalize 決定,畫不了的要還原成文字);default 超出清單長度當沒標。"""
+    if not text or "<answers" not in text:
+        return text, None, None
+    blocks = _ANSWERS_BLOCK_RE.findall(text)
+    items = default = None
+    if blocks:
+        d, body = blocks[-1]
+        items = [s for s in (ln.strip().lstrip("-•*‧·").strip() for ln in body.strip().splitlines()) if s]
+        default = int(d) if d and 1 <= int(d) <= len(items) else None
+    cleaned = _ANSWERS_OPEN_TAIL_RE.sub("", _ANSWERS_BLOCK_RE.sub("", text))
+    return cleaned.rstrip(), items, default
+
+
+def answers_as_text(items, default=None):
+    """畫不出鈕時接在正文後的純文字清單(沒有選項回 "")。不編號;建議那一個後面標「（建議）」/「(recommended)」。"""
+    if not items:
+        return ""
+    cjk = any("\u4e00" <= c <= "\u9fff" for s in items for c in s)
+    tag = "（建議）" if cjk else " (recommended)"
+    return "\n\n" + "\n".join("- " + s + (tag if default == i + 1 else "") for i, s in enumerate(items))
+
+
 # ── 搬策略動作卡(handoff)───────────────────────────────────────────────────────
 # 用戶在電腦版對話裡要求送上雲端／拉回:模型不自己搬,只在正文後自成一行寫
 # <handoff dir="up|down" name="<資料夾名>"/>(_HANDOFF_RULE,只在 --handoff-card 時掛),外殼畫一張卡、
@@ -625,11 +675,12 @@ def split_nav_head(text):
 
 
 def visible_text(text):
-    """剝掉所有給外殼看的標記(假對話、<suggest>、<await/>、<form/>、<export/>、<nav>)之後,用戶真的看得到的字。
+    """剝掉所有給外殼看的標記(假對話、<suggest>、<answers>、<await/>、<form/>、<export/>、<nav>)之後,用戶真的看得到的字。
     只有標記的回覆不算回覆:e2e029 找點子追問那一輪,最後一則訊息只剩標記、正文全在帶工具的旁白裡,
     剝完是空字串,旁白補位又因為 full_text 非空沒觸發,用戶拿到空泡泡、逐字稿存了 ""。"""
     text, _ = strip_hallucinated_turn(text or "")
     text, _ = extract_suggestions(text)
+    text, _, _ = extract_answers(text)
     text, _ = extract_await(text)
     text = _FORM_STRIP_RE.sub("", text)
     return _NAV_STRIP_RE.sub("", _EXPORT_STRIP_RE.sub("", text)).strip()
@@ -1837,6 +1888,21 @@ def mirror_bash_denied(cmd, powershell=False):
     return bool(_MIRROR_REDIRECT_RE.search(cmd) or (_MIRROR_NAME_RE.search(cmd) and _writes(cmd, powershell)))
 
 
+# The auto-iterate counters (see PROTECTED_EDIT_RULES): same shape as the mirror guard, any turn.
+_ITERATE_NAME_RE = re.compile(r"iterate\.json\b|state[/\\]+iterate\b|lib[/\\]+iterate\.py\b", re.IGNORECASE)
+_ITERATE_REDIRECT_RE = re.compile(r">>?\s*['\"]?[^\s;&|'\"]*(?:iterate\.json|state[/\\]+iterate[/\\]|lib[/\\]+iterate\.py)", re.IGNORECASE)
+ITERATE_DENY_REASON = (
+    "Refused by the Blave runtime — the iteration counters (state/iterate/, strategies/<name>/iterate.json, "
+    "lib/iterate.py) are written only by the lib and the runtime. Read them if you need to; to end a session call "
+    "lib.iterate.finish(name). Do not retry it another way."
+)
+
+
+def iterate_bash_denied(cmd, powershell=False):
+    cmd = cmd or ""
+    return bool(_ITERATE_REDIRECT_RE.search(cmd) or (_ITERATE_NAME_RE.search(cmd) and _writes(cmd, powershell)))
+
+
 # powershell / pwsh -EncodedCommand (any prefix PowerShell accepts: -e, -ec, -enc …): the command the guards would
 # match is base64, so it is refused outright, from either shell tool.
 _ENCODED_RE = re.compile(
@@ -1860,6 +1926,7 @@ def _secret_code_bash_guard_hooks(options):
             return {}
         reason = (ENCODED_DENY_REASON if encoded_command_denied(cmd)
                   else MIRROR_DENY_REASON if mirror_bash_denied(cmd, ps)
+                  else ITERATE_DENY_REASON if iterate_bash_denied(cmd, ps)
                   else SECRET_CODE_DENY_REASON if secret_code_bash_denied(cmd, ps)
                   else SITE_DENY_REASON if site_bash_denied(cmd, ps)
                   else STDLIB_SHADOW_DENY_REASON if stdlib_shadow_bash_denied(cmd, ps) else None)
@@ -2118,12 +2185,151 @@ _FORM_RULE = (
     '<form id="txf_backtest" prod="mxf" tf="m5"/>'
     "。屬性值(prod:txf 大台／mxf 小台／tmf 微台;tf:d 日 K／m1／m5／m15 分 K;per:all 全部資料／y3 近 3 年／y1 近 1 年;"
     "st:ma 均線交叉／ch 通道突破／other 其他)。只缺一個 → 照 AGENTS.md 一句話問,不寫標記。"
-    "寫了標記的回合同時寫 `<await/>`(在標記後一行),不附 <suggest>、不列編號方案、不在正文重複選項;"
+    "寫了標記的回合同時寫 `<await/>`(在標記後一行),不附 <suggest>、不列方案清單、不在正文重複選項;"
     "正文不提標記、不解釋表單,除了「不確定就照預設」那句不另加說明。"
     "用戶回的是「幫我做台指期 … 回測，用 …」這種組好的句子 → 直接照做,不再問。]"
 )
 
+# ── 自動迭代(lib/iterate.py;spec agent-auto-iterate-2026-11-16 §3.2、§5 與 11-18 裁定)────────────────
+# 哪一條在回合開始定一次,寫進 state/iterate/<turn>.json(lib 只讀這份;agent 改不到:Edit 禁改＋Bash 守門),
+# 回合中途綁卡不換條。上限與時長跟 lib/iterate.py 的 MAX_ROUNDS／BASIC_ASKED_ROUNDS／FULL_SESSION_S 同值。
+ITER_TIERS = ("basic", "full")
+ITER_MAX_ROUNDS = {"basic": 1, "full": 10}
+ITER_BASIC_ASKED = 3
+ITER_FULL_SESSION_S = 30 * 60
+ITER_CLOSE_TIMEOUT_S = 5 * 60   # 收場那次靜默重跑;35 分牆鐘減 30 分的迭代時長
+ITER_LEDGER_KEEP_S = 2 * 86400
+# 用戶自己開口要調(裁定:基本那條照現行 3 次)。只放大上限,不觸發流程
+_ITER_ASKED_RE = re.compile(r"自己調|自己调|幫我優化|帮我优化|優化參數|优化参数|掃參數|扫参数|調參|调参|"
+                            r"\boptimi[sz]e\b|\btune\b", re.I)
+_ITER_STOPS = ("good", "cap", "time", "steps", "credit", "user", "fault", "done")
+
+
+def _iterate_on():
+    """workspace 有 lib/iterate.py 才定條、掛規則、收場(稽核 M4:雲端 runtime 先到、workspace 還舊)。"""
+    return os.path.isfile(os.path.join(WORKSPACE, "lib", "iterate.py"))
+
+
+def iterate_tier(sink, flag):
+    """電腦版看外殼帶的 --iter-tier(外殼依 account_status.iterate_tier 與連的引擎判),沒帶或怪值 → basic
+    (fail-closed,裁定 S6);雲端主機一律 full(有有效方案才有主機,Telegram 同);排程回合不迭代。"""
+    if SCHEDULED_TURN or isinstance(sink, ReportSink) or not _iterate_on():
+        return None
+    if _desktop_surface(sink):
+        return flag if flag in ITER_TIERS else "basic"
+    return "full"
+
+
+def iterate_session_s(sink):
+    """完整那條的時長。Telegram 的 bridge 在 2000 秒砍整支 process,30 分鐘只剩 200 秒給收場那次靜默重跑,
+    所以縮到砍點減收場時限;web 2100 秒、電腦版 runtime 自己的牆鐘 2100 秒,都留得下 5 分鐘。"""
+    if isinstance(sink, TelegramSink):
+        return min(ITER_FULL_SESSION_S, _BRIDGE_KILL_SEC - ITER_CLOSE_TIMEOUT_S)
+    return ITER_FULL_SESSION_S
+
+
+def write_iterate_ledger(turn_id, tier, message, session_s=ITER_FULL_SESSION_S):
+    asked = bool(_ITER_ASKED_RE.search(message or ""))
+    now = time.time()
+    d = os.path.join(WORKSPACE, "state", "iterate")
+    os.makedirs(d, exist_ok=True)
+    for f in os.listdir(d):
+        p = os.path.join(d, f)
+        try:
+            if f.endswith(".json") and now - os.path.getmtime(p) > ITER_LEDGER_KEEP_S:
+                os.remove(p)
+        except OSError:
+            pass
+    led = {"v": 1, "turn": turn_id, "tier": tier, "started": now, "user_asked": asked,
+           "deadline": now + session_s if tier == "full" else None,
+           "max_rounds": ITER_BASIC_ASKED if tier == "basic" and asked else ITER_MAX_ROUNDS[tier],
+           "pid": os.environ.get("BLAVE_TURN_PID"), "strategies": []}
+    with atomic_file.replacing(os.path.join(d, turn_id + ".json"), encoding="utf-8") as f:
+        json.dump(led, f)
+    return led
+
+
+def _iterate_rule(tier, max_rounds):
+    if tier == "basic":
+        return ("[自動檢查:這一輪是基本額度。新策略或改邏輯的回測跑完後,同一回合照 AGENTS.md › Iteration Brakes 接著跑檢查、"
+                f"採用穩健參數一次;不自己多輪改邏輯。每支策略這一輪最多 {max_rounds} 次改碼回測(lib 會擋)。]")
+    return ("[自動迭代:這一輪是完整額度。新策略或改邏輯的回測跑完後,照 AGENTS.md › Iteration Brakes 自己迭代:"
+            f"連採用參數最多 {max_rounds} 輪、30 分鐘內,每輪看 lib 印的 Iteration 那行決定留或丟,夠好或到上限就收場。]")
+
+
+def iterate_stop(stopped, fault_code, wall_expired):
+    if stopped:
+        return "user"
+    if wall_expired:
+        return "time"
+    if fault_code == FAULT_NO_CREDIT:
+        return "credit"
+    if fault_code == FAULT_MAX_TURNS:
+        return "steps"
+    return "fault" if fault_code else "done"
+
+
+def iterate_turn_end(sink, turn_id, stop, env):
+    """回合不論怎麼結束都收場(稽核 M2):這一輪留著沒收的場由 lib 收(放回最好那輪、靜默重跑補成交測試;按了停止照原樣關、不重跑),
+    每一場送一則 auto_iter chunk(done 之前):電腦版外殼記 auto_iter_done／auto_iter_rounds,雲端 api 記 metric。
+    LLM 不在這條路上;壞了只記 log,不影響回合。"""
+    if not os.path.isfile(os.path.join(WORKSPACE, "state", "iterate", turn_id + ".json")):
+        return []
+    interp = sys.executable if _desktop_surface(sink) else ("python" if platform.system() == "Windows" else "python3")
+    res = {}
+
+    def close():
+        try:
+            res["r"] = subprocess.run([interp, "-m", "lib.iterate", "close-turn", turn_id, stop if stop in _ITER_STOPS else "done"],
+                                      cwd=WORKSPACE, env={**env, "BLAVE_TURN_ID": turn_id}, capture_output=True, text=True,
+                                      timeout=ITER_CLOSE_TIMEOUT_S)
+        except Exception as e:
+            res["e"] = e
+
+    # After a Stop the shell kills a runtime silent for 5 s (STOP_KILL_MS) and turn_stop's pings are over by now;
+    # a stopped close does no rerun (lib), but its Python start alone can take seconds on Windows (audit 0.1.59 M1)
+    th = threading.Thread(target=close, daemon=True)
+    th.start()
+    while True:
+        th.join(1.0)
+        if not th.is_alive():
+            break
+        if stop == "user" and isinstance(sink, WebSink):
+            sink._send({"type": "ping"})
+    try:
+        if "e" in res:
+            raise res["e"]
+        lines = (res["r"].stdout or "").strip().splitlines()
+        sessions = json.loads(lines[-1]) if lines else []
+    except (OSError, subprocess.SubprocessError, ValueError) as e:
+        print(f"[agent_turn] iterate close failed: {type(e).__name__}", file=sys.stderr)
+        return []
+    out = []
+    for x in sessions if isinstance(sessions, list) else []:
+        tier, st, n = x.get("tier"), x.get("stop"), x.get("rounds")
+        if tier not in ITER_TIERS or st not in _ITER_STOPS or not isinstance(n, int):
+            continue
+        chunk = {"type": "auto_iter", "done": f"{tier}.{st}",
+                 "rounds": "0" if n <= 0 else "1" if n == 1 else "2_3" if n <= 3 else "4_6" if n <= 6 else "7_10"}
+        out.append(chunk)
+        if isinstance(sink, WebSink):
+            sink._send(dict(chunk))   # _send stamps session_id in place
+    return out
+
 # 搬策略動作卡規則(build_prompt 逐輪掛,只在 --handoff-card:外殼畫得出卡、而且會自己搬)。
+# 答案鈕規則(build_prompt 逐輪掛,只在 --answer-buttons:外殼畫得出鈕)。沒掛的表面照 AGENTS.md 列條列方案、標出建議那一個。
+# 動到錢的確認外殼分不出語意,只能靠這段擋(spec chat-answer-buttons §2)。
+_ANSWERS_RULE = (
+    "[答案鈕:這一輪收尾只問一題、用戶要從 2 到 4 個互斥答案裡選一個 → 正文只寫問句,不列選項、不編號;"
+    "在 `<await/>` 前自成幾行寫答案區塊,一行一個選項,用 default 標出你建議的那一個(1 起算,畫面會預選它),例:\n"
+    "<answers default=\"1\">\n重跑回測\n先不要\n</answers>\n"
+    "每個選項是用戶點了就原句送出的一句話:寫結果,不寫「是／否／好／不要」;不加編號、句號、引號,選項文字裡不寫「建議」;"
+    "建議 12 字以內、最多 32 字;各選項同一種語法(都是名詞,或都動詞開頭);語言跟正文一致;中英數之間空半形空格。"
+    "兩題以上、或要用戶填數值 → 不寫答案鈕(有表單規則就照表單)。"
+    "下單、啟動或恢復自動下單、上線、設金額、購買、綁卡、扣款這類確認一律不寫答案鈕。"
+    "寫了答案鈕的回合不附 <suggest>,正文不提按鈕。用戶下一句回「好」「就這樣」這類同意的話 = 選 default 那一個。]"
+)
+
 _HANDOFF_RULE = (
     "[搬策略:用戶要把一支策略送上雲端主機,或從雲端拉回這台電腦 → 不要自己搬:不連雲端主機、不照 "
     "references/cloud-handoff.md 的搬運步驟、不複製檔案。正文只寫兩句(第一句說按下面的按鈕就會搬,"
@@ -2151,11 +2357,14 @@ def build_prompt(summary, recent, message, viewing_strategy=None, viewing_tab=No
                  suggest_directive=False, viewing_view=None,
                  reply_lang=None, resume_note=None, viewing_env=None, cloud_mcp=False, lang_basis=None,
                  version_note=None, desktop=False, report_fail_line=None, user_tz=None,
-                 suggest_mode="normal", clarify_form=False, handoff_card=False):
+                 suggest_mode="normal", clarify_form=False, handoff_card=False, iterate=None,
+                 answer_buttons=False):
     """`report_fail_line`:run_turn 每回合算一次傳進來(排程回合傳 "",續跑沿用同一行);
     None = 這裡自己算(測試與其他呼叫端)。`user_tz`:用戶的 IANA 時區,電腦版不傳。
     `clarify_form`:外殼畫得出澄清表單(--clarify-form)才掛 _FORM_RULE。
-    `handoff_card`:外殼畫得出搬策略動作卡(--handoff-card)才掛 _HANDOFF_RULE。"""
+    `handoff_card`:外殼畫得出搬策略動作卡(--handoff-card)才掛 _HANDOFF_RULE。
+    `answer_buttons`:外殼畫得出答案鈕(--answer-buttons)才掛 _ANSWERS_RULE。
+    `iterate`:這一輪的迭代帳(write_iterate_ledger 的回傳);有才掛 _iterate_rule,兩個 sink 都掛。"""
     parts = []
     if summary:
         parts.append(f"[過去對話摘要]\n{summary}\n")
@@ -2226,6 +2435,8 @@ def build_prompt(summary, recent, message, viewing_strategy=None, viewing_tab=No
         + (";用戶明確要求停單支策略/平單一幣時可做,用 manager/stop_strategy.py、"
            "manager/close_symbol.py。]" if stop_tool else "。]")
     )
+    if iterate:   # 兩個 sink 都掛:這是這台機器這一輪的額度事實,TG 也照同一條流程
+        parts.append(_iterate_rule(iterate["tier"], iterate["max_rounds"]))
     if suggest_directive:
         # 雲端視角:這一行讀的是這台電腦的 workspace,講的卻會被當成雲端主機的事實(稽核 0.1.10 D P1-1)。
         # 不注入;雲端的狀態照 cloud-handoff 去雲端讀
@@ -2257,6 +2468,8 @@ def build_prompt(summary, recent, message, viewing_strategy=None, viewing_tab=No
         if clarify_form:
             # 逐輪、貼著訊息(同建議錨):表單的觸發是這一句要做什麼,放系統尾端弱模型守不住
             parts.append(_FORM_RULE)
+        if answer_buttons:
+            parts.append(_ANSWERS_RULE)
         if handoff_card:
             parts.append(_HANDOFF_RULE)
         parts.append(_SUGGEST_ANCHORS.get(suggest_mode, _SUGGEST_ANCHORS["normal"]))
@@ -2578,7 +2791,7 @@ _SUGGEST_RULE = (
 _AWAIT_RULE = (
     "\n\n---\n\n"
     "## 等用戶回覆的標記\n"
-    "這一輪收尾時，要用戶回答你才能繼續——你問了澄清問題、列出編號選項或方案要用戶選一個、需要只有用戶知道的資訊——"
+    "這一輪收尾時，要用戶回答你才能繼續——你問了澄清問題、列出選項或方案要用戶選一個、需要只有用戶知道的資訊——"
     "就在正文最後自成一行寫 `<await/>`（有 `<export … />` 時放在它後面）。寫了 `<await/>` 的回合不附 <suggest>。"
     "只是回報結果、交代做了什麼、純聊天 → 不寫。標記本身不解釋、不提。\n"
 )
@@ -2833,8 +3046,10 @@ class TelegramSink:
             print("[agent_turn] 截掉模型續寫的假對話回合", file=sys.stderr)
         # TG 面沒有建議列規則,但防禦性剝除(模型偶發混淆時 raw 標記不能露出)。
         cleaned, _ = extract_suggestions(cleaned)
+        cleaned, answers, ans_default = extract_answers(cleaned)
         cleaned, _ = extract_await(cleaned)
-        cleaned, _ = extract_form(cleaned, cloud=True, why=None)  # 只剝;TG 沒有卡,改用編號方案(AGENTS.md)
+        cleaned, _ = extract_form(cleaned, cloud=True, why=None)  # 只剝;TG 沒有卡,改用條列方案(AGENTS.md)
+        cleaned += answers_as_text(answers, ans_default)  # TG 畫不出鈕:選項還原成清單
         cleaned, _ = extract_handoff(cleaned)  # 只剝;TG 沒有卡
         cleaned = _EXPORT_STRIP_RE.sub("", cleaned)
         cleaned = _NAV_STRIP_RE.sub("", cleaned)
@@ -3987,6 +4202,12 @@ class WebSink:
         if not marked:
             exports = unmarked_exports(self.started_at, getattr(self, "export_touched", None))
         cleaned = _NAV_STRIP_RE.sub("", cleaned)  # 放錯位置的標記只剝不觸發
+        cleaned, answers, ans_default = extract_answers(cleaned)
+        # 畫得出鈕才送 chunk(歷史另接清單,重載與手機看得到);其餘一律把選項還原進正文
+        drawn = bool(answers and _answers_ok(answers) and awaiting and not form and not self.interrupted
+                     and getattr(self, "answer_buttons", False))
+        if answers and not drawn:
+            cleaned += answers_as_text(answers, ans_default)
         if not cleaned.strip() and not visible_text(self.full_text[: self._seg_start]):
             # 最後一則只有標記(上面那條補位看 full_text 非空就不補):剝完同樣是空氣,旁白照樣補位
             narration = visible_text(getattr(self, "_last_status", ""))
@@ -4005,7 +4226,9 @@ class WebSink:
             self._send(form)
         if handoff and not self.interrupted:
             self._send(handoff)
-        if suggestions and not self.interrupted:
+        if drawn:
+            self._send({"type": "answers", "items": answers, **({"default": ans_default} if ans_default else {})})
+        if suggestions and not self.interrupted and not drawn:
             self._send({"type": "suggestions", "items": suggestions,
                         "kind": suggest_kind(suggestions[0])})
         # 契約:references/turn-events.md。舊外殼不認得 card,直接略過
@@ -4014,7 +4237,8 @@ class WebSink:
         # awaiting:被 Stop 截斷的回合不算(半途的標記不可信)。欄位契約:references/turn-events.md。
         self._send({"type": "done", "awaiting": bool(awaiting and not self.interrupted),
                     "kinds": dict(self._kinds)})
-        return self.full_text
+        # 回傳值進 session.db(電腦版重載、手機轉送、下一輪的上下文):鈕只在記憶體,歷史要看得到選項
+        return self.full_text + (answers_as_text(answers, ans_default) if drawn else "")
 
 
 # Partial-message streaming, if this SDK build has it. Absent = the loop in
@@ -5445,12 +5669,13 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
                    viewing_view=None, ui_lang=None,
                    engine="claude", codex_bin=None, effort=None, mcp_config=None,
                    viewing_env=None, mcp_servers=None, suggest_mode="normal", clarify_form=False,
-                   handoff_card=False, main_market=None):
+                   handoff_card=False, main_market=None, iter_tier=None, answer_buttons=False):
     # engine="codex" 是電腦版專屬(用戶自己的 Codex 訂閱),只換掉「呼叫模型並消化它的
     # 事件流」那一段;prompt、session store、兜底分類、寫回歷史全部共用。機隊不帶
     # --engine,走的是原本那條路,一行都不經過 codex 分支(閘門:
     # tests/check_codex_engine.py)。
     use_codex = engine == "codex"
+    sink.answer_buttons = bool(answer_buttons) and isinstance(sink, WebSink)   # finalize 畫不畫答案鈕
     summary, recent = ss.get_context(session_id)
     reply_lang = _resolve_reply_lang(ui_lang)
     lang_msg = _lang_basis(message, recent)
@@ -5485,6 +5710,14 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
     user_tz = strategy_reporter.read_timezone()
     # 電腦版跑在用戶自己的電腦上,本機時鐘就是用戶時區,log 也不是 UTC:那句話在那裡是錯的
     prompt_tz = None if _desktop_surface(sink) else user_tz
+    turn_id = os.urandom(8).hex()
+    iter_led = None
+    iter_tier_now = iterate_tier(sink, iter_tier)
+    if iter_tier_now:
+        try:
+            iter_led = write_iterate_ledger(turn_id, iter_tier_now, message, iterate_session_s(sink))
+        except OSError as e:   # no ledger = the lib treats the turn as basic (fail-closed)
+            print(f"[agent_turn] iterate ledger not written: {type(e).__name__}", file=sys.stderr)
     prompt = build_prompt(summary, recent, message,
                           viewing_strategy=viewing_strategy, viewing_tab=viewing_tab,
                           suggest_directive=isinstance(sink, WebSink),
@@ -5492,7 +5725,7 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
                           reply_lang=reply_lang, viewing_env=viewing_env, cloud_mcp=cloud_mcp,
                           lang_basis=lang_msg, version_note=version_note,
                           report_fail_line=report_fail_line, user_tz=prompt_tz,
-                          clarify_form=clarify_form, handoff_card=handoff_card,
+                          clarify_form=clarify_form, handoff_card=handoff_card, iterate=iter_led, answer_buttons=answer_buttons,
                           desktop=_desktop_surface(sink), suggest_mode=suggest_mode)
     agents_md = load_agents_md()
 
@@ -5569,8 +5802,9 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
     if model:
         # lib.report.scheduled_cost 依這一輪的模型估價(登記排程時講給用戶聽)
         turn_env["BLAVE_TURN_MODEL"] = model
-    # 每一輪一個 id:lib.report_bricks 只在同一輪內重用建好的 pack(下一輪的行情可能已經變了)
-    turn_env["BLAVE_TURN_ID"] = os.urandom(8).hex()
+    # 每一輪一個 id:lib.report_bricks 只在同一輪內重用建好的 pack(下一輪的行情可能已經變了);
+    # lib/iterate 用同一個 id 找這一輪的迭代帳
+    turn_env["BLAVE_TURN_ID"] = turn_id
     if isinstance(sink, LocalSink):
         # 電腦版:agent 的 Bash 經 lib/venue.bind 載入 command_listener 時要落在本機
         # 分支(不碰用戶的 crontab、只准綁 paper)——見 command_listener._local_mode
@@ -5902,7 +6136,7 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
                                   viewing_env=viewing_env, cloud_mcp=cloud_mcp, lang_basis=lang_msg,
                                   version_note=version_note,
                                   report_fail_line=report_fail_line, user_tz=prompt_tz,
-                                  clarify_form=clarify_form, handoff_card=handoff_card,
+                                  clarify_form=clarify_form, handoff_card=handoff_card, iterate=iter_led, answer_buttons=answer_buttons,
                                   desktop=_desktop_surface(sink), suggest_mode=suggest_mode)
             options.max_budget_usd = budget if options.max_budget_usd is not None else None
             options.max_turns = max(TURN_MAX_TURNS - spent_turns, _RESUME_MIN_TURNS)
@@ -5976,6 +6210,8 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
         print(f"[agent_turn] scheduled tools used: {sched_tools_used(tool_steps)}", file=sys.stderr)
     sink.export_fail_note = _export_fail_note(lang_msg, reply_lang)
     sink.export_touched = touched
+    if iter_led is not None:
+        iterate_turn_end(sink, turn_id, iterate_stop(stopped, fault_code, wall_expired), {**os.environ, **turn_env})
     reply_text = sink.finalize()
     # 收據摘要只進 session sqlite(下一輪模型的 context),不進用戶看得到的任何表面。
     # 被停止的回合也要:下一輪得知道剛才做到哪、哪支還在背景跑。
@@ -6070,6 +6306,10 @@ def main():
     parser.add_argument("--clarify-form", action="store_true")
     # 外殼畫得出搬策略動作卡、而且自己會搬(電腦版 0.1.47 起帶);沒帶的外殼 agent 照 references 自己搬
     parser.add_argument("--handoff-card", action="store_true")
+    # 外殼畫得出答案鈕(電腦版非手機回合帶、web_bridge 看 context.answer_buttons);Telegram 永遠不帶
+    parser.add_argument("--answer-buttons", action="store_true")
+    # 電腦版這一輪歸哪一條自動迭代額度(外殼判);不設 choices:怪值當沒帶 = basic(fail-closed)
+    parser.add_argument("--iter-tier", default=None)
     # 用戶的主要市場(電腦版 main.js、web_bridge 只帶 all 以外的值)。不設 choices:怪值當沒帶,不 exit 2
     parser.add_argument("--main-market", default=None)
     args = parser.parse_args()
@@ -6121,7 +6361,7 @@ def main():
         effort=args.effort, mcp_config=args.mcp_config, viewing_env=args.viewing_env,
         mcp_servers=args.mcp_servers, suggest_mode=args.suggest_mode,
         clarify_form=args.clarify_form, handoff_card=args.handoff_card,
-        main_market=args.main_market,
+        main_market=args.main_market, iter_tier=args.iter_tier, answer_buttons=args.answer_buttons,
     ))
     if args.scheduled:
         _write_sched_outcome()

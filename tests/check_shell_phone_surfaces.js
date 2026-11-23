@@ -186,7 +186,7 @@ const t = (k, v) => (v ? k + JSON.stringify(v) : TPL[k] || k);
   ok("9b 焦點預設〔不用〕:confirmBox 沒有 focus／single 時焦點給取消鈕", /else if \(single\) \$\("del-ok"\)\.focus\(\); else \$\("del-cancel"\)\.focus\(\);/.test(fnOf(app, "confirmBox")));
   ok("9b 關框後焦點還給跳框前那一個(opener = 當時的 activeElement)", bx.opener === OPENER);
   ok("9b 標題可換行(cf-wrap,只這個框;confirmBox 每次先拿掉)、沒有時間", b1.title.textContent === 'ph.ask.title{"name":"iPhone 15"}' && b1.title.classSet.has("cf-wrap")
-    && /\$\("del-title"\)\.textContent = title; \$\("del-title"\)\.classList\.toggle\("cf-wrap", !!wrapTitle\);/.test(fnOf(app, "confirmBox")) && /#del-title\.cf-wrap \{ white-space: normal; \}/.test(css));
+    && /\$\("del-title"\)\.textContent = title; \$\("del-title"\)\.removeAttribute\("title"\); \$\("del-title"\)\.classList\.toggle\("cf-wrap", !!wrapTitle\);/.test(fnOf(app, "confirmBox")) && /#del-title\.cf-wrap \{ white-space: normal; \}/.test(css));
   const b2 = await run([], async (S) => { S.phAskMaybe(); }, { PH: PHA(Object.assign({}, ASK, { late: true, label: "", platform: "android" })) });
   ok("9b 配對時間距今久(late):標題後面帶配對時間 MM/DD HH:mm(整塊不折行);機型空的用 Android 手機", b2.boxes[0].title === 'ph.ask.title{"name":"ph.android"}' && b2.title.textContent.endsWith("11/02 14:33") && b2.title.children.some((c) => c.className === "cf-when"), b2.title.textContent);
   const b3 = await run([], async (S) => { S.phAskMaybe(); S.cancel(); }, { PH: PHA(ASK) });

@@ -8,7 +8,8 @@
 //   7. 記錄檔:壞行丟掉不影響別行、超過 200 行丟最舊的、symlink 不跟(含截斷／consume 寫回時預先放好的 .tmp symlink)、manifest 對不上換 <other>、換完沒自家 frame 整筆丟
 //   8. shell_main:主行程 Error → 一行;網路類、不是 Error 的不記;寫入端 symlink 不跟、超過 256 KB 不寫
 //   9. 狀態檔壞掉 = 每次問我(不會變成自動送)
-//  10. 接線:main.js 的 uncaughtExceptionMonitor 寫記錄、IPC 走 fromOurPage;畫面那支不碰對話存檔與手機同步
+//  10. 接線:main.js 的 uncaughtExceptionMonitor 寫記錄、IPC 走 fromOurPage;畫面那支不碰對話存檔與手機同步;回合帶 BLAVE_CHAT_SID、回合結束帶 sid 問
+//  11. 卡只問出事的那條對話、那一輪(scope):別條／更早一輪的記錄丟掉、不屬於對話的只在剛開 app 問;今天問不了的那一輪也丟;自動送照舊全送
 // 跑法:node tests/check_shell_errreport.js
 "use strict";
 const fs = require("fs"), path = require("path"), os = require("os");
@@ -227,6 +228,56 @@ const flush = () => new Promise((r) => setImmediate(r));
     ok("9 狀態檔壞掉 = 每次問我", h.er.mode() === "ask");
     ok("9 不認得的模式不改", h.er.setMode("always") === "ask" && h.er.setMode("auto") === "auto");
   }
+  // ── 11 ──(0.1.59:前一天別條對話的錯冒在新對話第一輪之後)
+  {
+    const h = setup(), T0 = Date.UTC(2026, 10, 16, 4, 0, 0);
+    const A = "desktop-aaaa1111", B = "desktop-bbbb2222", C = "desktop-cccc3333";
+    const sc = (sid, since, running) => ({ sid, since, running: new Map(running || []) });
+    h.add([rec("yesterday in A", { sid: A, ts: T0 - 86400000, exc_type: "Yesterday" }), rec("background", { ts: T0 - 3600000, exc_type: "Bg" }),
+      rec("C still running", { sid: C, ts: T0 + 500, exc_type: "InC" })]);
+    h.tick(1000);
+    ok("11 B 的第一輪結束:別條對話昨天的錯不出卡", h.er.pending(sc(B, T0, [[C, T0]])) === null);
+    ok("11 …那筆丟掉(再也輪不到它);不屬於對話的與還在跑的 C 留著", h.lines().length === 2 && !h.lines().some((l) => l.includes("Yesterday")), h.lines());
+    h.add([rec("in B now", { sid: B, ts: T0 + 600, exc_type: "InB" })]);
+    const c = h.er.pending(sc(B, T0, [[C, T0]]));
+    ok("11 B 這一輪記的錯:出卡、只有它一筆", c && c.n === 1 && c.text.includes("InB") && !c.text.includes("InC") && !c.text.includes("Bg"), c);
+    ok("11 送出的內容不帶對話 id", c && !c.text.includes(B) && !c.text.includes("sid"), c && c.text);
+    await h.er.decide(c.id, "decline");
+    ok("11 C 結束(今天已經問過):不出卡、C 那筆丟掉", h.er.pending(sc(C, T0, [])) === null && !h.lines().some((l) => l.includes("InC")), h.lines());
+    h.tick(86400000);
+    const boot = h.er.pending();
+    ok("11 剛開 app(沒有 scope):只問不屬於對話的", boot && boot.n === 1 && boot.text.includes("Bg"), boot);
+  }
+  {
+    const h = setup(), T0 = Date.UTC(2026, 10, 16, 4, 0, 0), B = "desktop-bbbb2222";
+    h.add([rec("first", { sid: B, ts: T0 + 10 })]);
+    const c1 = h.er.pending({ sid: B, since: T0, running: new Map() });
+    h.add([rec("second", { sid: B, ts: T0 + 20, exc_type: "Second" })]);
+    ok("11 同一天第二輪:不出卡(每天一張不變)", c1 && h.er.pending({ sid: B, since: T0 + 15, running: new Map() }) === null);
+    h.tick(86400000);
+    ok("11 …那一輪問不了的也丟掉,隔天不會冒在下一輪", h.er.pending({ sid: B, since: T0 + 86400000, running: new Map() }) === null && !h.lines().some((l) => l.includes("Second")), h.lines());
+    const h2 = setup(), R2 = "desktop-rrrr0000";
+    h2.add([rec("running turn", { sid: R2, ts: T0 + 5, exc_type: "Run" })]);
+    ok("11 剛開 app 時還在跑的那一輪:不問、記錄留給它", h2.er.pending({ running: new Map([[R2, T0]]) }) === null && h2.lines().length === 1, h2.lines());
+    { // 稽核 0.1.59 B-6:A、B 兩條差不多同時收尾(都在畫面的 1.5 秒延遲內),A 先問:B 這一輪剛記的不能被 A 當過期丟掉。真的跑 main.js 的 errScope
+      const mainSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8"), vm = require("vm");
+      const fn = mainSrc.slice(mainSrc.indexOf("function errScope("), mainSrc.indexOf("\n}\n", mainSrc.indexOf("function errScope(")) + 2);
+      const A6 = "desktop-aaaa6666", B6 = "desktop-bbbb6666", ctx = vm.createContext({ turns: new Map(), turnStartAt: new Map([[A6, T0], [B6, T0 + 10]]) });
+      vm.runInContext(fn, ctx);
+      const h3 = setup();
+      h3.add([rec("in B", { sid: B6, ts: T0 + 20, exc_type: "InB6" })]);
+      const fromA = h3.er.pending(ctx.errScope(A6)), keptB = h3.lines().some((l) => l.includes("InB6")), fromB = h3.er.pending(ctx.errScope(B6));
+      ok("11 兩條同時收尾:先問的 A 不把 B 這一輪剛記的丟掉,B 自己問時出卡", fromA === null && keptB && fromB && fromB.n === 1 && fromB.text.includes("InB6"), { fromA, keptB, fromB });
+    }
+    ok("11 sid 格式不對的行整筆丟", E.parseLine(JSON.stringify(rec("x", { sid: "../x" }))) === null && E.parseLine(JSON.stringify(rec("x", { sid: B }))).sid === B);
+  }
+  {
+    const h = setup();
+    h.er.setMode("auto");
+    h.add([rec("old elsewhere", { sid: "desktop-aaaa1111", ts: 1 }), rec("bg", { exc_type: "Bg" })]);
+    h.er.pending({ sid: "desktop-bbbb2222", since: Date.now(), running: new Map() }); await flush();
+    ok("11 自動送不分對話:照舊全送、body 欄位不變", h.posts.length === 2 && h.posts.every((p) => !("sid" in p.b) && !("message" in p.b)), h.posts.map((p) => Object.keys(p.b)));
+  }
   // ── 10 ──
   {
     const main = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8");
@@ -246,6 +297,10 @@ const flush = () => new Promise((r) => setImmediate(r));
     ok("10 打包清單有 errreport.js(renderer/** 已含畫面那支與 css)", /files: \[[^\]]*"errreport\.js"/.test(builder));
     ok("10 shell/ 的 frame 對 app 本身(__dirname)驗、runtime/ 對 REPO 驗", /isBundled: \(rel\) => fs\.statSync\(rel\.startsWith\("shell\/"\) \? path\.join\(__dirname, rel\.slice\(6\)\) : path\.join\(REPO, rel\)\)/.test(main));
     ok("10 畫面用 textContent 放內容、不用 innerHTML", !/innerHTML/.test(rend));
+    ok("10 回合的環境帶這條對話的 id(lib/error_report.py 記下)", /BLAVE_CHAT_SID: sessionId,/.test(main));
+    ok("10 問卡帶那一輪的 scope", /handle\("err-report-pending", \(_e, sid\) => errReport\(\)\.pending\(errScope\(sid\)\)/.test(main)
+      && /rec\.startedAt = Date\.now\(\);/.test(main) && /if \(rec\.startedAt\) turnStartAt\.set\(rec\.sid, rec\.startedAt\);/.test(main));
+    ok("10 回合結束帶那一輪的 sid 問", /onTurnEnd\(\(r\) => setTimeout\(\(\) => errAsk\(r && typeof r\.sid === "string" \? r\.sid : null\), 1500\)\)/.test(rend));
   }
   console.log(red ? `\n${red} FAILED` : "\nall ok");
   process.exit(red ? 1 : 0);

@@ -108,6 +108,7 @@ html[data-env="cloud"] .cs-tabs .tab:not([aria-selected="true"]):has(+ .tab:not(
 .cv-card { margin-top: var(--space-24); padding: var(--space-24); background: var(--surface-card); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); }
 .cv-top { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--space-2) var(--space-16); }
 .cv-spec { font-size: 13px; color: var(--ink-2); }
+.cv-spec-hw { margin-left: var(--space-8); font-size: 12px; color: var(--ink-3); white-space: nowrap; }
 /* 價格和連結同一塊:放不下一起折,連結永遠貼著它說明的價格 */
 .cv-prw { margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; }
 .cv-pr { font-size: 20px; font-weight: 600; line-height: 1.4; color: var(--ink); white-space: nowrap; }
@@ -190,7 +191,7 @@ html.ws-sc .side-gate { display: none; }
 .main-head .tr-go-stop:hover { color: var(--ink); }
 .main-head-name { margin: 0; font-size: 17px; font-weight: 600; color: var(--ink); line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .main-head-desc { margin-top: var(--space-4); font-size: 12px; color: var(--ink-2); line-height: 1.5; min-height: 18px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.main-head-desc.wrap { white-space: normal; overflow: visible; }
+.main-head-desc.wrap { white-space: normal; overflow: visible; max-width: 44em; }   /* 折行的說明是要讀完的句子:行長上限(寬螢幕 A 版) */
 /* 有鈕時狀態句量的是「鈕底」:4 的話字面只剩約 7px、鈕的 44 熱區還蓋到字 3px(點那行字的上緣會按到「啟動下單」);12 → 字面約 15、熱區不碰字 */
 .main-head:has(.act > button:not([hidden])) .main-head-desc { margin-top: var(--space-12); }
 .main-head-desc .up { color: var(--ink); font-weight: 600; }
@@ -224,13 +225,8 @@ html.ws-sc .side-gate { display: none; }
 .main-tab[aria-selected="true"] { color: var(--ink); font-weight: 600; border-bottom-color: var(--ink); }
 
 .pf { padding: var(--space-24); flex: 1; min-height: 0; overflow-y: auto; }
-/* 自動下單五個分頁的內容上限 760、靠左(spec-desktop-005 §3;canon › 流體欄裡的固定寬子項):寬視窗多出來的寬度不再變成欄距。
-   上限加在 .pf 的子元素——.pf 自己是捲動容器,要維持整欄寬,捲軸才在欄的右緣。頁首跟著收到同一條右緣,〔啟動下單〕對齊表格右緣;
-   分頁列不收(底線是整欄的分隔線)。還沒連交易所的引導畫面(#tr-onboard)本來就是整欄置中的 46ch,不套 */
-#tr > .pf:not(#tr-onboard) > * { max-width: 760px; }
-#tr > .pf:not(#tr-onboard) > .pf-scroll { max-width: calc(760px + 2 * var(--space-4)); }   /* 多的是 focus 框的留白(見 .pf-scroll),表本身仍是 760 */
-#tr > .pf:not(#tr-onboard) > .fog { max-width: none; }   /* 部位的霧(spec-autotrade-empty §4)鋪滿整欄,同策略組合頁 */
-#tr > .main-head { max-width: calc(760px + 2 * var(--space-24)); }
+/* 中欄內容不設頁面上限、吃滿欄寬:圖、數字列、表格跟著欄寬走(Wei 11-20 選 A 版,designer wide-screen-layout-2026-11-20;canon › 行長上限屬於文字,不屬於表面)。
+   只有要讀完的句子留 44em(下面 .main-head-desc.wrap、.verdict 等各自的上限)。還沒連交易所的引導畫面(#tr-onboard)本來就是整欄置中的 46ch */
 .pf[hidden] { display: none; }
 .pf:focus-visible { outline-offset: -2px; }
 .pf-sec { position: relative; display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-12); margin: var(--space-32) 0 var(--space-8); }   /* 288 寬放不下時整組區間 chips 掉到第二行,鈕本身不折(設計師稽核 09-25 必修 5) */
@@ -273,7 +269,7 @@ html.ws-sc .side-gate { display: none; }
 
 /* ---- 表格 ---- */
 /* 四邊留 4px 給 focus 框(2px 線＋2px offset)再用等量負 margin 抵銷:第一欄 padding-left 0,策略名的框會被捲動容器裁掉(canon › 捲動列的留白) */
-.pf-scroll { overflow-x: auto; padding: var(--space-4); margin: calc(-1 * var(--space-4)); }
+.pf-scroll { overflow-x: auto; padding: var(--space-4); margin: calc(-1 * var(--space-4)); max-width: calc(1200px + 2 * var(--space-4)); }   /* 掃讀表的寬上限 1200、靠左(多的是 focus 框的留白):2560 時欄距不會拉到 300 以上;1920 內容 1184 碰不到(設計稽核 0.1.59 寬螢幕 #1) */
 .pf-tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
 .pf-tbl th { font-weight: 600; font-size: 11px; color: var(--ink-3); text-align: left; white-space: nowrap; padding: 0 var(--space-12) var(--space-8); border-bottom: 1px solid var(--border-frame); }
 .pf-tbl td { padding: var(--space-8) var(--space-12); color: var(--ink-2); border-bottom: 1px solid var(--border-hairline); vertical-align: middle; white-space: nowrap; }
@@ -469,6 +465,15 @@ html.ws-sc .side-gate { display: none; }
 .perf-stats .stat:nth-child(3) { border-top-right-radius: var(--radius-lg); }
 .perf-stats .stat:nth-child(4) { border-bottom-left-radius: var(--radius-lg); }
 .perf-stats .stat:nth-child(6) { border-bottom-right-radius: var(--radius-lg); }
+/* 夠寬(.trv ≥ 1000)排成一列六格,不把三格拉成 600 寬(設計稽核 0.1.59 寬螢幕 #3;設計稿 perf-g):角落改成第 1 格左、第 6 格右 */
+@container (min-width: 1000px) {
+  .bt-stats.ov-stats.perf-stats { grid-template-columns: repeat(6, 1fr); }
+  .perf-stats .stat:nth-child(3), .perf-stats .stat:nth-child(4) { border-radius: 0; }
+  .perf-stats .stat:nth-child(1) { border-radius: var(--radius-lg) 0 0 var(--radius-lg); }
+  .perf-stats .stat:nth-child(6) { border-radius: 0 var(--radius-lg) var(--radius-lg) 0; }
+  .perf-stats .stat:nth-child(3n) .tip { left: 0; right: auto; }
+  .perf-stats .stat:nth-child(6) .tip { left: auto; right: 0; }
+}
 .ov-stats .sv.gating { font-size: 13px; font-weight: 500; font-family: var(--font-sans); color: var(--color-greyMedium); }
 .ov-stats .sv.est { color: var(--color-greyMedium); }
 /* 曲線模式與區間:兩排 segment(配方在 app.css) */
@@ -476,7 +481,7 @@ html.ws-sc .side-gate { display: none; }
 .rng { display: inline-flex; align-items: center; height: 28px; padding: 0 var(--space-8); font: 12px var(--font-mono); }   /* 格 28 + 軌 4 = 32,同桌面鈕 */
 .ov-modes .rng { font-family: inherit; }
 .ov-frame { position: relative; }
-.ov-canvas { display: block; width: 100%; height: 240px; }
+.ov-canvas { display: block; width: 100%; height: clamp(240px, 22cqi, 400px); }   /* 欄寬吃滿後圖跟著長高,2560 不會壓成一條線(寬螢幕 A 版 mockup);cqi 量的是 .trv */
 /* 曲線 hover 小卡(設計師 spec-desktop-ov-curve-hover-2026-09-25,同網頁 .cv-tip):材質同 app .tip(canon › Tooltip;dark 靠比卡片亮一階的底分層),
    垂直釘在圖框頂、水平由 trade.js 依繪圖區定位;日期次要色、數值主色、不加粗 */
 .cv-tip { position: absolute; top: 0; z-index: 5; pointer-events: none; padding: 6px 10px; max-width: 260px; border-radius: var(--radius-sm);
@@ -748,11 +753,7 @@ html.ws-sc .side-gate { display: none; }
 .strat-row .dot.bad { flex: none; display: inline-block; width: 8px; height: 2px; background: var(--color-red); }
 
 /* ---- 策略組合頁(portfolio.js;同網頁 #mg_panel)---- */
-/* 內容欄寬上限同自動下單頁:760、靠左 */
-#po > .pf > * { max-width: 760px; }
-#po > .pf > .pf-scroll { max-width: calc(760px + 2 * var(--space-4)); }
-#po > .pf > .fog { max-width: none; }
-#po > .main-head { max-width: calc(760px + 2 * var(--space-24)); }
+/* 內容不設頁面上限,同自動下單頁(寬螢幕 A 版) */
 .pf-frozen { margin: 0 0 var(--space-8); font-size: 12px; color: var(--ink-2); }
 /* 從優化套用金額後剛改的格子閃一次 */
 @keyframes poFlash { 0% { background: var(--surface-muted); } 100% { background: transparent; } }
@@ -823,7 +824,10 @@ html.ws-sc .side-gate { display: none; }
 /* 優化分頁:單一工具列(左設定組、右說明問號)、警示條、部位大小那一列、權重表、移動窗格回測 */
 .mg-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-8) var(--space-12); }
 .tb-set { display: flex; align-items: center; gap: var(--space-8); }
-.mg-toolbar > .mg-help { margin-left: auto; }
+.mg-tb-end { margin-left: auto; display: flex; align-items: center; gap: var(--space-12); }   /* 右端一組(〔重算權重〕那行＋問號):換行一起走、仍靠右 */
+/* 〔重算權重〕常駐在說明問號左邊:灰字一列,上次計算時間在前、文字鈕在後 */
+.mg-rerun { display: flex; align-items: baseline; gap: var(--space-8); font-size: 12px; color: var(--ink-3); white-space: nowrap; }
+.mg-rerun .btn-quiet::before { inset: auto; left: 50%; top: 50%; width: max(44px, calc(100% + 8px)); height: 44px; transform: translate(-50%, -50%); }   /* 熱區 44,同 .busy-fix::before */
 .tb-fld { position: relative; display: inline-flex; align-items: center; gap: var(--space-8); height: 32px; padding: 0 26px 0 var(--space-12); border: 1px solid var(--border-frame);
   border-radius: var(--radius-xs); font-size: 12px; color: var(--ink-3); white-space: nowrap; transition: border-color var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard); }
 .tb-fld::after { content: ""; position: absolute; right: 11px; top: 50%; width: 5px; height: 5px; border-right: 1.6px solid var(--ink-3); border-bottom: 1.6px solid var(--ink-3); transform: translateY(-70%) rotate(45deg); }
@@ -921,7 +925,7 @@ tr:nth-child(2n) .mg-sk.amt { width: 44px; }
 }
 .mg-frame { background: var(--surface-card); border-radius: var(--radius-lg); overflow: hidden; padding: var(--space-16) var(--space-16) var(--space-8); }
 .mg-frame .chart-cap { font: 600 11px var(--font-sans); color: var(--ink-3); margin-bottom: var(--space-8); }
-.mg-canvas { display: block; width: 100%; height: 220px; }
+.mg-canvas { display: block; width: 100%; height: clamp(220px, 20cqi, 360px); }   /* 同 .ov-canvas:寬欄時長高、有上限(寬螢幕 A 版) */
 .mg-canvas.has-weights { height: 334px; }
 .mg-legend { display: flex; flex-wrap: wrap; gap: var(--space-4) var(--space-16); margin-top: var(--space-6); font-size: 11px; color: var(--ink-3); }
 .mg-legend i { display: inline-block; width: 10px; height: 10px; border-radius: var(--radius-micro); margin-right: var(--space-6); vertical-align: -1px; }

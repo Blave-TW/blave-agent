@@ -564,8 +564,10 @@ def v1_08(w):
     # the broker-password code denies (agent_turn.SECRET_CODE_FILES) are inert too where
     # the old lib has no such broker file
     secret = {f"Edit(/{f})" for f in getattr(at, "SECRET_CODE_FILES", ())}
-    w.eq([r for r in missing if r not in secret], ["Edit(/lib/exits.py)"],
-         "the only rule naming a file the old lib lacks is the exits.py edit deny (inert), besides broker-code denies")
+    # lib/iterate.py (0.1.58 auto-iterate): inert on an old workspace too — the runtime only sets a tier, writes the ledger
+    # and runs the close when the workspace has lib/iterate.py (agent_turn.iterate_tier / _iterate_on)
+    w.eq([r for r in missing if r not in secret], ["Edit(/lib/exits.py)", "Edit(/lib/iterate.py)"],
+         "the only rules naming a file the old lib lacks are the exits.py and iterate.py edit denies (inert), besides broker-code denies")
     texts = []
     for fn, args in ((getattr(at, "_viewing_env_segment", None), (True,)),
                      (getattr(at, "_viewing_env_segment", None), (False,)),

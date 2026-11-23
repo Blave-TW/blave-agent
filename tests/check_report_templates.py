@@ -598,6 +598,10 @@ qt = [x for o, x in zip(p.owners, p.blocks) if o == "quote_table" and x["type"] 
 ind = [x for o, x in zip(p.owners, p.blocks) if o == "blave_indicators" and x["type"] == "line_chart"][0]
 check(ind_start["md"] == "2026-06-02" and "30 日" in [c["label"] for c in qt["columns"]] and "BTC 近 30 日均" in p.context,
       f"加密晨報:指標折線抓 90 日({ind_start['md']}),報價表仍是 30 日報酬、30 日均")
+# QA 0158 P2-4:晨報 KPI 的漲跌是今日未收盤日 K ÷ 昨收(台北 08:00 換日),跟 coin_snapshot 的滾動 24 小時不是同一個窗口,KPI 要標出來
+kq = [i for x in p.blocks if x["type"] == "kpi_row" for i in x["items"] if i["label"] in ("BTC", "ETH")]
+check(kq and all(i["delta"].startswith("08:00 起 ") for i in kq) and all("08:00 起 " in p.context.get(i["label"], "") for i in kq),
+      f"加密晨報 KPI 與 context 的漲跌標「08:00 起」窗口:{[i.get('delta') for i in kq]}")
 T.check_recipe({"id": "my-ind", "title": "t", "lookback_days": 30,
                 "bricks": [["price_chart", {"symbol": "BTC", "bars": 120}], ["blave_indicators", {"days": 90}]]})
 check(True, "自組配方:lookback_days=30 配 bars=120、指標 days=90 存得進去")

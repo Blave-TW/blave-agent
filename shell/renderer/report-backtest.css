@@ -182,7 +182,7 @@
   overflow: hidden;
 }
 /* 幾何(權益:回撤的分割、軸邊距)在 JS;這裡只給它畫進去的那個盒子 */
-.bt-canvas { display: block; width: 100%; height: 320px; }
+.bt-canvas { display: block; width: 100%; height: clamp(320px, 22cqi, 440px); }   /* 寬欄時長高、有上限(寬螢幕 A 版);cqi 量的是 .bt */
 /* 直方圖只有一個區,不必跟上下兩區的權益圖一樣高(雲端 histogram block 的 680:225 比例) */
 .bt-canvas-mcpt { height: 224px; }
 /* 標題是一句話不是圖例:取消 .bt-label 的 flex,讓裡面的 .mono 數字照行內排 */

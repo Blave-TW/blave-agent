@@ -371,7 +371,7 @@ def _price_crypto(b, sym, bars):
     c = df["Close"].dropna()
     last, chg = float(c.iloc[-1]), float(c.iloc[-1] / c.iloc[-2] - 1)
     _data_day(b, label, str(c.index[-1].date()))
-    b.ctx[_mark(b, label, "價格")] = f"{T._num(last, 2)} USDT({T._pct(chg * 100)})"
+    b.ctx[_mark(b, label, "價格")] = f"{T._num(last, 2)} USDT({_CRYPTO_DAY}{T._pct(chg * 100)})"
     lv = _levels_into(b, df, last, label)
     b.cache["levels"] = (lv, last, "crypto", label)
     # 60 日均仍用整段收盤算,K 線只畫最後 bars 根。
@@ -380,7 +380,7 @@ def _price_crypto(b, sym, bars):
                                       f"60 日均 {T._num(lv['60 日均'], 2)}" if "60 日均" in lv else None),
                        reflines=T._level_lines(lv))
     foot = [("src", "價格:Binance USDT 永續日 K,最後一根為今日未收盤 bar。")]
-    return Brick([ck], [T.kpi(label, T._num(last, 2), T._tone(chg), unit="USDT", delta=T._pct(chg * 100))], foot,
+    return Brick([ck], [T.kpi(label, T._num(last, 2), T._tone(chg), unit="USDT", delta=_CRYPTO_DAY + T._pct(chg * 100))], foot,
                  headline=T._headline(label, chg, last, lv.get("前 20 日高"), "前 20 日高"))
 
 
@@ -396,6 +396,11 @@ def _level_ref(lv):
     if "前 20 日高" not in lv:
         return None
     return ("參考線為前 20 日高 " + T._num(lv["前 20 日高"], 2) + " / 低 " + T._num(lv["前 20 日低"], 2) + "(不含當日)")
+
+
+# 加密日 K 的漲跌是「今日未收盤 bar ÷ 昨收」,Binance 日 K 在台北 08:00 換日。不標窗口時,跟同一份報告裡
+# coin_snapshot／異動表的滾動 24 小時並排會像同一個數字講兩個值(QA 0158 P2-4)
+_CRYPTO_DAY = "08:00 起 "
 
 
 def quote_table(b, symbols=("BTC", "ETH", "SOL"), kpi_n=2, top_mcap=0):
@@ -418,9 +423,9 @@ def quote_table(b, symbols=("BTC", "ETH", "SOL"), kpi_n=2, top_mcap=0):
         rows.append({"symbol": label, "price": T._num(last, 2), "r1": T._pct(r1 * 100),
                      "r7": T._pct(r7 * 100) if r7 is not None else None,
                      "r30": T._pct(r30 * 100) if r30 is not None else None})
-        ctx[label] = f"{T._num(last, 2)},1 日 {T._pct(r1 * 100)}" + (f",30 日 {T._pct(r30 * 100)}" if r30 is not None else "")
+        ctx[label] = f"{T._num(last, 2)},{_CRYPTO_DAY}{T._pct(r1 * 100)}" + (f",30 日 {T._pct(r30 * 100)}" if r30 is not None else "")
         if len(kpis) < kpi_n:
-            kpis.append(T.kpi(label, T._num(last, 2), T._tone(r1), unit="USDT", delta=T._pct(r1 * 100)))
+            kpis.append(T.kpi(label, T._num(last, 2), T._tone(r1), unit="USDT", delta=_CRYPTO_DAY + T._pct(r1 * 100)))
     ctx["資料日"] = str(next(iter(closes.values())).index[-1].date())
     base = next(iter(closes))
     base_c = closes[base]

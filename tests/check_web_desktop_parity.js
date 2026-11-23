@@ -500,6 +500,48 @@ for (const lang of ["zh", "en"]) {
     const off = keys.filter((k) => w[wk(k)] !== d[k]);
     ok("澄清表單 form.* 字串兩邊逐字一致(" + lang + "," + keys.length + " 句;form.note.* 只在電腦版)", keys.length === 22 && off.length === 0, off.map((k) => k + "「" + d[k] + "」 vs " + wk(k) + "「" + w[wk(k)] + "」").join(";"));
   } }
+// 回測年化報酬(QA 0158 P2-2;稽核 0.1.59 B-5):daily_dates[0] 起算、365.25,兩邊真的跑同一組案例
+{ const rb = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "report-backtest.js"), "utf8"), grab = (re) => (re.exec(rb) || [""])[0];
+  const cutW = (n) => { const i = web.indexOf("        function " + n + "("); return i < 0 ? "" : web.slice(i, web.indexOf("\n        }\n", i) + 10); };
+  let D = null, W = null, err = "";
+  try { D = new Function("const isNum = (v) => typeof v === \"number\" && isFinite(v);\n" + grab(/function parseDay\(s\) \{[\s\S]*?\n  \}/) + grab(/function annualReturn\(stats\) \{[\s\S]*?\n  \}/) + "\nreturn annualReturn;")(); } catch (e) { err += " 電腦版:" + e.message; }
+  try { W = new Function(cutW("parseISODateOnly") + cutW("annualReturn") + "\nreturn annualReturn;")(); } catch (e) { err += " 網頁:" + e.message; }
+  const CASES = [{ "Total Return [%]": 50, start: "2020-01-01", end: "2023-10-14", daily_dates: ["2020-10-14", "2020-10-15"] }, { "Total Return [%]": 10, start: "2020-01-01", end: "2021-01-01" },
+    { "Total Return [%]": 10, daily_dates: ["x", "y", "z"] }, { "Total Return [%]": -35.5, start: "2019-05-05", end: "2024-02-29", daily_dates: ["2019-05-07"] },
+    { "Total Return [%]": 3, start: "2024-01-02", end: "2024-01-01", daily_dates: ["2024-01-03", "2024-01-04"] }, { "Total Return [%]": -100, start: "2020-01-01", end: "2021-01-01" }, { "Total Return [%]": 5 }];
+  const same = (a, b) => a === b || (a !== null && b !== null && Math.abs(a - b) < 1e-9);
+  const off = D && W ? CASES.filter((c) => !same(D(c), W(c))) : CASES;
+  ok("回測年化報酬兩邊同公式(daily_dates[0] 起算、365.25;" + CASES.length + " 案)", !!D && !!W && Math.abs(D(CASES[0]) - (Math.pow(1.5, 365.25 / 1095) - 1) * 100) < 1e-9 && off.length === 0, err + off.map((c) => JSON.stringify(c) + " 電腦版=" + (D && D(c)) + " 網頁=" + (W && W(c))).join(";")); }
+// 聊天欄答案鈕(spec chat-answer-buttons-2026-11-16 §10.8):ANS_MAX_ITEMS／ANS_MAX_CHARS、擋字元的 ANS_BAD_CHAR(稽核 0.1.59 S-2)與剝標記的兩條 regex(ANS_BLOCK／ANS_OPEN_TAIL)
+// 兩邊同名同值(比原文,同上);runtime 那份的上限與 regex 也要是同一組。ans.* 字串 zh / en 逐字一致(網頁 msgid 慣例同 form.*)
+{ const ANS_CONSTS = ["ANS_MAX_ITEMS", "ANS_MAX_CHARS", "ANS_BAD_CHAR"], ANS_RES = ["ANS_BLOCK", "ANS_OPEN_TAIL"];
+  const ap = path.join(__dirname, "..", "shell", "renderer", "answers.js"), ansSrc = fs.existsSync(ap) ? fs.readFileSync(ap, "utf8") : "";
+  const appSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "app.js"), "utf8");
+  const val = (src, n) => { const m = src.match(new RegExp("^\\s*const " + n + " = (.+?);\\s*(//.*)?$", "m")); return m ? m[1].replace(/'/g, '"').replace(/\s+/g, "") : null; };
+  const bad = ANS_CONSTS.filter((n) => val(ansSrc, n) === null || val(ansSrc, n) !== val(web, n)).concat(ANS_RES.filter((n) => val(appSrc, n) === null || val(appSrc, n) !== val(web, n)));
+  ok("答案鈕兩個常數與兩條 regex 兩邊同一份(" + ANS_CONSTS.concat(ANS_RES).join(", ") + ")", bad.length === 0, bad.map((n) => n + ": " + (val(ansSrc, n) || val(appSrc, n)) + " vs " + val(web, n)).join(";"));
+  const rt = fs.readFileSync(path.join(__dirname, "..", "runtime", "agent_turn.py"), "utf8");
+  const py = (n) => { const m = rt.match(new RegExp("^" + n + " = (.+)$", "m")); return m ? m[1].trim() : null; };
+  const pyRe = (n) => { const m = rt.match(new RegExp("^" + n + ' = re\\.compile\\(r"(.+?)"(, re\\.S)?\\)$', "m")); return m ? m[1] : null; };
+  const jsRe = (n) => { const m = appSrc.match(new RegExp("^const " + n + " = /(.+)/g?;", "m")); return m ? m[1].replace(/\\\//g, "/").replace(/\[\\s\\S\]/g, ".") : null; };
+  ok("答案鈕上限 runtime 與電腦版同值", py("ANS_MAX_ITEMS") === val(ansSrc, "ANS_MAX_ITEMS") && py("ANS_MAX_CHARS") === val(ansSrc, "ANS_MAX_CHARS"),
+    py("ANS_MAX_ITEMS") + "/" + py("ANS_MAX_CHARS") + " vs " + val(ansSrc, "ANS_MAX_ITEMS") + "/" + val(ansSrc, "ANS_MAX_CHARS"));
+  // JS 的 [\s\S] 對 Python re.S 的 .;Python 那條多兩組擷取括號(取選項、取 default 用),r"" 裡的 \" 是字面的 "
+  const pyBlock = (pyRe("_ANSWERS_BLOCK_RE") || "").replace("(.*?)", ".*?").replace('\\"(\\d)\\"', '"\\d"');
+  // runtime 用 unicodedata 類別;電腦版是 /[\p{..}\p{..}]/u:兩邊的類別清單要一樣
+  const pyCats = (py("ANS_BAD_CATS") || "").match(/"(\w+)"/g), jsCats = (val(ansSrc, "ANS_BAD_CHAR") || "").match(/\\p\{(\w+)\}/g);
+  ok("答案鈕擋的字元類別 runtime 與電腦版同一組", !!pyCats && !!jsCats && JSON.stringify(pyCats.map((c) => c.slice(1, -1))) === JSON.stringify(jsCats.map((c) => c.slice(3, -1))) && /^\/\[(\\p\{\w+\})+\]\/u$/.test(val(ansSrc, "ANS_BAD_CHAR")),
+    py("ANS_BAD_CATS") + " vs " + val(ansSrc, "ANS_BAD_CHAR"));
+  ok("答案鈕剝標記 regex runtime 與電腦版同一組", !!pyBlock && pyBlock === jsRe("ANS_BLOCK"), pyBlock + " vs " + jsRe("ANS_BLOCK"));
+  ok("答案鈕未閉合尾段 regex runtime 與電腦版同一組", pyRe("_ANSWERS_OPEN_TAIL_RE") === jsRe("ANS_OPEN_TAIL"), pyRe("_ANSWERS_OPEN_TAIL_RE") + " vs " + jsRe("ANS_OPEN_TAIL"));
+  for (const lang of ["zh", "en"]) {
+    const w = poRaw(path.join(webDir, "app", "translations", lang, "LC_MESSAGES", "messages.po")), d = poRaw(path.join(__dirname, "..", "shell", "i18n", lang + ".po"));
+    const ANS_KEYS = ["ans.def", "ans.defMark", "ans.group", "ans.say"];
+    const keys = Object.keys(d).filter((k) => k.startsWith("ans.")).sort(), wk = (k) => "workspace_" + k.replace(/\./g, "_");
+    const off = keys.filter((k) => w[wk(k)] !== d[k]);
+    ok("答案鈕 ans.* 字串兩邊逐字一致(" + lang + "," + keys.length + " 句)", JSON.stringify(keys) === JSON.stringify(ANS_KEYS) && off.length === 0,
+      "電腦版 ans.* 鍵 " + JSON.stringify(keys) + " 應為 " + JSON.stringify(ANS_KEYS) + ";" + off.map((k) => k + "「" + d[k] + "」 vs " + wk(k) + "「" + w[wk(k)] + "」").join(";"));
+  } }
 // 設定 modal 方案 B(spec settings-modal-b-2026-10-24 §4.2):web 的「一般／Agent／連結」三類是電腦版的子集合——分類名與這三類裡的字 zh / en 逐字一致,
 // web #set_cats 的分類順序是電腦版 #set-cats 順序的子序列(相對順序相同)
 { const SETTINGS_PAIRS = { "set.cat.display": "workspace_set_cat_display", "set.cat.rules": "workspace_set_cat_rules", "set.cat.connect": "workspace_set_cat_connect",
@@ -1103,5 +1145,20 @@ for (const lang of ["zh", "en"]) {
     ok("總手續費標籤兩邊同一份(" + lang + ")", off.length === 0, off.map((k) => k + "「" + w[k] + "」 vs " + PAIRS[k] + "「" + d[PAIRS[k]] + "」").join(";"));
   }
   ok("網頁不再有舊的一整句 workspace_cx_paper_how_p(拆成清單後留著就是兩套字)", !/workspace_cx_paper_how_p/.test(web));
+}
+// 0.1.59 小項(Wei 11-20):優化工具列〔重算權重〕與上次計算時間、存金額被拒 VENUE_SYMBOL 那一句(標的分隔同一份)——zh / en 逐字一致,任一邊找不到也算紅
+{ const PAIRS = { "mg.why.rerun": "workspace_mg_why_rerun", "mg.lastRun": "workspace_mg_last_calc", "tr.venueSymbol.rejected": "workspace_pf_rej_venue_symbol",
+    "tr.venueSymbol.rejectedSpot": "workspace_pf_rej_venue_symbol_spot", "tr.venueSymbol.more": "workspace_pf_rej_venue_symbol_more", "wf.listSep": "workspace_pf_rej_sym_sep" };
+  for (const lang of ["zh", "en"]) {
+    const dp = poMap(path.join(__dirname, "..", "shell", "i18n", lang + ".po")), wp = poMap(path.join(webDir, "app", "translations", lang, "LC_MESSAGES", "messages.po"));
+    const bad = Object.entries(PAIRS).filter(([d, w]) => typeof dp[d] !== "string" || typeof wp[w] !== "string" || dp[d] !== wp[w]);
+    ok(`0.1.59 重算權重／VENUE_SYMBOL 的字 ${lang} 兩邊逐字一致(${Object.keys(PAIRS).length} 句)`, bad.length === 0, bad.map(([d, w]) => d + "「" + dp[d] + "」 vs " + w + "「" + wp[w] + "」").join(";"));
+  }
+  ok("VENUE_SYMBOL 兩邊都照原句分合約／現貨、超過五檔接「等 N 檔」那段,不接「…」", /合約\|現貨|\\u5408\\u7d04\|\\u73fe\\u8ca8/.test(web) && /workspace_pf_rej_venue_symbol_more/.test(web) && !/v\[2\] \? "…"/.test(web)
+    && /\\u5408\\u7d04\|\\u73fe\\u8ca8/.test(desk) && /t\("tr\.venueSymbol\.more"/.test(desk) && !/venueSymbol[^\n]*\\u2026/.test(desk)); }
+// 設定 › 帳號與方案「Blave 餘額」tooltip 第一句(spec host-card-relayout D1 §3.4):跟網頁錢包餘額的 tooltip 逐字同(zh／en),任一邊找不到也算紅
+for (const lang of ["zh", "en"]) {
+  const dp = poMap(path.join(__dirname, "..", "shell", "i18n", lang + ".po")), wp = poMap(path.join(webDir, "app", "translations", lang, "LC_MESSAGES", "messages.po"));
+  ok(`餘額 tooltip p3.set.balTip ${lang} 跟網頁 bc_plan_wallet_fact 逐字一致`, typeof dp["p3.set.balTip"] === "string" && dp["p3.set.balTip"] === wp["bc_plan_wallet_fact"], dp["p3.set.balTip"] + " vs " + wp["bc_plan_wallet_fact"]);
 }
 console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0);

@@ -292,7 +292,7 @@ t("§3.2 六條都成立 → 出", X.slotPhPlan(OK).draw === true);
 
   // ── §8 埋點 ──
   t("§8.1 九個新名字接在 0.1.52 的 cx_key_page 後面、順序同 spec;之後接 0.1.54 拉回 icon 鈕 sp_pull_icon(0.1.57 的選單名字再接在後面)", /"cx_key_page",\n[^\n]*\n[^\n]*\n\s*"side_cv_login", "side_cv_trial", "side_cv_plan", "side_cv_stopped",\n\s*"login_side", "login_side_again", "bind_side", "plan_side", "stopped_side",\n[^\n]*\n\s*"sp_pull_icon",\n/.test(tele));
-  t("0.1.58 啟動框 start_catch_chg 接在 0.1.57 的 ns_example 後面;0.1.58 永豐連接框(旗標關著)sinf_* 六個再接在它後面、是白名單最後一段(順序同 api)", /"ns_example",\n[^\n]*\n[^\n]*\n\s*"start_catch_chg",\n[^\n]*\n[^\n]*\n\s*"sinf_form_saved", "sinf_sign_open", "sinf_sim_sent", "sinf_signed", "sinf_ready", "sinf_relogin"\] \},/.test(tele));
+  t("0.1.58 啟動框 start_catch_chg 接在 0.1.57 的 ns_example 後面;0.1.58 永豐連接框(旗標關著)sinf_* 六個再接在它後面;0.1.59 澄清表單 clarify_click / clarify_undo 接在 sinf_* 後面、是白名單最後一段(順序同 api)", /"ns_example",\n[^\n]*\n[^\n]*\n\s*"start_catch_chg",\n[^\n]*\n[^\n]*\n\s*"sinf_form_saved", "sinf_sign_open", "sinf_sim_sent", "sinf_signed", "sinf_ready", "sinf_relogin",\n[^\n]*\n[^\n]*\n[^\n]*\n\s*"clarify_click", "clarify_undo"\] \},/.test(tele));
   t("§8.2 slot_ph_show／slot_ph_open 留著(手機圖示畫出／按下);slot_up_*、slot_ph_close、slot_ph_login 沒有送出點", /"slot_ph_show"/.test(src) && /"slot_ph_open"/.test(src) && !/slot_up_show|slot_up_open|slot_ph_close|slot_ph_login/.test(app + src));
   t("§8.2 upd_pill_shown 列裡或細軌看得到都算、每日一次;upd_go_pill 按圓鈕", /if \(p\.show && \(pill\.offsetParent !== null \|\| dot\.offsetParent !== null\)\)/.test(cut(app, "function upPillPaint(")) && /trackFeature\("upd_go_pill"\);/.test(cut(app, "function upPillClick(")));
   t("§7 主行程的提示格存檔拿掉:slot-state、slot-phone-set、slotPhone", !/slot-state|slot-phone-set|slotPhone|slotStateGet/.test(main + pre));

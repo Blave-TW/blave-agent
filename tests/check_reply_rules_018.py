@@ -189,8 +189,9 @@ t("#143 #167 時間:回覆、表格、報告裡的時間一律換成用戶的時
 # 0.1.17 e2e:歡迎頁點列送出的討論句,回合 1 以三個問題收尾(方向／標的／週期),跟畫面上的建議句各講各的。
 # runtime 的結尾規則只管「提議下一步的問句」,問用戶偏好的問句不在它的範圍內
 discuss = [l for l in style.splitlines() if l.startswith("- When asked to discuss how to build a strategy from some data")]
-t("0.1.17 討論型開場:編號提案收尾、標一個預設、回編號就開始做;缺的細節用預設並寫明、不逐項問、最多一個問題;建議句出自同一組提案(AGENTS › Response Style,一句)",
-  len(discuss) == 1 and "end on your numbered proposals with one marked as the recommended default" in discuss[0] and "replying with a number starts the build" in discuss[0]
+t("0.1.17 討論型開場(0.1.59 Wei 改裁:不編號、建議那一個預選):提案收尾、標一個預設、有答案鈕照鈕的規則、沒鈕回「好」就做建議那一個;缺的細節用預設並寫明、不逐項問、最多一個問題;建議句出自同一組提案(AGENTS › Response Style,一句)",
+  len(discuss) == 1 and "end on your proposals, never numbered, with the recommended one marked as the default" in discuss[0]
+  and "answer buttons" in discuss[0] and "replying 「好」 starts the recommended one" in discuss[0] and "number" not in discuss[0].replace("never numbered", "")
   and "(symbol, interval, contract, capital)" in discuss[0] and "not asked one by one" in discuss[0] and "at most one clarifying question" in discuss[0] and "picked from those same proposals" in discuss[0])
 # 0.1.17 e2e:歡迎頁寫「1998 年起」,agent 寫出的台指期日線策略 START 卻是 2011-01-03(讀了 twfutures.md 裡 Blave 序列的起點就拿來用)
 _dp = read("lib", "data.py")

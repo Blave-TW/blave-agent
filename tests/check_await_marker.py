@@ -26,9 +26,9 @@ def ok(name, cond, detail=""):
         fails.append(name)
 
 
-MARKS = ("<await", "<form", "<handoff")  # 澄清表單、搬策略動作卡的標記同一套列舉(表單 chunk 內容歸 tests/check_clarify_form.py)
+MARKS = ("<await", "<form", "<handoff", "<answers", "</answers")  # 澄清表單、搬策略動作卡、答案鈕的標記同一套列舉(chunk 內容歸 tests/check_clarify_form.py、check_answer_buttons.py)
 BODY = "我需要你先選一個：\n1. 4h 均線交叉\n2. 1h RSI\n"
-REPLY = BODY + '<form id="txf_backtest" prod="mxf"/>\n<handoff dir="up" name="momo_2"/>\n<await/>\n<suggest>\n掃一下參數\n</suggest>'
+REPLY = BODY + '<answers>\n重跑回測\n先不要\n</answers>\n<form id="txf_backtest" prod="mxf"/>\n<handoff dir="up" name="momo_2"/>\n<await/>\n<suggest>\n掃一下參數\n</suggest>'
 
 
 def has_mark(s):

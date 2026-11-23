@@ -11,6 +11,7 @@ dir (lib/ = ours, strategies/ = the user's), so the paths the hook sees are the 
   3. ast.parse of user code raising SyntaxError inside lib → recorded, without the source line
   4. lib calling into a stdlib / package function that raises (json.loads) → recorded
   5. §3.2's expected classes, a requests timeout and KeyboardInterrupt → no record; HTTPError → recorded
+     publish()'s ReportRefused → no record; a record carries BLAVE_CHAT_SID (the conversation) when well-formed
   6. BLAVE_AGENT_LOCAL unset → `import lib` installs nothing and writes no file
   7. file over 256 KB → not written; the file a symlink → not followed; line ≤ 8 KB
   8. the original hooks still run (sys and threading), install() is idempotent, the hook's own failure is swallowed
@@ -162,6 +163,27 @@ for exc in (requests.exceptions.ReadTimeout("t"), requests.exceptions.Connection
     ok(f"5 {type(exc).__name__} → no record", E._skip(exc))
 http = requests.exceptions.HTTPError("400 Client Error: Bad Request for url: https://x/y?apikey=abc")
 ok("5 HTTPError is not a network blip → would be recorded", not E._skip(http))
+# publish()'s "fix every one, then re-send" refusal: the agent recovers in the same turn (0.1.59 card blamed it a day later)
+from lib import report as _report  # noqa: E402
+refused = _report.ReportRefused("publish() refused crypto-market-20261121: 7 problem(s) — fix every one, then re-send")
+ok("5 the real lib.report.ReportRefused is still a ValueError (callers catching ValueError keep working)",
+   isinstance(refused, ValueError))
+ok("5 ReportRefused raised from lib → no record", rec(lambda: runner.run(lambda d: (_ for _ in ()).throw(refused))) is None)
+with open(os.path.join(REPO, "lib", "report_templates.py"), encoding="utf-8") as f:
+    tpl = f.read()
+ok("5 publish()'s refusal raises ReportRefused", "raise _report.ReportRefused(_refusal(pack, problems))" in tpl
+   and "raise ValueError(_refusal(" not in tpl)
+
+# the conversation the error happened in (shell/main.js BLAVE_CHAT_SID): kept locally so the card shows only there
+os.environ[E.SID_ENV] = "desktop-ab12cd"
+r = rec(lambda: runner.lookup({}))
+ok("5 a record carries the conversation it happened in", r is not None and r.get("sid") == "desktop-ab12cd", r)
+os.environ[E.SID_ENV] = "../not-a-sid"
+r = rec(lambda: runner.lookup({}))
+ok("5 a malformed conversation id is left out", r is not None and "sid" not in r, r)
+del os.environ[E.SID_ENV]
+r = rec(lambda: runner.lookup({}))
+ok("5 no conversation (cron, daemon) → no sid", r is not None and "sid" not in r, r)
 
 # ── 6 ──
 probe = ("import sys, threading; before = (sys.excepthook, threading.excepthook); import lib; "

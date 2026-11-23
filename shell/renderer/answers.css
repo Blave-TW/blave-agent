@@ -1,0 +1,22 @@
+/* 聊天欄答案鈕(renderer/answers.js;spec chat-answer-buttons-2026-11-16 §3、§4)。canon components/buttons.md › 選項膠囊,聊天欄只改字級 13。
+   外觀高 32、熱區 44(::before 從 padding box 上下各擴 7);橫排欄距 8,直排列距 12(上下兩顆熱區剛好相接)。
+   框 1px --border-frame、底透明,不設主鈕、不用橘;agent 建議的那一顆預選 = 選項膠囊的選取態(Wei 11-20)。亮暗只靠 token 重映射。 */
+.msg.ai .ans {
+  display: flex; flex-wrap: nowrap; column-gap: var(--space-8); row-gap: var(--space-12);
+  margin: var(--space-12) 0 0; min-width: 0;
+  animation: res-in var(--motion-base) var(--ease-standard) backwards;
+}
+/* 一列放不下:整組直排,每顆等寬(寬 = 最長那顆,上限 = 欄寬),字靠左、可折行 */
+.msg.ai .ans.is-col { display: grid; grid-template-columns: fit-content(100%); justify-content: start; }
+.ans-btn {
+  position: relative; flex: none; box-sizing: border-box; min-height: 32px; margin: 0;
+  padding: var(--space-6) var(--space-12); border: 1px solid var(--border-frame); border-radius: var(--radius-sm);
+  background: transparent; color: var(--ink); font: inherit; font-size: 13px; font-weight: 400; line-height: 1.4;
+  text-align: left; white-space: nowrap; cursor: pointer;
+  transition: background-color var(--motion-fast) var(--ease-standard);
+}
+.ans.is-col .ans-btn { white-space: normal; overflow-wrap: anywhere; }
+.ans-btn::before { content: ""; position: absolute; inset: -7px 0; }
+@media (hover: hover) { .ans-btn:hover { background: var(--surface-muted); } }
+.ans-btn:active { background: var(--surface-muted); }
+.ans-btn.is-default { background: var(--surface-muted); border-color: var(--ink); font-weight: 600; }

@@ -1175,10 +1175,36 @@ ok("回測卡:btWaiting 時只寫 mg.btWaitPerf + 取消(不畫進度條、不�
     const back = vm.runInContext("mgOptAuto(B)", ctx) === true && sent[sent.length - 1] === "auto";
     G.optTried = J("A"); G.optBusy = true; st.args = "B"; vm.runInContext("mgOptForget(B.mg)", ctx); const keptBusy = G.optTried === J("A"); st.args = "A";
     ok("…權重被換掉(送過成功、主機上這一組沒權重了)不自動重送;離開這一組(不在途)就忘掉,回來再自動送一次;在途的那趟不忘", replaced && left && back && keptBusy, J([replaced, left, back, keptBusy])); }
-  ok("沒有〔跑優化〕與優化的霧:工具列只剩策略、方法與問號;〔跑回測〕在回測區標題列;mg.optRun／mg.fogOpt 兩語都拿掉",
+  ok("沒有〔跑優化〕與優化的霧:工具列是策略、方法、〔重算權重〕那行與問號;〔跑回測〕在回測區標題列;mg.optRun／mg.fogOpt 兩語都拿掉",
     !/mg\.optRun|mg-fog-opt|kind === "opt"|function mgFogOn|function mgPrimary|tb-run/.test(psrc) && /poHelpGroup\(document\.createTextNode\(""\), "optimize", "po-help-opt"\)/.test(cutF(psrc, "mgToolbar"))
     && /trSec\(trEl\("span", "label", t\("mg\.secBt"\)\), bt\)/.test(cutF(psrc, "mgBuildPage"))
     && (() => { const raw = fs.readFileSync(path.join(R, "strings.js"), "utf8"); return !/"mg\.(optRun|optRunning|optTip|fogOpt|secAmounts)"/.test(raw); })()); }
+// 〔重算權重〕常駐(Wei 11-20,同網頁 mgBuildToolbar):工具列右側一行「上次計算 月/日 時:分」＋文字鈕;按了照目前這一組手動送(不帶 auto,權重簽名沒變也送);
+// 計算中、送不出去、雲端主機沒活著、清單沒到停用;主機上那份不是這一組不講時間;機器落後、0 檔、沒選方法不畫;不帶回大顆〔跑優化〕
+{ const STR = fs.readFileSync(path.join(R, "strings.js"), "utf8"), box = {}; vm.runInNewContext(STR.replace(/^const /gm, "var ") + "\nthis.out = STRINGS;", box);
+  const CAT = box.out, st = { prop: null, can: true, waiting: false }, sent = [], strat = { focused: 0 };
+  const el = (tag, cls, text) => ({ tag, className: cls || "", textContent: text == null ? "" : text, kids: [], dataset: {}, attrs: {}, on: {}, disabled: false, id: "",
+    appendChild(k) { this.kids.push(k); return k; }, setAttribute(a, v) { this.attrs[a] = v; }, addEventListener(n, f) { this.on[n] = f; } });
+  const ctx = vm.createContext({ JSON, trEl: el, t: (k, a) => { const v = CAT.zh[k]; return a ? v.replace(/\{(\w+)\}/g, (_, n) => a[n]) : v; }, mgProposal: () => st.prop,
+    mgWhyCan: (f) => f.go === "run" && st.can, mgOptWaiting: () => st.waiting, mgRunOptimize: (...a) => sent.push(a), TR: { env: "local", listLoaded: true, st: { alive: true } },
+    $: () => ({ querySelector: (q) => (q === '[data-fk="mg-strat"]' ? { focus() { strat.focused++; } } : null) }) });
+  vm.runInContext(["trMs", "trErrStamp"].map((n) => cutF(src, n)).join("\n") + "\n" + ["mgRerunCan", "mgRerunLine"].map((n) => cutF(psrc, n)).join("\n"), ctx);
+  const line = (o, tr) => { const keep = Object.assign({}, st), kt = ctx.TR; Object.assign(st, o || {}); if (tr) ctx.TR = Object.assign({}, kt, tr); try { return vm.runInContext("mgRerunLine({})", ctx); } finally { Object.assign(st, keep); ctx.TR = kt; } };
+  const at = new Date(2026, 0, 5, 16, 29).getTime() / 1000, on = line({ prop: { computed_at: at } }), btn = (l) => l.kids[l.kids.length - 1];
+  const fresh = new Date(Date.now() - 60000), hm = String(fresh.getHours()).padStart(2, "0") + ":" + String(fresh.getMinutes()).padStart(2, "0"), today = line({ prop: { computed_at: fresh.getTime() / 1000 } });
+  ok("重算權重:有這一組的權重 → 「上次計算 01/05 16:29」(trErrStamp:24 小時內只寫 HH:mm)在前、文字鈕在後(aria-describedby 指到時間);沒有這一組的權重只畫鈕",
+    on.className === "mg-rerun" && on.kids.length === 2 && on.kids[0].textContent === "上次計算 01/05 16:29" && today.kids[0].textContent === "上次計算 " + hm && on.kids[0].id === "mg-last-run" && btn(on).textContent === "重算權重"
+    && btn(on).className === "btn-quiet" && btn(on).attrs["aria-describedby"] === "mg-last-run" && !btn(on).disabled && ((l) => l.kids.length === 1 && !("aria-describedby" in btn(l).attrs))(line()), J(on.kids.map((k) => k.textContent)));
+  const n0 = sent.length; btn(on).on.click();
+  ok("重算權重:按了 = mgRunOptimize() 手動送(不帶 auto／retry,權重簽名沒變也照送;mgRunOptimize 本身不看簽名),焦點留在同一列的〔策略〕",
+    sent.length === n0 + 1 && sent[n0].length === 0 && strat.focused === 1 && !/optTried|mgOptSig/.test(cutF(psrc, "mgRunOptimize").split("\n").slice(0, 3).join("\n")), J(sent));
+  ok("重算權重:計算中、機器落後或送不出去(mgWhyCan run 含 mgBlocked)、清單沒到、雲端主機沒活著 → 停用;雲端活著照常",
+    btn(line({ waiting: true })).disabled && btn(line({ can: false })).disabled && btn(line({}, { listLoaded: false })).disabled && btn(line({}, { env: "cloud", st: { alive: false } })).disabled && !btn(line({}, { env: "cloud", st: { alive: true } })).disabled);
+  const tb = cutF(psrc, "mgToolbar"), css = fs.readFileSync(path.join(R, "trade.css"), "utf8");
+  ok("重算權重:0 檔、沒選方法不畫(機器落後照畫、停用);跟說明問號同一組靠右(.mg-tb-end,換行一起走);停用條件進重畫簽名;CSS 只用 token;兩語字串在、同網頁 workspace_mg_last_calc;埋點照手動重算的 mg_opt_run",
+    /const end = trEl\("div", "mg-tb-end"\);\n  if \(mgMembers\(\)\.length && G\.alloc\) end\.appendChild\(mgRerunLine\(G\)\);\n  const help = poHelpGroup[^\n]*\n  end\.appendChild\(help\); tb\.appendChild\(end\);/.test(tb) && /mgBlocked\(\)/.test(cutF(psrc, "mgWhyCan")) && /if \(via !== "auto"\) trackFeature\("mg_opt_run"\)/.test(cutF(psrc, "mgSendOptimize")) && /mgRerunCan\(G\)\]\);/.test(cutF(psrc, "mgPaint"))
+    && /\.mg-tb-end \{ margin-left: auto; display: flex; align-items: center; gap: var\(--space-12\); \}/.test(css) && /\.mg-rerun \{ display: flex; align-items: baseline; gap: var\(--space-8\); font-size: 12px; color: var\(--ink-3\);/.test(css) && !/\.mg-toolbar > \.mg-(help|rerun)/.test(css)
+    && CAT.zh["mg.lastRun"] === "上次計算 {t}" && CAT.en["mg.lastRun"] === "Last calculated {t}" && CAT.en["mg.why.rerun"] === "Recalculate weights" && !/"mg\.optRun"/.test(STR)); }
 // 回測「送出中」何時結束(同網頁 check_mg_bt_sending):認 job 的 started_at＋pid,不拿主機的 finished_at 比這台電腦的時鐘。
 // 主機快 300 秒＋畫面上有舊結果:舊 job 不能當成這次跑完;主機慢 60 秒＋短回測直接 done:當場結束,不卡 120 秒
 { const T = 1800000000000, S0 = T / 1000, env = { now: T, job: null };
@@ -1229,15 +1255,17 @@ let psPromise = null;
     && CAT.zh["mg.needAlloc"] === "先選方法" && CAT.en["mg.needAlloc"] === "Pick a method first");
   // 每一條帶去哪:點了走對的函式、送 mg_why_fix;整句是連結時沒有前段
   { const go = (k, o) => { const c = whyCtx(o); c.el = mkEl("div"); c.text = c.t((vm.runInContext("MG_WHY_FIX", c)[k].text) || k, { a: 2, b: 3, method: "x" }); vm.runInContext("mgWhyFill(el, text, MG_WHY_FIX[" + J(k) + "], 'mg-why-fix')", c); const b = c.el.kids.find((x) => x.tag === "button"); if (!b) return { b: null, el: c.el }; b.on.click(); return { b, el: c.el, log: c.log }; };
-    const want = { "mg.applyDiffSet": 'psOpen:amounts:{"check":["a","b"]}', "sz.staleMdd": "run" };
+    const want = { "mg.applyDiffSet": 'psOpen:amounts:{"check":["a","b"]}' };
     const bad = Object.keys(want).filter((k) => { const r = go(k); return !r.b || J(r.log) !== J(["track:mg_why_fix", want[k]]) || r.b.dataset.fk !== "mg-why-fix"; });
     ok("原因 → 去處逐條(含埋點 mg_why_fix、data-fk=mg-why-fix)", !bad.length, bad.join());
     const old = go("sz.oldMdd", { TR: { env: "cloud", st: { alive: true } }, upNow: () => ({ cloud: { link: {} } }) });
     ok("主機較舊:雲端走 upCloudUpdate;本機不出連結", J(old.log) === J(["track:mg_why_fix", "update"]) && go("sz.oldMdd").b === null);
     const mid = go("mg.applyWhyLogin"), lead = go("sz.staleMdd"), c3 = whyCtx(), plainFund = mkEl("div"); c3.plainFund = plainFund; vm.runInContext("mgWhyFill(plainFund, '先填投入資金', MG_WHY_FIX['mg.needFund'], 'mg-why-fix')", c3);
-    ok("底線畫在原字上:〔登入 Blave〕+ 後段;〔重算權重〕+ 後段;缺投入資金只講不連(那格就在鈕左邊)", mid.el.kids.map((k) => k.textContent).join("|") === "登入 Blave| 才拿得到匯率"
-      && lead.el.kids.map((k) => k.textContent).join("|") === "重算權重|才能用最大回撤" && plainFund.kids.length === 1 && plainFund.kids[0].tag === "span" && plainFund.kids[0].textContent === "先填投入資金");
-    ok("開框的連結帶 aria-haspopup,直接做事的(重跑)不帶", go("mg.applyDiffSet").b.attrs["aria-haspopup"] === "dialog" && !go("sz.staleMdd").b.attrs["aria-haspopup"]);
+    ok("底線畫在原字上:〔登入 Blave〕+ 後段;go:run 的句子(sz.staleMdd、mg.why.replaced)只出字、不連(〔重算權重〕只住工具列,designer 11-21);缺投入資金只講不連(那格就在鈕左邊)", mid.el.kids.map((k) => k.textContent).join("|") === "登入 Blave| 才拿得到匯率"
+      && lead.b === null && lead.el.kids.length === 1 && lead.el.kids[0].tag === "span" && lead.el.kids[0].textContent === "重算權重才能用最大回撤"
+      && ((c) => { c.rp = mkEl("div"); vm.runInContext("mgWhyFill(rp, t('mg.why.replaced'), { link: 'mg.why.rerun', go: 'run' }, 'mg-why-fix')", c); return c.rp.kids.length === 1 && c.rp.kids[0].tag === "span" && c.log.length === 0; })(whyCtx())
+      && /if \(!fix \|\| fix\.go === "run" \|\| !mgWhyCan\(fix\)\)/.test(cutF(psrc, "mgWhyFill")) && plainFund.kids.length === 1 && plainFund.kids[0].tag === "span" && plainFund.kids[0].textContent === "先填投入資金");
+    ok("開框的連結帶 aria-haspopup,直接做事的(主機更新)不帶", go("mg.applyDiffSet").b.attrs["aria-haspopup"] === "dialog" && !go("sz.oldMdd", { TR: { env: "cloud", st: { alive: true } }, upNow: () => ({ cloud: { link: {} } }) }).b.attrs["aria-haspopup"]);
     ok("按不動就不出連結:選擇策略開不了／優化在跑;句子照出", go("mg.applyDiffSet", { trPickOff: () => true }).b === null && go("sz.staleMdd", { mgBag: () => ({ params: {}, optBusy: true }) }).b === null
       && flatText(go("mg.applyDiffSet", { trPickOff: () => true }).el) === "配置 2 檔、這裡 3 檔");
     const c2 = whyCtx(), plain = mkEl("div"); c2.plain = plain; vm.runInContext("mgWhyFill(plain, '建議金額跟目前一樣', MG_WHY_FIX['mg.applyWhySame'], 'mg-why-fix')", c2);
@@ -1325,7 +1353,7 @@ let psPromise = null;
     const G = { sz: E, sizing: st.sizing, alloc: st.alloc, optErr: st.err, optBusy: false, optTried: st.tried || null }, log = [];
     const ctx = vm.createContext({ J, mgBag: () => G, mgOptSig: () => "SIG", mgMembers: () => st.members, mgOptErrNow: () => st.err, mgBlocked: () => st.blocked, mgOptBlockReason: () => st.block, mgShort: () => st.short, t: (k, v) => k + (v ? J(v) : ""),
       trEl: mk, document: { createElement: (g) => mk(g) }, trCtStored: () => null, trZoneOf: () => "USDT", trZoneUnit: (z) => z, TR_ZONE_LOTS: "lots", trHead: () => mk("thead"), trStratName: (n) => mk("span", "", n), trDisplay: (n) => n,
-      mgRunOptimize: (v) => log.push("run:" + v), mgPaint: () => log.push("paint"), TR: Object.assign({ sig: {}, env: "local", listLoaded: true }, st.tr), mgWhyFill: (el, text, fix) => { log.push("fix:" + fix.link); el.kids = [mk("span", "", text), mk("button", "", "link:" + fix.go)]; return el; }, mgWhyHost: (el) => el.kids[0] });
+      mgRunOptimize: (v) => log.push("run:" + v), mgPaint: () => log.push("paint"), TR: Object.assign({ sig: {}, env: "local", listLoaded: true }, st.tr), mgWhyFill: (el, text, fix) => { log.push("fix:" + J(fix)); el.kids = [mk("span", "", text), mk("button", "", "link:" + fix.go)]; return el; }, mgWhyHost: (el) => el.kids[0] });
     vm.runInContext(["mgWhySet", "mgSzPlaceholder"].map((n) => cutF(psrc, n)).join("\n"), ctx); vm.runInContext("mgSzPlaceholder", ctx)(st.busy);
     return { why: flat(E.why), err: !!E.why.err, table: E.wrap.kids.length, sk: !!find(E.wrap, (e) => /mg-sk/.test(e.className)), dash: !!find(E.wrap, (e) => e.textContent === "—"), ap: E.ap.disabled, retry: find(E.why, (e) => e.tag === "button" && e.dataset.fk === "mg-retry"), log, busyAttr: E.wrap.kids[0] && E.wrap.kids[0].attrs["aria-busy"] }; };
   const r0 = run({ members: [] }), r1 = run({ alloc: null }), rb = run({ busy: true }), re = run({ err: "mg.optError{e}" }), rs = run({ short: { n: 30, l: 60 } }), rg = run({ block: "mg.allocGone" }), rw = run({});
@@ -1334,7 +1362,8 @@ let psPromise = null;
   { const rr = run({ tried: "SIG" }), ro = run({ tried: "OTHER" }), rn = run({ tried: "SIG", alloc: null }), rc = run({ tried: "SIG", tr: { env: "cloud", st: { alive: true } } });
     const rd = run({ tried: "SIG", tr: { env: "cloud", st: { alive: false } } }), rl = run({ tried: "SIG", tr: { listLoaded: false } });
     ok("…雲端主機沒連上、清單還沒到:不講「被換掉」(重算也送不出去),照講 mg.applyWhyWait;雲端活著照講被換掉", rc.why === "mg.why.replacedlink:run" && rd.why === "mg.applyWhyWait" && rl.why === "mg.applyWhyWait", J([rc.why, rd.why, rl.why]));
-    ok("權重被另一次計算換掉(這一組送過、現在沒有權重):不自動重送,鈕下講 mg.why.replaced、連結「重算權重」(go run,同網頁 workspace_mg_why_replaced);別的一組、還沒選方法照舊",
-      rr.why === "mg.why.replacedlink:run" && rr.log.includes("fix:mg.why.rerun") && !rr.err && ro.why === "mg.applyWhyWait" && rn.why === "mg.needAlloc", J([rr.why, rr.log, ro.why, rn.why])); }
+    ok("go run 的句子不帶連結字、mgWhyGo 沒有 run 那支(〔重算權重〕只住工具列;稽核 0.1.59 C-1)", !/link: "mg\.why\.rerun"/.test(psrc) && !/"run"/.test(cutF(psrc, "mgWhyGo")) && /"sz\.staleMdd": \{ go: "run" \}/.test(psrc));
+    ok("權重被另一次計算換掉(這一組送過、現在沒有權重):不自動重送,鈕下講 mg.why.replaced(go run 只出字,同網頁 workspace_mg_why_replaced);別的一組、還沒選方法照舊",
+      rr.why === "mg.why.replacedlink:run" && rr.log.includes('fix:{"go":"run"}') && !rr.err && ro.why === "mg.applyWhyWait" && rn.why === "mg.needAlloc", J([rr.why, rr.log, ro.why, rn.why])); }
   ok("§4:優化失敗紅字＋〔重試〕(via retry)", re.err && re.why === "mg.optError{e}lib.retry" && !!re.retry && (re.retry.on.click(), re.log[0] === "run:retry"), J(re)); }
 Promise.all([btCancelTest, freshTest, pollTest, orderTest, liteTest, refreshEdgeTest, cancelGenTest, runNowTest, refreshFlagTest, global.__sizingCloudTest, mgOptTest, psPromise]).then(() => { console.log(red ? `\n${red} 項沒過` : "\nALL PASS"); process.exit(red ? 1 : 0); });

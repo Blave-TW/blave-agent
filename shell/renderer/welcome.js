@@ -69,12 +69,19 @@ function onbPhase(o) {
 const WD_P = "p", WD_B = "b";
 /* 每一列:[id, 市場, 來源];陣列順序就是畫面順序(對比版照來源分欄、單一清單照這裡)。字在 .po:wd.r.<id>.nm(列上顯示的名字)/
    .fq(頻率)/ .sy(起始年短句)/ .an(代進 wd.ask 那一句的名字:不帶括號說明)。
-   台指期 K 線拆兩列:txd 日線免費(期交所 futDataDown,lib/data.py fetch_txf_daily_public,1998-07-21 起)、txk 分線走 Blave */
+   台指期 K 線拆兩列:txd 日線免費(期交所 futDataDown,lib/data.py fetch_txf_daily_public,1998-07-21 起)、txk 分線走 Blave。
+   美股(0.1.59)只有免費欄:usd 日線(lib/data.py fetch_usstock_price),沒有 Blave 付費美股資料(spec overseas-english-content 已裁第 4 條)。
+   分段順序 = #wl-seg:加密 → 美股 → 台股 → 台指期(中英同序,已裁第 1 條) */
 const WD_ROWS = [
   ["bnk", "crypto", WD_P], ["fng", "crypto", WD_P], ["ti", "crypto", WD_B], ["conc", "crypto", WD_B], ["liq", "crypto", WD_B], ["fr", "crypto", WD_B],
+  ["usd", "us", WD_P],
   ["twd", "tw", WD_P], ["inst", "tw", WD_B], ["rev", "tw", WD_B], ["twm", "tw", WD_B], ["br", "tw", WD_B],
   ["txd", "txf", WD_P], ["txk", "txf", WD_B], ["txio", "txf", WD_B], ["fi", "txf", WD_B], ["pcr", "txf", WD_B],
 ];
+// 「看全部資料」的網站資料文件頁;台指期在台股那一頁。美股沒有資料頁(web _DOCS_PAGES 沒有),那個分段不出 #wl-all
+const WD_DOCS = { crypto: "data_crypto", tw: "data_twstock", txf: "data_twstock" };
+// wd_mkt 埋點的值:清單內部代號換成全站市場代號(mkt_q、策略庫同一套),不然 api 整則拒收
+const WD_MKT = { crypto: "crypto", us: "usstock", tw: "twstock", txf: "txf" };
 const WD = { mk: "crypto", key: "", pre: "", filled: "", pubAsked: false };
 
 const wdEl = (tag, cls, txt) => { const e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; };
@@ -115,10 +122,12 @@ function wdFillText(text) {
 }
 function wdFill(text) { wdFillText(text); trackFeature("welcome_data_row"); }
 const wdWel = (mk) => WD_ROWS.filter((r) => r[1] === mk);
-/* 「看全部資料」:外開網站的資料文件頁,跟著目前的市場分頁與語言;台指期在台股那一頁。清單畫面不動 */
+/* 「看全部資料」:外開網站的資料文件頁,跟著目前的市場分頁與語言(WD_DOCS)。沒有資料頁的分段(美股)鈕藏起來,這裡也不開。清單畫面不動 */
 function wdDocs() {
+  const page = WD_DOCS[WD.mk];
+  if (!page) return;
   trackFeature("welcome_data_all");
-  window.blave.openExternal(docsUrl(WD.mk === "crypto" ? "data_crypto" : "data_twstock"));
+  window.blave.openExternal(docsUrl(page));
 }
 /* 重畫。指紋沒變就不碰 DOM(account_status 每一輪回合結束都會重讀,hover 與焦點不能被洗掉)。
    沒登入時那句要的試用天數來自公開價目(app.js pubLoad,一次,拿不到就用不帶數字的句子) */
@@ -133,20 +142,25 @@ function wdPaint() {
   if (key === WD.key) return;
   WD.key = key;
   $("wl-seg").querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.mk === WD.mk)));
+  $("wl-all").hidden = !WD_DOCS[WD.mk];
   const st = $("wl-state"), body = $("wl-body"); st.textContent = ""; body.textContent = "";
   body.classList.toggle("cmp2", m.cmp);
-  if (m.k === "trial") st.textContent = t("wd.state.trial", v);
+  // 「試用中：這些資料免費用到…」只在這個分段有 Blave 欄時講:美股只有免費欄,本來就免費,那句是假話(設計稽核 0.1.59 美股分段)
+  if (m.k === "trial" && wdWel(WD.mk).some((r) => r[2] === WD_B)) st.textContent = t("wd.state.trial", v);
   if (m.cmp) {
-    [WD_P, WD_B].forEach((src) => {
+    // 這個市場哪幾欄有列就畫哪幾欄:美股只有免費欄,Blave 欄連同右欄那句(登入、綁卡、試用鈕)都不出——沒有東西可賣
+    const srcs = [WD_P, WD_B].filter((src) => wdWel(WD.mk).some((r) => r[2] === src));
+    body.classList.toggle("cmp2", srcs.length === 2);
+    srcs.forEach((src) => {
       const col = wdEl("div", "wl-col"), h = wdEl("div", "wl-colh"); h.appendChild(wdEl("span", "wl-cap", t(src === WD_P ? "wd.col.free" : "wd.col.blave")));
       if (src === WD_B) { const nt = wdEl("span", "wl-note"); wdNote(m.k, v, nt); if (nt.childNodes.length) h.appendChild(nt); }
       col.appendChild(h);
-      wdWel(WD.mk).filter((r) => r[2] === src).forEach((r) => col.appendChild(wdRow(r[0], src === WD_P)));   // 三個市場兩欄都有列(tests/check_shell_welcome_data.js 列舉)
+      wdWel(WD.mk).filter((r) => r[2] === src).forEach((r) => col.appendChild(wdRow(r[0], src === WD_P)));   // 每個市場哪幾欄有列由 tests/check_shell_welcome_data.js 列舉
       body.appendChild(col);
     });
   } else { const col = wdEl("div", "wl-col"); wdWel(WD.mk).forEach((r) => col.appendChild(wdRow(r[0], true))); body.appendChild(col); }
 }
-$("wl-seg").addEventListener("click", (e) => { const b = e.target.closest("button[data-mk]"); if (!b || b.dataset.mk === WD.mk) return; WD.mk = b.dataset.mk; MKT.wdUser = true; wdPaint(); });
+$("wl-seg").addEventListener("click", (e) => { const b = e.target.closest("button[data-mk]"); if (!b || b.dataset.mk === WD.mk) return; WD.mk = b.dataset.mk; MKT.wdUser = true; wdPaint(); if (WD_MKT[WD.mk]) trackEvent("wd_mkt", { mk: WD_MKT[WD.mk] }); });
 $("wl-all").addEventListener("click", wdDocs);
 
 

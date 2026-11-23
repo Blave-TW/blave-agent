@@ -715,6 +715,32 @@ function p3PlanRows(id) {
     const ai = acct && acct.ai_credit;
     if (ai && ai.kind === "period" && ai.next_grant_at) id.appendChild(p3El("p", "plan-fine", p3T("p3.set.reset", { at: ai.next_grant_at })));
   }
-  if (!acctNoCard(acct) && !(acct && acct.auto_topup === false)) { const p = p3TopupLine(); p.className = "plan-fine"; id.appendChild(p); }   // 關了自動儲值:不講它會補(auto_topup 缺或 null 照有卡判)
   return true;
+}
+/* 「Blave 餘額」的標籤換成 tooltip 觸發點(spec host-card-relayout D1;Wei 11-20:「AI 超額時自動儲值」不再自己佔一行)。
+   第一句講錢包付什麼;第二句講自動儲值門檻,有卡、沒關自動儲值、門檻讀得到才接上 */
+function p3BalLabel() {
+  const ac = (p3Pv() || {}).ai_credit || {}, w = p3El("span", "l p3-tipw"), b = p3El("button", "mp-tip", t("plan.bal"));
+  let txt = t("p3.set.balTip");
+  if (!acctNoCard(acct) && !(acct && acct.auto_topup === false) && ac.auto_topup_min && ac.auto_topup_amount) txt += (LANG === "zh" ? "" : " ") + p3T("p3.set.topupTip", { lo: ac.auto_topup_min, a: ac.auto_topup_amount });   // 關了自動儲值:不講它會補(auto_topup 缺或 null 照有卡判)
+  const tip = p3El("span", "tip", txt);
+  b.type = "button"; tip.id = "p3-tip-" + (++P3.tipSeq); tip.setAttribute("role", "tooltip"); b.setAttribute("aria-describedby", tip.id);
+  w.append(b, tip); return w;
+}
+/* v3 試用格的頭(spec host-card-relayout D1;Wei 11-20 裁定):標題是方案本身「Blave Agent 方案 · 月繳」＋徽章(倒數在徽章裡,不另出狀態列),
+   徽章後面緊接〔到網站取消／恢復試用〕(act;到期不會扣的人沒有)。下一列左標右值「試用結束扣第一期｜MM/DD · 金額」。已取消、到期不會扣(charge 假)
+   就沒有那一列。金額讀 api 的下一期(next_charge_twd),沒有才退報價那一週期的價;都讀不到右邊只放日期 */
+function p3TrialHead(v, cx, charge, act) {
+  const top = p3El("div", "plan-ttl"), hb = p3El("span", "plan-ttl-h"), out = [top];
+  // 標題＋徽章包成一組:英文放不下時連結折到下一列、貼齊標題左緣(連結不帶 margin,設計稽核 0.1.59 §1.3)
+  hb.append(p3El("h6", null, t("p3.a.title") + " · " + v.c), p3El("span", "plan-badge", t(cx ? "pv.st.trialCancelled" : "pv.st.trial", v)));
+  top.append(hb);
+  if (act) top.append(act);
+  const d = charge && acct && acct.plan ? p3Md(acct.plan.trial_free_until) : "";
+  if (d) {
+    const p = v.x || (v.cy === "annual" ? v.y : v.p), row = p3El("div", "plan-bal plan-kv");
+    row.append(p3El("span", "l", t("p3.set.firstL")), p3El("span", "v", p ? t("p3.set.firstV", { d, p }) : d));
+    out.push(row);
+  }
+  return out;
 }

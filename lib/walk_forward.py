@@ -343,6 +343,12 @@ def run_walk_forward(data, compute_signals_fn, row_vals, col_vals, output_dir,
     if fee is None:
         raise ValueError("fee is required: pass fee=lib.costs.fee_of(s) — the strategy's FEE, "
                          "else its market default (references/trading-costs.md)")
+    try:   # refused while this turn is still iterating the strategy (spec auto-iterate §5); old workspace: no lib/iterate
+        from lib.iterate import before_walk_forward
+    except ImportError:
+        before_walk_forward = None
+    if before_walk_forward:
+        before_walk_forward(os.path.basename(os.path.normpath(str(output_dir))))
     code0 = _strategy_code_hash(output_dir)
     import warnings
     warnings.filterwarnings('ignore', category=FutureWarning)

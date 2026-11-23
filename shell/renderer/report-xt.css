@@ -3,8 +3,9 @@
    段內 標題列 12 → 指標名 8 → 圖 12 → 表 8 → 補充 → 說明。比較值全中性墨色,不上漲跌色。
    卡(.rob-card / .rob-verdict)、小標(.bt-label)、meta 列沿用既有 recipe,這裡只寫新的。 */
 .xt > * {
-  max-width: 760px;
+  max-width: none;   /* 寬螢幕 A 版:圖吃滿欄寬;說明句各自有 ch 上限 */
 }
+.xt .xt-tbl { max-width: 1200px; }   /* 比較表是掃讀表:同自動下單、策略庫的 1200 上限(設計稽核 0.1.59 寬螢幕「其他」) */
 .xt > .rob-top + .xt-lines + * { margin-top: var(--space-16); }
 /* 頂列後面那一列:鈕下那一行(落後、BUSY、失敗、回合中的原因),沒有句子時零高度 */
 .xt-lines > .upd-fail,

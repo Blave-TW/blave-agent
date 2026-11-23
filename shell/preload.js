@@ -30,7 +30,7 @@ contextBridge.exposeInMainWorld("blave", {
   replyCue: (kind, snippet, sid) => ipcRenderer.send("reply-cue", { kind: String(kind), snippet: typeof snippet === "string" ? snippet : "", ...(typeof sid === "string" && sid ? { sid } : {}) }),
   theme: () => ipcRenderer.invoke("theme"),
   themeSet: (v) => ipcRenderer.invoke("theme-set", typeof v === "string" ? v : ""),
-  errReportPending: () => ipcRenderer.invoke("err-report-pending"),
+  errReportPending: (sid) => ipcRenderer.invoke("err-report-pending", typeof sid === "string" ? sid : null),   // sid = 剛結束那一輪的對話;沒帶 = 剛開 app
   errReportDecide: (id, action, always) => ipcRenderer.invoke("err-report-decide", String(id), String(action), always === true),
   errReportMode: () => ipcRenderer.invoke("err-report-mode"),
   errReportModeSet: (m) => ipcRenderer.invoke("err-report-mode-set", typeof m === "string" ? m : ""),

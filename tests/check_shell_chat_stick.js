@@ -197,4 +197,10 @@ ok("錯誤通知(turn.error 那句、回合結束補出的錯誤與結束碼)走
   tabsDestroy(T);
   ok("分頁建好 observe 它的 thread、收掉時 unobserve 同一個", ro.on.includes(T.el) && ro.off.length === 1 && ro.off[0] === T.el, { on: ro.on.length, off: ro.off.length }); }
 
+// QA 0158 P2-1:index.html 先載 app.js、後載 chattabs.js,ResizeObserver 第一次觸發時 tabBg 還不存在,不能丟 ReferenceError
+{ const env0 = {}, ctx0 = { ...ctx, ResizeObserver: class { constructor(f) { env0.fire = f; } observe() {} } };
+  const M0 = new Function(...Object.keys(ctx0), stickSrc + body + "; return { scrollChat };")(...Object.values(ctx0));
+  let err = null; try { env0.fire(); M0.scrollChat(true); } catch (e) { err = e; }
+  ok("chattabs.js 還沒載(沒有 tabBg)時 ResizeObserver 觸發 scrollChat 不丟例外", !!env0.fire && err === null, String(err)); }
+
 process.exit(red ? 1 : 0);

@@ -37,7 +37,7 @@
 .msg.fault.p3-inl .fault-body { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: var(--space-8); }
 .msg.fault.p3-inl .fault-act { margin-top: 0; }
 /* 熱區 44×44(設計稽核 M6):置中固定 44 高、寬至少 44,外觀不動(同 app.css .busy-fix::before) */
-:is(.p3-act, .p3-t, .p3-line, .plan-act) .btn-quiet::before, .p3-tipw .mp-tip::before {
+:is(.p3-act, .p3-t, .p3-line, .plan-act, .plan-ttl) .btn-quiet::before, .p3-tipw .mp-tip::before {
   content: ""; position: absolute; inset: auto; left: 50%; top: 50%; width: max(44px, calc(100% + 8px)); height: 44px; transform: translate(-50%, -50%);
 }
 .p3-sum .cf-row.total.solo { margin-top: 0; padding-top: 0; border-top: 0; }

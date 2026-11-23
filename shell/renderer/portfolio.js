@@ -861,7 +861,7 @@ function mgPaint() {
   const sigM = m && m.backtest ? Object.assign({}, m, { backtest: Object.assign({}, m.backtest, { weights_history: m.backtest.weights_history ? Object.keys(m.backtest.weights_history).sort() : null }) }) : m;
   // 部位大小那三格不進簽名:改了只走 mgSzRecalc,不整區重建(焦點留在輸入框)
   const sig = JSON.stringify([LANG, S.env, sigM, (trReport() || {}).config || null, mgMembers(), G.alloc, G.params, G.err, G.shortDays, G.shortDismissed, G.optBusy, G.btSending, !!G.btWaiting, G.refreshing.bt, G.wait.bt && G.wait.bt.left,
-    mgOptErrNow(G), mgOptWaiting(G), G.ctEdits, trTxfPrice(), trFxView(), trNames(), S.save, TR.list.map((x) => [x.name, x.displayName]), trCfgUnread(trReport()), (trReport() || {}).can_switch_contract, trPickOff(), mgWhyCan({ go: "update" })]);
+    mgOptErrNow(G), mgOptWaiting(G), G.ctEdits, trTxfPrice(), trFxView(), trNames(), S.save, TR.list.map((x) => [x.name, x.displayName]), trCfgUnread(trReport()), (trReport() || {}).can_switch_contract, trPickOff(), mgWhyCan({ go: "update" }), mgRerunCan(G)]);
   if (S.sig.opt === sig && box.childElementCount) { mgDrawChart(); return; }
   const keep = trPosFocusOf(box), keepIn = mgFocusKeep(box);
   S.sig.opt = sig; G.chartSig = null; G.sz = null; box.textContent = "";
@@ -912,9 +912,25 @@ function mgToolbar(outdated) {
   bm.disabled = outdated || !G.params;
   bm.addEventListener("click", () => mgMethodOpen(bm));
   set.append(bs, bm); tb.appendChild(set);
+  // 右端一組:〔重算權重〕那行＋說明問號,換行時一起掉下去、仍靠右(designer 11-21)
+  const end = trEl("div", "mg-tb-end");
+  if (mgMembers().length && G.alloc) end.appendChild(mgRerunLine(G));
   const help = poHelpGroup(document.createTextNode(""), "optimize", "po-help-opt"); help.classList.add("mg-help");
-  tb.appendChild(help);
+  end.appendChild(help); tb.appendChild(end);
   return tb;
+}
+/* 工具列右側常駐的〔重算權重〕(Wei 11-20,同網頁 mgBuildToolbar):照目前這一組手動送一次,權重簽名沒變也送;前面講這一組的權重上次哪時算的
+   (時間同 trErrStamp:今天 HH:mm、其他 MM/DD HH:mm;主機上那份不是這一組就只畫鈕)。計算中、機器落後、送不出去(同 mgWhyCan run,另加清單／雲端主機要在)停用;
+   0 檔、沒選方法不畫。埋點照手動重算那一個(mgSendOptimize 的 mg_opt_run) */
+function mgRerunCan(G) { return mgWhyCan({ go: "run" }) && !mgOptWaiting(G) && TR.listLoaded && (TR.env !== "cloud" || !!(TR.st && TR.st.alive)); }
+function mgRerunLine(G) {
+  const line = trEl("div", "mg-rerun"), p = mgProposal(), at = p ? trErrStamp(p.computed_at, Date.now()) : null;
+  const b = trEl("button", "btn-quiet", t("mg.why.rerun")); b.type = "button"; b.dataset.fk = "mg-rerun";
+  if (at !== null) { const when = line.appendChild(trEl("span", "", t("mg.lastRun", { t: at }))); when.id = "mg-last-run"; b.setAttribute("aria-describedby", "mg-last-run"); }
+  b.disabled = !mgRerunCan(G);
+  b.addEventListener("click", () => { mgRunOptimize(); const o = $("po-opt").querySelector('[data-fk="mg-strat"]'); if (o) o.focus(); });   // 重畫後這顆停用,焦點留在同一列
+  line.appendChild(b);
+  return line;
 }
 // 警示條(資料不足／僅 1 檔)。機器落後時連同它們的動作都收起來(「改跑 N 天」按下去就是優化,落後時跑不動)
 function mgWarns() {
@@ -1150,7 +1166,7 @@ function mgSzPlaceholder(busy) {
   // 這一組送過、權重後來被別的計算換掉:不自己重送(mgOptAuto),給手動重算(同網頁 workspace_mg_why_replaced)。
   // 雲端主機沒連上、清單還沒到時重算也送不出去,照下面講 mg.applyWhyWait
   const live = TR.listLoaded && (TR.env !== "cloud" || !!(TR.st && TR.st.alive));
-  if (names.length && G.alloc && live && G.optTried === mgOptSig()) { mgWhyFill(E.why, t("mg.why.replaced"), { link: "mg.why.rerun", go: "run" }, "mg-why-fix"); mgWhyHost(E.why).id = "mg-apply-why"; return; }
+  if (names.length && G.alloc && live && G.optTried === mgOptSig()) { mgWhyFill(E.why, t("mg.why.replaced"), { go: "run" }, "mg-why-fix"); mgWhyHost(E.why).id = "mg-apply-why"; return; }
   const needs = !names.length ? t("mg.needStrat") : !G.alloc ? t("mg.needAlloc") : t("mg.applyWhyWait");   // 都不是 = 送不出去(雲端主機沒連上、清單還沒到):停用也要有原因
   mgWhySet(E.why, [trEl("span", "", needs)], false);
 }
@@ -1238,12 +1254,12 @@ function mgDiffText() {
   const a = trNames(), b = mgMembers();
   return a.length === b.length ? t("mg.applyDiffSetN", { n: a.filter((n) => b.indexOf(n) < 0).length }) : t("mg.applyDiffSet", { a: a.length, b: b.length });
 }
-/* 原因句的補救連結(mockup apply-why-links):有事能做才連,等一下就好的不在表上。link 是句中要畫底線的字,不在句中就接在句尾;沒寫 link = 整句都是連結。
+/* 原因句的補救連結(mockup apply-why-links):有事能做才連,等一下就好的不在表上。link 是句中要畫底線的字,不在句中就接在句尾;沒寫 link = 整句都是連結。go: run 只出字、不連(〔重算權重〕只住工具列)。
    部位大小那三格就在鈕左邊,缺哪一格直接講、不出連結(spec portfolio-optimize-lite §2,同網頁)。
    優化清單沒有下單鎖,所以 pick 開的是配置的選擇策略框、預勾優化這組,鎖照配置的算,不一鍵寫 picked */
 const MG_WHY_FIX = {
   "mg.applyDiffSet": { go: "pick", link: "mg.why.alloc" },
-  "sz.staleMdd": { go: "run", link: "mg.why.rerun" },
+  "sz.staleMdd": { go: "run" },
   "sz.oldMdd": { go: "update", link: "mg.why.updCloud" },
   "mg.applyWhyLogin": { go: "login", link: "mg.why.signin" }, "mg.applyWhyFxOld": { go: "login", link: "mg.why.signinUpd" },
 };
@@ -1263,9 +1279,10 @@ function mgWhyCan(fix) {
   if (fix.go === "update") { if (TR.env !== "cloud") return false; const c = upNow().cloud; return !!(c && c.link); }   // 換檔中／已停:upCloudUpdate 靜默不動;回合中(disabled)它自己講原因,留著
   return true;
 }
+// go:"run" 一律只出字:〔重算權重〕只住工具列那一顆(mgRerunLine;designer 11-21,同網頁 mgWhyFill)
 function mgWhyFill(el, text, fix, fk) {
   el.textContent = "";
-  if (!fix || !mgWhyCan(fix)) { el.appendChild(trEl("span", "", text)); return el; }
+  if (!fix || fix.go === "run" || !mgWhyCan(fix)) { el.appendChild(trEl("span", "", text)); return el; }
   const p = mgWhyParts(text, fix.link ? t(fix.link) : text), b = trEl("button", "btn-quiet busy-fix", p.link);
   b.type = "button"; b.dataset.fk = fk;
   if (fix.go === "login") signInLabel(b, p.link);   // 輪詢重畫:等待中這顆要還是「取消等待」,按了才有反應
@@ -1285,7 +1302,6 @@ function mgWhyGo(fix, b) {
   if (fix.go === "pick") psOpen(b, "amounts", false, { check: mgMembers() });
   else if (fix.go === "method") mgMethodOpen(b);
   else if (fix.go === "update") upCloudUpdate(b);
-  else if (fix.go === "run") { mgRunOptimize(); const o = $("po-opt").querySelector('[data-fk="mg-strat"]'); if (o) o.focus(); }   // 連結這時已經不在,焦點留在同一區
   else planSignIn(b);
 }
 // 輪詢重畫會換掉連結本身:框關掉時憑 data-fk 找現在那一顆;已經沒有了回 false

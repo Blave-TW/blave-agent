@@ -290,7 +290,7 @@ const send = (msg, started = true) => { ctx.sugSnap(msg); W.ta.value = ""; ctx.s
     ok("托盤跟著分頁走(0.1.37):換分頁不作廢(SUG 在每個分頁各一份),關分頁才作廢;csClearChat 不碰它", /\["SUG", \(\) => SUG, \(v\) => \{ SUG = v; \}/.test(ct) && /function tabsClose\([\s\S]*?sugCollapse\(\)[\s\S]*?\n\}/.test(ct) && !/sugCollapse/.test(app.slice(app.indexOf("function csClearChat("), app.indexOf("function csStartNew(")))); }
   ok("turn-event:suggestions → sugChunk", /c\.type === "suggestions"\) \{\n\s*if \(typeof sugChunk === "function"\) sugChunk\(c\);/.test(app));
   const end = cut(app, "function turnEndPre(r) {", "\n});\n");
-  ok("turn-end 停止那一支:句子放回輸入框之前,用「這輪沒回覆、沒工具收據」判撤回", /if \(stopped && lastUserTyped\) \{[\s\S]*?if \(typeof sugUndo === "function"\) sugUndo\(lastUserText, !turnGotReply && !turnHadTool\);[^\n]*\n\s*stopRestore\(lastUserText, lastUserAttachments\);/.test(end));
+  ok("turn-end 停止那一支:句子放回輸入框之前,用「這輪沒回覆、沒工具收據」判撤回", /if \(stopped && lastUserTyped\) \{[\s\S]*?if \(typeof sugUndo === "function"\) sugUndo\(lastUserText, !turnGotReply && !turnHadTool\);[^\n]*\n\s*if \(typeof formUndo === "function"\) formUndo\(lastUserText, !turnGotReply && !turnHadTool\);[^\n]*\n\s*if \(typeof ansUndo === "function"\) ansUndo\(lastUserText, !turnGotReply && !turnHadTool\);[^\n]*\n\s*stopRestore\(lastUserText, lastUserAttachments\);/.test(end));
   ok("turn-end 收尾才畫,出錯與停止都不畫", /sugTurnEnd\(!stopped && !faulted\);/.test(end) && end.indexOf("sugTurnEnd(") > end.indexOf("xpTurnEnd()"));
   ok("collectDraft 不認 suggestions(不會被升成回覆)", !/suggestions/.test(cut(app, "function collectDraft(", "function draftShow(")));
   ok("index.html:舊建議列與灰字拿掉;托盤是 .chat-input 第一個子元素(句子鈕 + ×),在 textarea 之前、.ci-bar 之前",

@@ -616,6 +616,11 @@ def write_scan(grid, row_vals, col_vals, nbr_mean, best_idx, output_dir,
     print(f"Scan written: {path}  (peak {row_param}={row_list[pi]}, {col_param}={col_list[pj]} "
           f"Sharpe={grid[pi, pj]:.2f}; plateau {row_param}={row_list[bi]}, {col_param}={col_list[bj]} "
           f"nbr Sharpe={nbr_mean[bi, bj]:.2f})")
+    try:   # parameter sets evaluated, cumulative per strategy (auto-iterate ruling S3); old workspace: none
+        from lib.iterate import note_params
+        note_params(os.path.basename(os.path.normpath(str(output_dir))), int(np.count_nonzero(~np.isnan(grid))))
+    except ImportError:
+        pass
     return path
 
 

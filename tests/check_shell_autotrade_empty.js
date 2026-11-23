@@ -238,7 +238,8 @@ ok("頁首導引鈕:Z 時實心、沒路由／這家下不了描邊;id 不跟配
 ok("總覽:Z 時權益曲線、事件沒有資料整區不畫(連標題);讀不到、另一個模式畫得出來照舊", /const z = !!trZCase\(trReport\(\), trZRows\(r\), trZDraft\(\)\);/.test(over) && /box\.appendChild\(trOvCurve\(z\)\);/.test(over)
   && /if \(z && pts\.length < 2 && all\.length < 2 && \(\(trPnlServerPoints\(\) \|\| \{\}\)\.pts \|\| \[\]\)\.length < 2\) return document\.createDocumentFragment\(\);/.test(cutF(src, "trOvCurve"))
   && /if \(!rows\.length && z && !TR\.ov\.uiErr\) return document\.createDocumentFragment\(\);/.test(cutF(src, "trOvEvents")));
-ok("部位霧鋪滿整欄(同策略組合頁的霧)", /#tr > \.pf:not\(#tr-onboard\) > \.fog \{ max-width: none; \}/.test(fs.readFileSync(path.join(R, "trade.css"), "utf8")));
+ok("部位霧鋪滿整欄(同策略組合頁的霧):寬螢幕 A 版起中欄沒有頁面上限,trade.css 不再對 #tr／#po 的 .pf 子元素設 max-width,霧自然整欄寬", (() => { const css = fs.readFileSync(path.join(R, "trade.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+  return !/#(tr|po) > \.pf[^{]*\{[^}]*max-width/.test(css) && !/#(tr|po) > \.main-head \{[^}]*max-width/.test(css); })());
 
 if (red) { console.log(red + " FAILED"); process.exit(1); }
 console.log("all passed");

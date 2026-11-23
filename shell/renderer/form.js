@@ -1,10 +1,11 @@
 /* 聊天裡的澄清表單(spec agent-clarify-form-2026-10-31 §2):要做台指期回測、缺兩個以上設定時,runtime 把回覆尾端的
    <form id="…" …/> 剝成 {type:"form", id, questions};這裡先收著,回合結束(沒出錯、沒被停)才畫在這一輪最後一則回覆的正文之後。
-   改選項什麼都不送;「用這些設定」組一句話填進輸入框、不送;「我自己打」焦點回輸入框。回合真的送出去(started／queued)表單整張收掉。
+   改選項什麼都不送;「用這些設定」把組好的句子直接送出(同輸入框那條路,草稿留著);組出的句子以冒號結尾(要補字的半句)時
+   鈕字換「填進輸入框」、只填不送(spec chat-answer-buttons §8)。回合真的送出去(started／queued)表單整張收掉。
    題目、選項、預設、年份都由 runtime 的型錄決定,這裡只畫 chunk 帶來的、字串表查得到的。
    只在記憶體(重開 app 不還原:用戶可能已在別台回過);FORM 進 chattabs.js 的 TAB_KEYS,跟著分頁走。
    在 suggest.js 之後、chattabs.js 之前載入(TAB_KEYS 建表時 FORM 要已存在)。 */
-let FORM = { pending: null, live: null, filled: null, shown: false, inflight: null };
+let FORM = { pending: null, live: null, filled: null, shown: false, inflight: null, shownAt: 0, undoable: null };
 let formSeq = 0;
 // 下面四個跟網頁工作頁同名同值(tests/check_web_desktop_parity.js 逐字比對原文)
 const FORM_IDS = ["txf_backtest"];
@@ -81,7 +82,7 @@ function formTurnEnd(ok) {
   if (FORM.live) FORM.live.remove();
   const el = formBuild(p);
   host.appendChild(el);
-  Object.assign(FORM, { live: el, shown: true, filled: null });
+  Object.assign(FORM, { live: el, shown: true, filled: null, shownAt: performance.now() });   // 防誤觸從畫出來那一刻算,不掛動畫
   trackFeature("clarify_shown");
   srSay(t("form.say"));
 }
@@ -102,7 +103,7 @@ function formBuild(p) {
       if (noteId && /^m\d/.test(o)) r.setAttribute("aria-describedby", noteId);   // 只有分 K 要 Blave 資料
       const tx = formRaw(k).indexOf("{year}") >= 0 ? mk("span") : mk("span", "", k);
       if (!tx.dataset.i18n) el._form.yearEl = tx;
-      r.addEventListener("change", () => formYearPaint(el));
+      r.addEventListener("change", () => { formYearPaint(el); formUsePaint(el); });
       row.append(r, tx); opts.appendChild(row);
       el._form.inputs[q.key].push(r);
     }
@@ -110,12 +111,11 @@ function formBuild(p) {
     if (noteId) { const nt = mk("p", "cform-note", formKey("note", q.note)); nt.id = noteId; fs.appendChild(nt); }
     el.appendChild(fs);
   }
-  const acts = mk("div", "cform-acts"), use = mk("button", "btn-fill", "form.use"), self = mk("button", "btn-quiet cform-self", "form.self");
-  use.type = "button"; self.type = "button";
-  use.addEventListener("click", () => formFill(el));
-  self.addEventListener("click", () => formSelf(el));
-  acts.append(use, self); el.appendChild(acts);
-  formYearPaint(el);
+  const acts = mk("div", "cform-acts"), use = mk("button", "btn-fill cform-use", "form.use");
+  use.type = "button"; el._form.use = use;
+  use.addEventListener("click", () => formUse(el));
+  acts.append(use); el.appendChild(acts);
+  formYearPaint(el); formUsePaint(el);
   return el;
 }
 function formVals(el) {
@@ -128,27 +128,34 @@ function formYearPaint(el) {
   const f = el._form;
   if (f.yearEl) f.yearEl.textContent = formOptText(f.id, "per", "all", f.years ? f.years[formVals(el).prod] : "");
 }
-function formRepaint() { document.querySelectorAll(".cform").forEach((el) => { if (el._form) formYearPaint(el); }); }
+function formRepaint() { document.querySelectorAll(".cform").forEach((el) => { if (el._form) { formYearPaint(el); formUsePaint(el); } }); }
+const formText = (el) => formSentence({ id: el._form.id, values: formVals(el), years: el._form.years }, LANG);
+// 半句(以冒號結尾,字串表的 sentence_other 這類)送出去 agent 只能再問一輪:只填不送。判定看組出來的句子,不看選了哪個值
+const formFillOnly = (text) => /[:：]\s*$/.test(text);
+// 一個字對一個行為:鈕字跟著這一句會送還是只填換
+function formUsePaint(el) {
+  const b = el._form.use;
+  if (!b) return;
+  const k = formFillOnly(formText(el)) ? "form.fill" : "form.use";
+  b.textContent = t(k); b.dataset.i18n = k;
+}
 
-function formFill(el) {
-  if (FORM.live !== el) return;
-  const f = el._form, text = formSentence({ id: f.id, values: formVals(el), years: f.years }, LANG);
+function formUse(el) {
+  if (FORM.live !== el || performance.now() - FORM.shownAt < motionBaseMs()) return;
+  const text = formText(el);
   if (!text || Array.from(text).length > FORM_MAX_SENTENCE_CHARS) return;
+  if (formFillOnly(text)) { formFill(text); return; }
+  // 不經 sendDraft:輸入框的草稿不清、不合併。有回合在跑時 submitMessage 回 false、表單留著。結算(收掉、記 clarify_click)在回合真的送出去那一刻(formSettle)
+  FORM.inflight = { msg: text, filled: null, shown: FORM.shown, direct: true };
+  submitMessage(text, { typed: true }).then((ok) => { if (!ok) formUnsend(); });
+}
+function formFill(text) {
   const ta = $("ta");
   ta.value = text; autosize();
   ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length);
   FORM.filled = text;
   trackFeature("clarify_filled");
   if (typeof sugPaint === "function") sugPaint();   // 輸入框有字了:建議托盤收起
-}
-function formSelf(el) {
-  if (FORM.live !== el) return;
-  const ta = $("ta");
-  if (FORM.filled !== null && ta.value === FORM.filled) { ta.value = ""; autosize(); }
-  FORM.filled = null;
-  ta.focus();
-  trackFeature("clarify_self");
-  if (typeof sugPaint === "function") sugPaint();
 }
 
 /* 送出的結算(同 suggest 的三段式):sendDraft 清空輸入框之前記快照(不動 DOM),回合真的送出去(app.js r.started／r.queued)才收掉並記。
@@ -158,9 +165,10 @@ function formSettle(msg) {
   const inf = FORM.inflight;
   FORM.inflight = null;
   if (FORM.live) FORM.live.remove();
-  Object.assign(FORM, { live: null, shown: false, filled: null });
+  Object.assign(FORM, { live: null, shown: false, filled: null, undoable: inf && inf.direct && inf.msg === msg ? msg : null });
   if (!inf || inf.msg !== msg || !inf.shown) return;
-  if (inf.filled) trackFeature(msg === inf.filled.trim() ? "clarify_sent" : "clarify_sent_ed");
+  if (inf.direct) trackFeature("clarify_click");
+  else if (inf.filled) trackFeature(msg === inf.filled.trim() ? "clarify_sent" : "clarify_sent_ed");
   else trackFeature("clarify_missed");
 }
 // 沒送出去(busy、版本閘、暖機中停止、引擎起不來、讀不到附件):字由 stopRestore 放回輸入框,表單本來就沒拆,填入狀態跟著還原
@@ -168,4 +176,10 @@ function formUnsend() {
   const inf = FORM.inflight;
   FORM.inflight = null;
   if (inf && inf.filled) FORM.filled = inf.filled;
+}
+// 主鈕直接送出的那輪,還沒回覆、沒工具收據就被停止(句子回到輸入框):同 sugUndo。app.js 回合結束停止那一支呼叫
+function formUndo(msg, clean) {
+  const d = FORM.undoable;
+  FORM.undoable = null;
+  if (d && d === msg && clean) trackFeature("clarify_undo");
 }

@@ -345,6 +345,16 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
       && /t\("tr\.cloud\.footWhere", \{ where: t\("env\.cloud"\), money: envMoneyText\(money\), venue: trVenueLabel\(id, true\) \}\)/.test(fn("trCloudBox"))
       && /confirmBox\(trCloudBox\(\{/.test(fn("trAskStop")) && /confirmBox\(trCloudBox\(Object\.assign\(\{/.test(fn("trAskStart"))
       && /if \(TR\.env !== "cloud"\) return o;/.test(fn("trCloudBox"))); }
+  { // QA 0158 P2-3:共用確認框的 title(呼叫端開框後設的全文 tooltip)開框、關框都清掉;rAF 晚到(背景視窗節流)不替已關的框掛 open
+    const app3 = fs.readFileSync(path.join(R, "app.js"), "utf8"), ns3 = fs.readFileSync(path.join(R, "newstrategy.js"), "utf8");
+    const body = (src, name) => { const i = src.indexOf("function " + name + "("), j = src.indexOf("\n}\n", i); return i < 0 ? "" : src.slice(i, j); };
+    const line = body(app3, "confirmBox").split("\n").find((l) => /\$\("del-title"\)\.textContent = title;/.test(l)) || "";
+    const tt = { attrs: { title: "安裝「Supertrend」？" }, textContent: "", classList: { toggle() {} }, removeAttribute(k) { delete this.attrs[k]; } };
+    new Function("$", "title", "wrapTitle", line)(() => tt, "暫停下單", false);
+    ok("confirmBox 換標題時清掉上一個框的 title 屬性", tt.textContent === "暫停下單" && !("title" in tt.attrs), JSON.stringify(tt.attrs));
+    const clr = /\$\("del-title"\)\.removeAttribute\("title"\)/, guard = /requestAnimationFrame\(\(\) => \{ if \(!sc\.hidden\) sc\.classList\.add\("open"\); \}\)/;
+    ok("刪對話框開框、delClose 關框也清 title;del／ns 兩個 scrim 的 rAF 先看還開著才加 open",
+      clr.test(body(app3, "delConfirm")) && clr.test(body(app3, "delClose")) && guard.test(body(app3, "delConfirm")) && guard.test(body(app3, "confirmBox")) && guard.test(body(ns3, "nsOpen"))); }
 
   // ── 3. 雲端那一邊是哪一種 ──
   ok("還沒問到 = loading", envCloudKind(null) === "loading" && envCloudKind({ cloud: {} }) === "loading");

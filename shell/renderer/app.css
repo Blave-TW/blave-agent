@@ -1276,6 +1276,16 @@ html.ws-sc .side-rail { flex: 1 1 auto; }
 .plan-err.is-calm .fault-mark{background:var(--ink-3)}
 .plan-act{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:var(--space-12)}
 .plan-act .btn-quiet{margin-right:auto}
+/* v3 試用格的頭:方案名＋中性徽章(canon Status badge 中性款;倒數在徽章裡),徽章跟標題距 8,放不下才折行 */
+.plan-ttl{display:flex;flex-wrap:wrap;align-items:center;column-gap:var(--space-16);row-gap:var(--space-4)}
+.plan-ttl-h{display:inline-flex;flex-wrap:wrap;align-items:center;gap:var(--space-8)}
+.plan-ttl h6{margin:0;font-size:15px;font-weight:600;line-height:1.4;color:var(--ink)}
+/* 〔到網站取消／恢復試用〕跟徽章距 16 靠 .plan-ttl 的 column-gap,不用 margin:折到下一列時才貼齊標題左緣(設計稽核 0.1.59 §1.3) */
+/* 餘額 tooltip 往下開:這一組在框的最上面,往上開會被框頂切掉(設計稽核 D1) */
+.plan-id .p3-tipw .tip{top:calc(100% + 6px);bottom:auto}
+.plan-badge{display:inline-flex;align-items:center;height:22px;padding:0 10px;border-radius:var(--radius-pill);background:var(--tag-neutral-bg);color:var(--tag-neutral-text);font-size:12px;font-weight:600;white-space:nowrap}
+/* 扣款那一列:跟上面帳號、餘額同一個左標右值的形,不帶細線 */
+.plan-kv{margin:var(--space-12) 0 0;padding:0;border:0}
 /* 精簡版(設計師 v3):一個標題句(h6,15/600,0.1.32 起不大於框標題)+ 至多兩行說明 + 外開定價頁的安靜鈕;底列=一行跟錢有關的話 + 鈕 */
 .plan-pane .plan-st{margin-bottom:var(--space-8)}
 .plan-scroll > h6{margin:0;font-size:15px;font-weight:600;line-height:1.4;color:var(--ink);text-wrap:balance}   /* 只管方案那一區段:同頁「公開連結」的區段標題也是 h6,不能被這條蓋掉 */

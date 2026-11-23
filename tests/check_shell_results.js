@@ -134,7 +134,11 @@ function box(extra) {
       { "Total Return [%]": 20, daily_dates: new Array(180).fill("d") }, { "Total Return [%]": -100, start: "2024-01-01", end: "2025-01-01" }, { "Sharpe Ratio": 1 }];
     const mine = cases.map(sb.A), ref = cases.map(S.window.BlaveReport._bt.annualReturn);
     ok("② 主行程 stratAnnReturn = 回測頁 annualReturn(五組 stats 同值;自帶 23.4、一年 38.2% → 38.1 左右、180 天 20% → 40+、−100% → null、沒總報酬 → null)",
-      JSON.stringify(mine) === JSON.stringify(ref) && mine[0] === 23.4 && Math.abs(mine[1] - 38.1) < 0.2 && mine[2] > 40 && mine[3] === null && mine[4] === null && /annReturn: stratAnnReturn\(st\)/.test(mainSrc), JSON.stringify([mine, ref])); }
+      JSON.stringify(mine) === JSON.stringify(ref) && mine[0] === 23.4 && Math.abs(mine[1] - 38.1) < 0.2 && mine[2] > 40 && mine[3] === null && mine[4] === null && /annReturn: stratAnnReturn\(st\)/.test(mainSrc), JSON.stringify([mine, ref]));
+    // QA 0158 P2-2:Type A 的 start 是設定的 START,標的晚上市時早於第一根 K;年化從 daily_dates 第一天起算、365.25,同 lib compute_stats(成交測試「現行」)
+    const late = { "Total Return [%]": 1174, start: "2020-01-01", end: "2026-11-20", daily_dates: ["2020-10-14", "2020-10-15"] };
+    const want = (Math.pow(12.74, 365.25 / Math.round((Date.UTC(2026, 10, 20) - Date.UTC(2020, 9, 14)) / 86400000)) - 1) * 100;
+    ok("② 年化起點 = daily_dates 第一天(不是 START)、指數 365.25;主行程與回測頁同值", Math.abs(sb.A(late) - want) < 1e-9 && sb.A(late) === S.window.BlaveReport._bt.annualReturn(late), JSON.stringify([sb.A(late), want])); }
   ok("② 只改程式碼 / Type B 新策略 / 參數掃描:「改了程式碼，還沒重跑回測」「新策略，沒有回測」「參數掃描 3×4，目前參數在…」(落點跟掃描分頁同一支判斷,句中字不帶冒號)",
     line(by("sol_bo")) === "改了程式碼， | 還沒重跑回測" && line(by("dca")) === "新策略， | 沒有回測" && line(it) === "參數掃描 3\u00d74， | " + STR.zh[tag.tag.replace(/^rob\.tag\.(\w+?)1?$/, "res.pos.$1")] && /^rob\.tag\./.test(tag.tag) && !/：/.test(line(it)), [line(by("sol_bo")), line(by("dca")), line(it)].join(" / "));
   ok("② 鈕:回測 / 新策略 → 看回測、掃描 → 看掃描(rob 分頁)、程式碼 / 沒回測 → 看程式碼", ["btc4h", "eth_fr", "btc_ma", "sol_bo", "dca"].map((r) => S.resBtnKey(by(r)) + ">" + S.resTab(by(r))).join() === "res.open.bt>bt,res.open.bt>bt,res.open.scan>rob,res.open.code>code,res.open.code>code");

@@ -35,11 +35,12 @@ const unclassified = lets.filter((n) => !tabKeys.includes(n) && !(n in GLOBAL_OK
 ok("app.js 每一個頂層 let 都歸類:每個分頁一份(TAB_KEYS)或全 app 一份(GLOBAL_OK)", unclassified.length === 0, unclassified);
 const both = lets.filter((n) => tabKeys.includes(n) && n in GLOBAL_OK);
 ok("沒有一個名字兩邊都列", both.length === 0, both);
-const stale = Object.keys(GLOBAL_OK).filter((n) => !lets.includes(n)).concat(tabKeys.filter((k) => !k.includes(".") && !lets.includes(k) && k !== "SUG" && k !== "FORM"));
+const stale = Object.keys(GLOBAL_OK).filter((n) => !lets.includes(n)).concat(tabKeys.filter((k) => !k.includes(".") && !lets.includes(k) && k !== "SUG" && k !== "FORM" && k !== "ANS"));
 ok("清單上的名字都還在(拿掉的變數要從清單拿掉)", stale.length === 0, stale);
-ok("每輪模組的每輪欄位也進 TAB_KEYS:SUG(托盤跟著分頁)、FORM(澄清表單跟著分頁)、XP.pending、RES.turn、RPT.turnAt／cloudTurn、BR.blocks／cur、UPD.turnCloud",
-  ["SUG", "FORM", "XP.pending", "RES.turn", "RPT.turnAt", "RPT.cloudTurn", "BR.blocks", "BR.cur", "UPD.turnCloud"].every((k) => tabKeys.includes(k)) && /^let SUG = /m.test(read("suggest.js")) && /^let FORM = /m.test(read("form.js")) && /^let ACT = /m.test(app) && /^let creditCards = /m.test(app));
-ok("物件型的初值是工廠(每個分頁各一份,不共用同一個 Map／陣列)", /\["ACT", [^\n]*\(\) => \(\{ running: new Map\(\)/.test(ct) && /\["creditCards", [^\n]*\(\) => \[\]\]/.test(ct) && /\["SUG", [^\n]*\(\) => \(\{ pending: null/.test(ct) && /\["FORM", \(\) => FORM, \(v\) => \{ FORM = v; \}, \(\) => \(\{ pending: null, live: null, filled: null, shown: false, inflight: null \}\)\],/.test(ct));
+ok("每輪模組的每輪欄位也進 TAB_KEYS:SUG(托盤跟著分頁)、FORM(澄清表單跟著分頁)、ANS(答案鈕跟著分頁)、XP.pending、RES.turn、RPT.turnAt／cloudTurn、BR.blocks／cur、UPD.turnCloud",
+  ["SUG", "FORM", "ANS", "XP.pending", "RES.turn", "RPT.turnAt", "RPT.cloudTurn", "BR.blocks", "BR.cur", "UPD.turnCloud"].every((k) => tabKeys.includes(k)) && /^let SUG = /m.test(read("suggest.js")) && /^let FORM = /m.test(read("form.js")) && /^let ANS = /m.test(read("answers.js")) && /^let ACT = /m.test(app) && /^let creditCards = /m.test(app));
+ok("物件型的初值是工廠(每個分頁各一份,不共用同一個 Map／陣列)", /\["ACT", [^\n]*\(\) => \(\{ running: new Map\(\)/.test(ct) && /\["creditCards", [^\n]*\(\) => \[\]\]/.test(ct) && /\["SUG", [^\n]*\(\) => \(\{ pending: null/.test(ct) && /\["FORM", \(\) => FORM, \(v\) => \{ FORM = v; \}, \(\) => \(\{ pending: null, live: null, filled: null, shown: false, inflight: null, shownAt: 0, undoable: null \}\)\],/.test(ct)
+  && /\["ANS", \(\) => ANS, \(v\) => \{ ANS = v; \}, \(\) => \(\{ pending: null, live: null, items: null, def: 0, shownAt: 0, inflight: null, undoable: null \}\)\],/.test(ct));
 
 // 1b. 其他 renderer 檔的模組層 let／var,以及每輪模組物件(LIB／RPT／XP／RES／BR／UPD)的每一個欄位:
 //     TAB = 每個分頁一份(TAB_KEYS);SID = 記著發起那一條的 sid／序號,收尾只認那一條;GLOBAL = 全 app 一份(寫明為什麼)
@@ -50,6 +51,7 @@ const MOD_GLOBAL = {
   "portfolio.js": { PO_ADD_SIG: "策略組合", ctMenu: "同上", ctOpen: "同上", mgmPend: "同上", mgmOpener: "同上", mgsDraft: "同上", mgsOpener: "同上" },
   "president.js": { PRES: "統一期貨", presTimer: "同上", PRES_FIRST_ARMED: "同上" }, "sinopac.js": { SP: "永豐期貨連接框(全 app 一個)" }, "report-sharelist.js": { SHL_IO: "分享清單" }, "stratflags.js": { sfPop: "彈出層" }, "stratgroups.js": { sgMenu: "資料夾 ⋯ 選單,一次一個", sgPick: "emoji 選擇器,一次一個" },
   "suggest.js": { SUG: "TAB_KEYS 整個換(托盤跟著分頁)" }, "form.js": { FORM: "TAB_KEYS 整個換(表單跟著分頁)", formSeq: "radio 群組名流水號(全 app 一組,兩條分頁的表單名字不撞)" },
+  "answers.js": { ANS: "TAB_KEYS 整個換(答案鈕跟著分頁)", ansSeq: "預選說明節點的 id 流水號(全 app 一組,兩條分頁的 id 不撞;同 form.js formSeq)" },
   "trade.js": { TR_AS_SAVED: "自動下單頁", TR: "同上", trTipSeq: "同上", trHistTipEl: "同上", trHistTipAt: "同上", trHistTipOpened: "同上", trHistTipQuiet: "同上", trCvHide: "同上", trCvEscN: "同上", cxOpener: "同上", psOpener: "同上", psMode: "同上", psToAmt: "同上", psFromWhy: "同上", psLoading: "同上", ENV_COMPOSING: "輸入法" },
   "versions.js": { vcSeq: "版本頁", vcSide: "同上" }, "errreport.js": { ERR_MODE: "設定 › 隱私的錯誤回報(全 app 一個)", errAsking: "錯誤回報詢問一次一個", errLive: "還沒按的詢問卡(全 app 一張,一天最多一張)" }, "promptslot.js": { SLOT_SHOW_DAY: "左下角手機圖示(全 app 一顆)", SLOT_POP_KEY: "同上(pop 內容照開關與語言建)", SLOT_WHO_HOST: "同上(已登入那步的字,email 晚到原地補)", SLOT_WHO: "同上" },
 };
@@ -137,7 +139,7 @@ const ANY = [   // 任何回合(機器層級的鎖;busyOn() = csAnyTurn())
   ["chattabs.js", /if \(!csAnyTurn\(\)\) return;/, "回覆中的時長每秒進一格"], ["chattabs.js", /function csAnyTurn\(\) \{/, "定義"],
   ["intro.js", /running: \(typeof csAnyTurn === "function" \? csAnyTurn\(\) : typeof running !== "undefined" && running === true\)/, "第一次對話 modal 不在任何回合中彈"],
   ["reports.js", /if \(!csAnyTurn\(\)\) RPT\.busyTold = false;/, "原因句"], ["trade.js", /busyLock\(d, busyOn\(\)\); d\.onBusy = \(\) => busyHit\("del"\);/, "雲端刪策略"],
-  ["errreport.js", /if \(typeof csAnyTurn === "function" && csAnyTurn\(\)\) return;   \/\/ 不打斷進行中的回合/, "錯誤回報詢問卡:任何回合在跑都不出"],
+  ["errreport.js", /if \(!sid && typeof csAnyTurn === "function" && csAnyTurn\(\)\) return;   \/\/ 剛開 app:不打斷進行中的回合/, "錯誤回報詢問卡(剛開 app 那次):任何回合在跑都不出;回合結束那次只看那一條(tabRun)"],
   ["stratrename.js", /if \(typeof busyOn === "function" && busyOn\(\)\) return "strat\.renameLockTurn";/, "〔改名〕停用:同刪策略,任何回合(機器 rename_strategy 也是任何回合都拒);停用時講原因"],
 ];
 const LOCAL = [   // 同名但不是回合狀態
@@ -205,7 +207,7 @@ ok("submitMessage:進門抓住分頁,每一個 await 之後都換回它再動(en
 ok("延後才跑的回合計時器都捕住分頁:狀態列每秒、動詞停留、當下動作、托盤停一拍",
   /busy\.timer = setInterval\(tabBound\(/.test(app) && /ACT\.timer = setTimeout\(tabBound\(/.test(app) && /b\.subTimer = setTimeout\(tabBound\(subApply\)/.test(app) && /SUG\.timer = setTimeout\(tabBound\(/.test(read("suggest.js"))
   && /stratRefresh\(true\)\.catch\(\(\) => \{\}\)\.then\(tabBound\(/.test(app));
-ok("共用畫面背景期間不畫:捲動、讀屏、送出鈕、托盤;輸入框的字放回那個分頁自己的草稿", /if \(tabBg\(\)\) return;   \/\/ 背景分頁的事件:捲動容器/.test(app) && /function srSay\(text\) \{ if \(tabBg\(\)\) return;/.test(app)
+ok("共用畫面背景期間不畫:捲動、讀屏、送出鈕、托盤;輸入框的字放回那個分頁自己的草稿", /if \(typeof tabBg === "function" && tabBg\(\)\) return;   \/\/ 背景分頁的事件:捲動容器/.test(app) && /function srSay\(text\) \{ if \(tabBg\(\)\) return;/.test(app)
   && /if \(tabBg\(\)\) \{ CS\.dirtyUi = true; return; \}   \/\/ 送出鈕/.test(app) && /function sugPaint\(\) \{\n  if \(typeof tabBg === "function" && tabBg\(\)\) return;/.test(read("suggest.js")) && /if \(tabBg\(\)\) \{   \/\/ 背景分頁:輸入框是眼前那條的/.test(app));
 // 設計稽核(v037-tabs-design-audit)P2 的落點
 { const css = read("app.css");

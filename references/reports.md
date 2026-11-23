@@ -1469,8 +1469,8 @@ chat, and it leads with the **title**, the **lead**, the **first item of the fir
     `lib.validation.mcpt` only for a different `n`), peak vs plateau from `scan.json`
     (`lib.param_scan`: `scan_grid → find_plateau → write_scan`), and out-of-sample Sharpe
     and WFE from `wf.json` (`lib.walk_forward.run_walk_forward`). Details are in
-    `references/lib.md`. Running a new scan or walk-forward for a report counts as an
-    iteration under the Iteration Brakes, so ask first. The report may state that a check
+    `references/lib.md`. Running a new scan or walk-forward for a report is outside the
+    Iteration Brakes flow, so ask first. The report may state that a check
     was not run.
 
   When a check does not support the claim, report it as it came out and weaken the lead
@@ -1552,7 +1552,7 @@ chat, and it leads with the **title**, the **lead**, the **first item of the fir
   section, and it may carry a two-column table, 做了什麼 / 結果. Each 結果 cell is one sentence,
   ≤ 20 CJK characters, with one number. List only what this research really ran, taken from
   the script's notes file (§1b › *Research scripts*); nothing there → no table. Never run a
-  new scan to fill it — the Iteration Brakes still apply (B4). *Why:* a reader trusts a
+  new scan to fill it — a report never starts the Iteration Brakes flow (B4). *Why:* a reader trusts a
   finding more after seeing what did not hold, and a list of attempts nobody made is the
   report inventing its own history.
 

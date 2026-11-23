@@ -313,7 +313,7 @@ def turn_origin(value):
 def run_agent_turn(session_id, message, viewing_strategy=None, viewing_tab=None,
                    attachment_names=None, viewing_view=None,
                    ui_lang=None, stop_file=None, suggest_mode=None, origin="web", clarify_form=False,
-                   main_market=None):
+                   main_market=None, answer_buttons=False):
     """Spawn one agent_turn.py and wait for it. The turn's slot is kept fresh by the
     keep_fresh thread (every slot in _running), not by this loop."""
     # 有任一張圖的輪由 resolve() 覆寫成 Claude(DeepSeek 相容端點不支援 image block)
@@ -344,6 +344,9 @@ def run_agent_turn(session_id, message, viewing_strategy=None, viewing_tab=None,
     # 頁面畫得出澄清表單;只認 True 本身(context 是瀏覽器給的)
     if clarify_form is True:
         cmd.append("--clarify-form")
+    # 頁面畫得出答案鈕;同上只認 True
+    if answer_buttons is True:
+        cmd.append("--answer-buttons")
     # `--` terminates options so a message starting with '-' (or literally '--help')
     # is taken as the positional arg, not parsed as a flag (which would silently
     # print help + exit 0 and the user would get nothing back).
@@ -613,6 +616,7 @@ def _ingest(m):
         "suggest_mode": ctx.get("suggest_mode"),
         "main_market": ctx.get("main_market"),
         "clarify_form": ctx.get("clarify_form") is True,
+        "answer_buttons": ctx.get("answer_buttons") is True,
         "origin": turn_origin(ctx.get("origin")),
         "ts": m.get("timestamp") or int(time.time() * 1000),
     }
@@ -688,6 +692,7 @@ def _worker(session_id, entry, slot):
                        ui_lang=entry.get("ui_lang"), stop_file=stop_file,
                        suggest_mode=entry.get("suggest_mode"),
                        clarify_form=entry.get("clarify_form"),
+                       answer_buttons=entry.get("answer_buttons"),
                        main_market=entry.get("main_market"),
                        origin=turn_origin(entry.get("origin")))
     except Exception as e:

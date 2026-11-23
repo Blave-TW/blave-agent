@@ -152,8 +152,11 @@ const CA = { token: "tA", appSecret: "sA", who: A }, CB = { token: "tB", appSecr
   ok("② market.js 純邏輯區塊不碰 DOM / i18n", a > 0 && b > a && !/\bdocument\b|\$\(|window\.|\bt\(/.test(block.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "")));
   const P = {}; vm.createContext(P); vm.runInContext(block.replace(/^const /gm, "var "), P);
   ok("② 策略庫預設:四個市場照用,all／沒設 → 全部", ["crypto", "twstock", "txf", "usstock"].every((v) => P.mktLibOf(v) === v) && P.mktLibOf("all") === "all" && P.mktLibOf(null) === "all" && P.mktLibOf("x") === "all");
-  ok("② 資料清單分段:twstock→tw、txf→txf,usstock／all／沒設 → crypto", P.mktWdOf("crypto") === "crypto" && P.mktWdOf("twstock") === "tw" && P.mktWdOf("txf") === "txf"
-    && P.mktWdOf("usstock") === "crypto" && P.mktWdOf("all") === "crypto" && P.mktWdOf(null) === "crypto");
+  // 0.1.59 資料清單多了美股分段(spec overseas-english-content 第 1 項、Wei 11-20 已裁):選美股的人停在美股
+  { const W = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "welcome.js"), "utf8");
+    const segs = [...W.matchAll(/\["[a-z]+", "([a-z]+)", WD_[PB]\]/g)].map((m) => m[1]).filter((v, i, a) => a.indexOf(v) === i);
+    ok("② 資料清單分段:twstock→tw、txf→txf、usstock→us,all／沒設 → crypto;四個市場值各對到 WD_ROWS 裡真的有的分段", P.mktWdOf("crypto") === "crypto" && P.mktWdOf("twstock") === "tw" && P.mktWdOf("txf") === "txf"
+      && P.mktWdOf("usstock") === "us" && P.mktWdOf("all") === "crypto" && P.mktWdOf(null) === "crypto" && P.MKT_VALUES.every((v) => segs.includes(P.mktWdOf(v))), JSON.stringify(segs)); }
   ok("② 出不出第二步:要問而且沒值才出", P.mktAsks({ ask: true, v: null }) && !P.mktAsks({ ask: true, v: "all" }) && !P.mktAsks({ ask: true, v: "txf" }) && !P.mktAsks({ ask: false, v: null }) && !P.mktAsks(null));
   ok("② 連接帳戶框:只有 txf 讓台灣期貨那組排前面", P.mktTwFirst("txf") && ["crypto", "twstock", "usstock", "all", null].every((v) => !P.mktTwFirst(v)));
   ok("② 市場值與 api _MAIN_MARKET_OPTIONS／主行程同一組", JSON.stringify(P.MKT_VALUES.concat("all")) === JSON.stringify(MM.MARKETS));
@@ -314,7 +317,7 @@ const CA = { token: "tA", appSecret: "sA", who: A }, CB = { token: "tB", appSecr
   ok("③ 歡迎頁:wcReco 帶 mkt、指紋帶 MKT.v;資料清單手動切過就記住;找點子從歡迎頁開帶主要市場",
     /mkt = typeof MKT === "undefined" \? null : MKT\.v;/.test(wel) && /installed: \(s\) => wcInstalled\(s, env\), mkt \}\)/.test(wel) && /skel, mkt, shown\.map/.test(wel) && /MKT\.wdUser = true; wdPaint\(\);/.test(wel)
     && /ideaOpen\(\$\("wf-idea"\), "welcome", libIdeaMkt\(mktLibOf\(MKT\.v\)\)\)/.test(wel) && /"welcome", libIdeaMkt\(mktLibOf\(MKT\.v\)\)\); \}\);/.test(lsrc));
-  ok("③ 策略庫:手動切過的袋記 mktUser,mktApply 不蓋", /function libMktPick\(mkt\) \{\s*libMktClose\(true\);\s*if \(mkt === libBag\(\)\.mkt\) return;\s*libBag\(\)\.mktUser = true;[^\n]*\n  libBag\(\)\.mkt = mkt; LIB\.gone = false; libTrack\("lib_mkt_pick"\); libPaint\(\);\s*\}/.test(lsrc) && /if \(!B\.mktUser\) B\.mkt = mktLibOf\(MKT\.v\)/.test(msrc));
+  ok("③ 策略庫:手動切過的袋記 mktUser,mktApply 不蓋", /function libMktPick\(mkt\) \{\s*libMktClose\(true\);\s*if \(mkt === libBag\(\)\.mkt\) return;\s*libBag\(\)\.mktUser = true;[^\n]*\n  libBag\(\)\.mkt = mkt; LIB\.gone = false; libTrack\("lib_mkt_pick"\); libPaint\(\);\n  \/\/ [^\n]*\n  if \(typeof trackEvent === "function"\) trackEvent\("lib_mkt", \{ v: mkt === "all" \|\| LIB_MARKETS\.includes\(mkt\) \? mkt : "all" \}\);\s*\}/.test(lsrc) && /if \(!B\.mktUser\) B\.mkt = mktLibOf\(MKT\.v\)/.test(msrc));
   // 0.1.53 連接框改成交易所磚(cxTiles):txf 時台灣期貨那組磚排在加密那組前面,其餘照舊加密在前
   ok("③ 連接帳戶框:txf 時台灣期貨那組磚排在加密那組前面", /const twFirst = typeof MKT !== "undefined" && mktTwFirst\(MKT\.v\);[^\n]*\n  if \(twFirst\) twGroup\(\);\n  group\("crypto", "cx\.group\.crypto", [^\n]*\n  if \(!twFirst\) twGroup\(\);\n  return w;/.test(tr));
   ok("③ 主行程:IPC 兩支、whenReady 第一步判新裝、account_status 回來對帳、preload 三支",

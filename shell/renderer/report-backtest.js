@@ -126,19 +126,22 @@
   }
 
   /* 年化報酬:Type C 的 stats 自帶 `Ann. Return [%]` 就用它;Type A 沒有,
-   * 由總報酬與回測天數推——(1 + 總報酬)^(365/天數) − 1。天數先取 start/end 的差,
-   * 算不出來退回 daily_dates 的筆數。總報酬 ≤ −100% 時底數不為正,回 null。 */
+   * 由總報酬與回測天數推——(1 + 總報酬)^(365.25/天數) − 1,同 lib compute_stats(成交測試「現行」那列)。
+   * 起點取 daily_dates 第一天(資料真正開始那天):Type A 的 start 是設定的 START,標的晚上市時早於第一根 K,
+   * 拿它算會把沒資料的日子也攤進去、年化偏低(QA 0158 P2-2)。沒有 daily_dates 才用 start;
+   * 算不出天數退回 daily_dates 的筆數。總報酬 ≤ −100% 時底數不為正,回 null。 */
   function annualReturn(stats) {
     const given = stats["Ann. Return [%]"];
     if (isNum(given)) return given;
     const tr = stats["Total Return [%]"];
     if (!isNum(tr)) return null;
-    const s = parseDay(stats.start), e = parseDay(stats.end);
+    const d0 = Array.isArray(stats.daily_dates) && stats.daily_dates.length ? parseDay(stats.daily_dates[0]) : null;
+    const s = d0 !== null ? d0 : parseDay(stats.start), e = parseDay(stats.end);
     let days = s !== null && e !== null ? Math.round((e - s) / 86400000) : null;
     if (!(days > 0)) days = Array.isArray(stats.daily_dates) ? stats.daily_dates.length : 0;
     const base = 1 + tr / 100;
     if (!(days > 0) || !(base > 0)) return null;
-    const ann = (Math.pow(base, 365 / days) - 1) * 100;
+    const ann = (Math.pow(base, 365.25 / days) - 1) * 100;
     return isFinite(ann) ? ann : null;
   }
 

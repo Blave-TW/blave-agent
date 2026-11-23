@@ -426,7 +426,7 @@ const shape = (o) => [o.kind, o.isCur, o.st && o.st.key, String(o.act)].join("|"
 let M = mdlOptions(D, "claude", true);
 // e2e 0.1.8 #100 #101:電腦版看得到 Blave 餘額、切到 Blave AI 之後講明會從餘額扣款(設計師第五批 c)。餘額怎麼讀、怎麼取整、讀不到畫什麼在 tests/check_shell_balance.js
 { const cut = (n) => { const i = src.indexOf("function " + n + "("); let d = 0; for (let k = src.indexOf("{", i); k < src.length; k++) { if (src[k] === "{") d++; else if (src[k] === "}" && --d === 0) return src.slice(i, k + 1); } throw new Error("no " + n); };
-  ok("① 帳號與方案:Blave 餘額在最上面那一組裡(狀態點之前);沒登入整列不出;讀不到畫「—」、title 與 aria-label 用 plan.balNa", /if \(hasToken\) \{\s*const n = balNow\(\), row = el\("div", "plan-bal"\), val = el\("span", "v" \+ \(n \? "" : " na"\), n \? n \+ " TWD" : "—"\);\s*if \(!n\) \{ val\.title = t\("plan\.balNa"\); val\.setAttribute\("aria-label", t\("plan\.balNa"\)\); \}\s*row\.append\(el\("span", "l", t\("plan\.bal"\)\), val\); id\.append\(row\);\s*\}/.test(src)
+  ok("① 帳號與方案:Blave 餘額在最上面那一組裡(狀態點之前);沒登入整列不出;讀不到畫「—」、title 與 aria-label 用 plan.balNa", /if \(hasToken\) \{\s*const n = balNow\(\), row = el\("div", "plan-bal"\), val = el\("span", "v" \+ \(n \? "" : " na"\), n \? n \+ " TWD" : "—"\);\s*if \(!n\) \{ val\.title = t\("plan\.balNa"\); val\.setAttribute\("aria-label", t\("plan\.balNa"\)\); \}\s*row\.append\(typeof p3Live === "function" && p3Live\(\) \? p3BalLabel\(\) : el\("span", "l", t\("plan\.bal"\)\), val\); id\.append\(row\);\s*\}/.test(src)
     && src.indexOf('row = el("div", "plan-bal")') < src.indexOf('if (S) { const stEl = el("span", "plan-st "') && /\.plan-bal \.v \{ font-size: 13px; color: var\(--ink\); font-variant-numeric: tabular-nums; \}/.test(css) && !/plan-bal[^}]*mono/.test(css));
   ok("② 模型選單底部:引擎是 Blave AI 才出(連同分隔線);讀不到餘額只出規則那半句;打開選單與回合結束重讀", /const on = cur === "blave", n = on \? balNow\(\) : null;\s*\$\("mp-bill-div"\)\.hidden = !on; \$\("mp-bill"\)\.hidden = !on;/.test(src) && /\$\("mp-bill-sep"\)\.hidden = !n; \$\("mp-bill-bal"\)\.hidden = !n;/.test(src)
     && /<p class="mp-note" id="mp-note" aria-live="polite"><\/p>\s*<!--[^>]*-->\s*<div class="mp-div" id="mp-bill-div" hidden><\/div>\s*<p class="mp-note mp-bill" id="mp-bill" hidden>/.test(html)
@@ -686,7 +686,7 @@ ok("隱私:分類排最後、開關是 role=switch + aria-checked、即時生效
 // 會收的組(0.1.39):PRIV_COLLECT 從原文 eval 出來,組 id、句數、順序逐一對;舊的 priv.collect.<n> 一條都不能留
 const PRIV_COLLECT_V = eval(src.match(/const PRIV_COLLECT = [^\n]*;/)[0].replace(/^const PRIV_COLLECT = /, "(").replace(/;$/, ")"));
 const POS = (L, k) => { const m = PO[L].match(new RegExp('msgid "' + k.replace(/\./g, "\\.") + '"\nmsgstr "([^"]*)"')); return m ? m[1] : null; };
-const PRIV_SHAPE = [["step", 4], ["strat", 5], ["feat", 10], ["stuck", 9], ["auth", 5], ["meta", 5], ["acct", 2]];
+const PRIV_SHAPE = [["step", 4], ["strat", 5], ["feat", 13], ["stuck", 9], ["auth", 5], ["meta", 5], ["acct", 2]];
 const PRIV_GROUPS_OK = JSON.stringify(PRIV_COLLECT_V) === JSON.stringify(PRIV_SHAPE.map(([g, n]) => ["priv.c." + g + ".h", Array.from({ length: n }, (_, i) => "priv.c." + g + "." + (i + 1))]))
   && PRIV_COLLECT_V.every(([h, ks]) => [h, ...ks].every((k) => POS(0, k) && POS(1, k)))
   && PO.every((x) => !/msgid "priv\.collect\.\d+"/.test(x)) && !/priv\.collect\.\d/.test(src)
@@ -758,7 +758,7 @@ ok("隱私:會收分 7 組(0.1.39 設計稽核 §C,Wei 核准;0.1.45 拿掉策�
 const PRIV_ZH = {
   step: ["做到哪一步", "首次開啟、每日開啟、登入", "app 開著的每一天，含本機自動下單有沒有在跑", "完成連結，記哪一種 AI", "第一次回測、啟動下單（模擬或真錢）、上雲端運行"],
   strat: ["每支策略", "新建、第一次回測、第一次配了金額時各記一次", "只記型別（A／B／C）與市場類別，例如加密貨幣、台指期", "不記策略名稱或標的", "三步記同一組代碼，代碼只有這台電腦算得出", "Blave 推不回策略名稱"],
-  feat: ["用了哪些功能", "分頁與按鈕的名稱，每天每項記一次", "不含分頁與按鈕裡的內容", "從策略庫用一支策略時，記它要不要 Blave 資料", "送出找點子時，記從哪個入口送出", "換策略庫排序時，記選了哪一種", "在策略庫購買時，記走到哪一步與結果類別", "回覆好了的系統通知：有沒有跳出、有沒有被點開", "不含對話標題與內容", "選主要市場時，記選了哪一個", "開方案或主機的框時，記從哪開、選了哪一階與結果類別"],
+  feat: ["用了哪些功能", "分頁與按鈕的名稱，每天每項記一次", "不含分頁與按鈕裡的內容", "從策略庫用一支策略時，記它要不要 Blave 資料", "送出找點子時，記從哪個入口送出", "換策略庫排序時，記選了哪一種", "在策略庫購買時，記走到哪一步與結果類別", "回覆好了的系統通知：有沒有跳出、有沒有被點開", "不含對話標題與內容", "選主要市場時，記選了哪一個", "開方案或主機的框時，記從哪開、選了哪一階與結果類別", "自動調整策略時，記額度類別、為何停下與輪數，不含績效", "答案鈕出現幾顆、按了第幾顆或改自己打，不含選項文字", "策略庫與資料清單切到哪個市場、裝的策略屬哪個市場"],
   stuck: ["卡在哪一步", "回合失敗、連不上 AI、策略庫用不了的原因類別", "綁卡／儲值提示有沒有出現與按下、回來後能不能用", "啟動雲端方案的結果、更新卡在哪一步", "第一次收到 AI 回覆", "第一次安裝或更新後補裝引擎與策略套件，有沒有裝好", "沒裝好是哪一類原因", "關掉 app 時停在哪個畫面", "app 當掉或沒正常結束時，記是哪一類", "只記類別，不含內容"],
   auth: ["登入與金鑰", "本機 AI 的登入方式，例如訂閱或 API 金鑰", "不含帳號與金鑰", "登入失敗的類別，以及當下是否判定為已登入", "改金鑰時驗證碼框的出現、通過與鎖住", "不含驗證碼"],
   meta: ["每筆紀錄都帶", "發生的時間", "app 版本、作業系統與版本、系統語言", "電腦類型：筆電或桌機", "安裝識別碼：這份安裝隨機產生的編號", "登入後，安裝識別碼會跟你的帳號對上"],
@@ -768,12 +768,12 @@ const privKeys = (g) => ["priv.c." + g + ".h", ...PRIV_ZH[g].slice(1).map((_, i)
 const zhCount = (x) => { const CJK = /[\p{Script=Han}]/gu; return (x.match(CJK) || []).length + (x.replace(CJK, " ").match(/[\p{L}\p{N}_]+(?:[.,]\p{N}+)*/gu) || []).length; };
 ok("隱私 0.1.39:會收七組的 zh 逐字、每句 ≤25 字(canon 算法);組標題與句子 en 都有", Object.keys(PRIV_ZH).every((g) => privKeys(g).every((k, i) => POS(0, k) === PRIV_ZH[g][i] && zhCount(PRIV_ZH[g][i]) <= 25 && !!POS(1, k))));
 // 事件數跟告知綁在一起:加事件而沒補「會收」那幾組,這裡就紅(canon product-telemetry 出貨清單第 5 條)
-ok("隱私:五十四個事件逐項對得上契約的白名單(0.1.57 改價 v3 十個=用了哪些功能的方案／主機框從哪開、選了哪一階(addon_pick)與結果類別(priv.c.feat.10),額度提示與 30 TWD 卡的下一步歸卡在哪一步的綁卡／儲值提示;0.1.54 mkt_q / mkt_set=用了哪些功能的主要市場,只記選了哪一個(priv.c.feat.9);0.1.53 lib_buy_result=用了哪些功能的策略庫一鍵購買結果類別,不帶金額;0.1.52 data_card_shown=卡在哪一步的綁卡提示、engine_fail=沒裝好是哪一類原因、turn_fail_why=回合失敗的原因類別、app_quit=關掉 app 時停在哪個畫面、app_crash=當掉或沒正常結束是哪一類;lib_sort=用了哪些功能的策略庫排序;lib_bindbuy=用了哪些功能的策略庫綁卡即購買走到哪一步,不帶金額;0.1.50 lib_bindplan / lib_cardplan / lib_login_go 同組:策略庫一步開通與登入後接到哪一步,不帶金額;heartbeat=做到哪一步「app 開著的每一天」;strat_* 三個=每支策略,只記型別與市場類別;feature_used=用了哪些功能,名稱、每日一次、不含內容;lib_pick / idea_sent=用了哪些功能的策略庫與找點子;reply_notif=系統通知;0.1.9 九個、0.1.12 引擎安裝兩個、0.1.15 detect_fail=卡在哪一步,只記類別;cli_auth / auth_fail / key_verify=登入與金鑰;device_type=每筆紀錄都帶的電腦類型,spec-0.1.13 #12:寫作業系統與版本,不寫 macOS)",
-  Object.keys(require("../shell/telemetry.js").EVENTS).length === 54
-  && (() => { const ev = require("../shell/telemetry.js").EVENTS; return ["heartbeat", "strat_created", "strat_backtested", "strat_deployed", "feature_used", "lib_pick", "idea_sent", "lib_sort", "lib_bindbuy", "lib_bindplan", "lib_cardplan", "lib_login_go", "lib_buy_result", "mkt_q", "mkt_set", "reply_notif", "detect_fail", "engine_setup", "engine_opt_fail", "data_card_shown", "app_quit", "app_crash", "engine_fail", "turn_fail_why", "cli_auth", "auth_fail", "key_verify", "device_type", "acct_card_alt", "acct_card_alt_click", "ai_credit_line", "plan_box", "plan_box_res", "plan_bind_res", "addon_res", "addon_pick", "auto_resume"].every((e) => !!ev[e]) && ev.free_low_shown === null; })()
+ok("隱私:六十三個事件逐項對得上契約的白名單(0.1.59 lib_mkt / lib_use_mkt / wd_mkt=用了哪些功能的市場分頁與裝的策略市場,只記市場代號(priv.c.feat.13);0.1.59 answer_shown / answer_sent / answer_missed / answer_undo=用了哪些功能的答案鈕,只記幾顆、第幾顆(priv.c.feat.12);0.1.59 auto_iter_done / auto_iter_rounds=用了哪些功能的自動調整策略,額度類別、停下原因與輪數,不含績效(priv.c.feat.11);0.1.57 改價 v3 十個=用了哪些功能的方案／主機框從哪開、選了哪一階(addon_pick)與結果類別(priv.c.feat.10),額度提示與 30 TWD 卡的下一步歸卡在哪一步的綁卡／儲值提示;0.1.54 mkt_q / mkt_set=用了哪些功能的主要市場,只記選了哪一個(priv.c.feat.9);0.1.53 lib_buy_result=用了哪些功能的策略庫一鍵購買結果類別,不帶金額;0.1.52 data_card_shown=卡在哪一步的綁卡提示、engine_fail=沒裝好是哪一類原因、turn_fail_why=回合失敗的原因類別、app_quit=關掉 app 時停在哪個畫面、app_crash=當掉或沒正常結束是哪一類;lib_sort=用了哪些功能的策略庫排序;lib_bindbuy=用了哪些功能的策略庫綁卡即購買走到哪一步,不帶金額;0.1.50 lib_bindplan / lib_cardplan / lib_login_go 同組:策略庫一步開通與登入後接到哪一步,不帶金額;heartbeat=做到哪一步「app 開著的每一天」;strat_* 三個=每支策略,只記型別與市場類別;feature_used=用了哪些功能,名稱、每日一次、不含內容;lib_pick / idea_sent=用了哪些功能的策略庫與找點子;reply_notif=系統通知;0.1.9 九個、0.1.12 引擎安裝兩個、0.1.15 detect_fail=卡在哪一步,只記類別;cli_auth / auth_fail / key_verify=登入與金鑰;device_type=每筆紀錄都帶的電腦類型,spec-0.1.13 #12:寫作業系統與版本,不寫 macOS)",
+  Object.keys(require("../shell/telemetry.js").EVENTS).length === 63
+  && (() => { const ev = require("../shell/telemetry.js").EVENTS; return ["heartbeat", "strat_created", "strat_backtested", "strat_deployed", "feature_used", "lib_pick", "idea_sent", "lib_sort", "lib_bindbuy", "lib_bindplan", "lib_cardplan", "lib_login_go", "lib_buy_result", "mkt_q", "mkt_set", "reply_notif", "detect_fail", "engine_setup", "engine_opt_fail", "data_card_shown", "app_quit", "app_crash", "engine_fail", "turn_fail_why", "cli_auth", "auth_fail", "key_verify", "device_type", "acct_card_alt", "acct_card_alt_click", "ai_credit_line", "plan_box", "plan_box_res", "plan_bind_res", "addon_res", "addon_pick", "auto_resume", "auto_iter_done", "auto_iter_rounds", "answer_shown", "answer_sent", "answer_missed", "answer_undo", "lib_mkt", "lib_use_mkt", "wd_mkt"].every((e) => !!ev[e]) && ev.free_low_shown === null; })()
   && /^App version, operating system and version, system language$/.test(POS(1, "priv.c.meta.2")) && /^Computer type: laptop or desktop$/.test(POS(1, "priv.c.meta.3"))
   && /whether local auto-trading runs/.test(POS(1, "priv.c.step.2")) && /type \(A\/B\/C\) and market category/.test(POS(1, "priv.c.strat.2")) && /^Never its name or symbol$/.test(POS(1, "priv.c.strat.3"))
-  && /whether it needs Blave data/.test(POS(1, "priv.c.feat.3")) && /which entry point/.test(POS(1, "priv.c.feat.4")) && /which sort you picked/.test(POS(1, "priv.c.feat.5")) && /which step it reached and the result type/.test(POS(1, "priv.c.feat.6")) && /^Never the chat title or text$/.test(POS(1, "priv.c.feat.8")) && /^Picking a main market: which one you picked$/.test(POS(1, "priv.c.feat.9"))
+  && /whether it needs Blave data/.test(POS(1, "priv.c.feat.3")) && /which entry point/.test(POS(1, "priv.c.feat.4")) && /which sort you picked/.test(POS(1, "priv.c.feat.5")) && /which step it reached and the result type/.test(POS(1, "priv.c.feat.6")) && /^Never the chat title or text$/.test(POS(1, "priv.c.feat.8")) && /^Picking a main market: which one you picked$/.test(POS(1, "priv.c.feat.9")) && /never the results$/.test(POS(1, "priv.c.feat.11")) && /never their text$/.test(POS(1, "priv.c.feat.12")) && /market of strategies you install$/.test(POS(1, "priv.c.feat.13"))
   && /^Categories only, never the content$/.test(POS(1, "priv.c.stuck.9")) && /^Never the code$/.test(POS(1, "priv.c.auth.5")) && /kept 90 days/.test(POS(1, "priv.c.acct.2")));
 // Wei 11-20:對外不寫 AI 額度的 TWD 數字(spec agent-888-vague-ai-credit),兩語逐字、不帶 {q}
 ok("acct.sub 開通試用那句兼講期限(Wei 核准 0.1.10;11-20 拿掉額度數字):zh / en 逐字", /msgid "acct\.sub"\nmsgstr "首次綁卡，\{t\} 天內有 AI 額度，電腦版也拿得到 Blave 的資料。"/.test(PO[0])
@@ -1146,6 +1146,9 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
         && /pv\.st\.trialCancelled/.test(preCx.st) && /^pv\.f\.trialCancelled\{/.test(preCx.rule) && JSON.stringify(preCx.acts.map((x) => x[1])) === JSON.stringify(["plan.trialResume", "plan.start"])
         && /^pv\.f\.trialCancelled\.m\{/.test(moCx.rule) && (seen.length = 0, featured.length = 0, preCx.btns[0]._click(), pre.btns[0]._click(), seen.join() === "ext:" + planPayUrl() + ",ext:" + planPayUrl() && featured.join() === "trial_resume_web,trial_cancel_web")); }
     PV_PD = "30";
+    { const moCx = paintOf({ ...MO, data_access: "included", data_included: true, trial_cancel_at_end: true }), preCx = paintOf({ data_access: "included", data_included: true, trial_cancel_at_end: true });
+      ok("QA 0158 P1-2:方案制已取消試用不出扣款那句(pv.d.trial.m*),只剩不收第一期;切換前已取消照講按小時計費", !moCx.lead && !/pv\.d\.trial\.m/.test(JSON.stringify(moCx)) && /^pv\.f\.trialCancelled\.m\{/.test(moCx.rule)
+        && /^pv\.d\.trial\{/.test(preCx.lead), JSON.stringify([moCx.lead, preCx.lead])); }
     ok("方案制試用中那一格:pv.d.trial.m(試用結束扣第一期、之後每 {pd} 天續扣)、底列 pv.f.trial.m(試用期間取消就不扣);一期幾天拿不到 → NoNum 那句", /^pv\.d\.trial\.m\{/.test(paintOf({ ...MO, data_access: "included", data_included: true }).lead)
       && /^pv\.f\.trial\.m\{/.test(paintOf({ ...MO, data_access: "included", data_included: true }).rule) && (PV_PD = "", /^pv\.d\.trial\.mNoNum\{/.test(paintOf({ ...MO, data_access: "included", data_included: true }).lead)));
     PV_PD = "30"; PV_P = "1,440"; PV_X = "14,400"; PV_YD = "365";
@@ -1172,6 +1175,95 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
         && str(zh, "pv.h.offer.m") === "首次綁卡免費試用 {t} 天" && str(enp, "pv.h.offer.m") === "Your first card starts a {t}\u2011day free trial" && str(zh, "pv.h.offerNoNum.m") === "首次綁卡免費試用一段時間" && !!str(enp, "pv.h.offerNoNum.m")
         && ["pv.offer.li.data", "pv.offer.li.server", "pv.offer.li.ai"].every((k) => !!str(zh, k) && !!str(enp, k)) && str(zh, "pv.offer.li.ai") === "加送 Blave AI 額度" && str(enp, "pv.offer.li.ai") === "Plus Blave AI credit" && /排程/.test(str(zh, "pv.offer.li.server")) && /on schedule/.test(str(enp, "pv.offer.li.server"))
         && ["pv.e.out", "pv.e.card", "pv.e.card.cli"].every((k) => /免費試用 \{t\} 天/.test(str(zh, k)) && !/送 \{t\}/.test(str(zh, k)) && /\{t\}\u2011day free trial/.test(str(enp, k))) && /免費試用一段時間/.test(str(zh, "pv.e.outNoNum")) && /free trial/.test(str(enp, "pv.e.outNoNum"))); }
+    { /* v3 設定 › 帳號與方案(spec host-card-relayout D1;Wei 11-20 裁定):試用中(月繳／年繳／金額讀不到)、試用已取消、到期不會扣、時閘前的試用、
+         已付費(planOn)、扣款失敗(payFail)、沒有方案(plan)。真的跑 planPaint 與 planv3.js 的 p3BalLabel／p3TrialHead／p3PlanRows(在這一塊裡 eval 成函式運算式:閉包是這一塊的替身,也不蓋掉上面那支) */
+      const p3src = fs.readFileSync(path.join(R, "planv3.js"), "utf8"), X = (s) => "(" + s + ")";
+      const p3Fn = (n) => { const i = p3src.indexOf("function " + n + "("); if (i < 0) throw new Error("找不到 " + n); let d = 0; for (let k = p3src.indexOf("{", i); k < p3src.length; k++) { if (p3src[k] === "{") d++; else if (p3src[k] === "}" && --d === 0) return X(p3src.slice(i, k + 1)); } throw new Error("unbalanced " + n); };
+      const pv0 = planVars;
+      { let V3 = true, GEN = "v3", PV_Y = "";
+        const PUBV3 = { ai_credit: { auto_topup_min: 50, auto_topup_amount: 300 } }, P3 = { tipSeq: 0, bal: null };
+        const P3_HOST = ["linux_starter", "linux_premium", "linux_max", "windows_starter", "windows_premium", "windows_max"];
+        const planVars = () => { const pl = (acct && acct.plan) || {}, cy = ["monthly", "annual"].includes(pl.next_cycle || pl.cycle) ? pl.next_cycle || pl.cycle : "";
+          return { ...pv0(), y: PV_Y, cy, c: cy === "annual" ? "plan.cyc.annual" : "plan.cyc.monthly" }; };
+        const p3Live = () => V3, p3TrialV3 = () => V3 && !!acct && acct.trial_gen === GEN, p3Pv = () => PUBV3, p3Num = (n) => Number(n).toLocaleString("en-US");
+        const p3El = (tag, cls, txt) => { const e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; };
+        const p3Tier = (x) => "p3.tier." + x, p3OpenAddon = (...a) => { seen.push("addon:" + a[3]); };
+        const p3T = eval(p3Fn("p3T")), p3Md = eval(p3Fn("p3Md")), p3UsedPct = eval(p3Fn("p3UsedPct")), p3PlanRows = eval(p3Fn("p3PlanRows")), p3BalLabel = eval(p3Fn("p3BalLabel")), p3TrialHead = eval(p3Fn("p3TrialHead"));
+        const cloudWebGo = eval(X(src.match(/^function cloudWebGo\(\) \{[^\n]*\}$/m)[0])), paint3 = eval(X(fnSrc("planPaint")));
+        const tierLabel = eval(X(src.match(/^const planTierLabel = (.*);$/m)[1]));
+        const D = (a) => { acct = { ...MO, plan: { state: "none" }, ...a }; planLastView = null; paint3();
+          const box = dom["set-plan-main"], all = walk(box), sc = box.children[0], foot = box.children[1], act = foot.children[foot.children.length - 1], id = all.find((n) => n.className === "plan-id");
+          const bal = id ? id.children.filter((c) => c.className === "plan-bal")[1] : null, lbl = bal && bal.children[0], tipEl = lbl && lbl.children ? lbl.children.find((c) => c.className === "tip") : null;
+          return { kids: sc.children.map((n) => n.className || n.tagName), st: all.filter((n) => /^plan-st/.test(n.className || "")).map((n) => n.textContent).join(),
+            ttl: all.filter((n) => n.className === "plan-ttl").map((n) => n.children.map((c) => c.className === "plan-ttl-h" ? "[" + c.children.map((g) => (g.className || "h6") + ":" + g.textContent).join("|") + "]" : (c.className || "h6") + ":" + c.textContent).join("|")).join(),
+            kv: all.filter((n) => n.className === "plan-bal plan-kv").map((n) => n.children.map((c) => c.textContent).join("|")).join(),
+            h6: all.filter((n) => n.className === "" && n.children.length === 0 && sc.children.includes(n)).map((n) => n.textContent).join(),
+            rules: all.filter((n) => n.className === "plan-rule").map((n) => n.textContent), actCls: act.className, acts: act.children.map((b) => b.className + ":" + b.textContent), btns: act.children,
+            head: ((all.find((n) => n.className === "plan-ttl") || {}).children || []).filter((c) => /^btn-/.test(c.className)),
+            lbl: lbl ? lbl.className + ">" + (lbl.children.length ? lbl.children.map((c) => c.className + ":" + c.textContent).join("|") : lbl.textContent) : "",
+            tipOk: !!tipEl && tipEl.attrs.role === "tooltip" && !!tipEl.id && lbl.children[0].attrs["aria-describedby"] === tipEl.id && lbl.children[0].type === "button",
+            fine: all.filter((n) => n.className === "plan-fine").map((n) => n.textContent).join(), texts: all.map((n) => n.textContent).join("|") }; };
+        const TU = AHEAD, md = (() => { const d = new Date(TU); return String(d.getMonth() + 1).padStart(2, "0") + "/" + String(d.getDate()).padStart(2, "0"); })();
+        const TRIAL = { data_access: "included", has_card: true, trial_gen: "v3", plan: { state: "none", tier: "agent", cycle: "monthly", trial_free_until: TU, next_charge_twd: 888 } };
+        const TIP = 'l p3-tipw>mp-tip:plan.bal|tip:p3.set.balTipp3.set.topupTip{"lo":"50","a":"300"}', TIP1 = "l p3-tipw>mp-tip:plan.bal|tip:p3.set.balTip";
+        PV_N = 5; PV_PD = "30"; PV_YD = "365"; PV_X = "888"; PV_P = "888"; PV_Y = "8,880"; PV_D = "12 月 4 日";
+        let r = D(TRIAL);
+        ok("v3 試用中(月繳):標題「Blave Agent 方案 · 月繳」＋徽章「試用中 · 剩 n 天」、不出狀態列;下一列左標右值「試用結束扣第一期｜MM/DD · 888 TWD」(金額讀 api 的下一期);鈕上方兩行(續扣、開主機會結束試用);〔到網站取消試用〕緊接在倒數徽章後面(設計稽核 D1),鈕列只剩〔開雲端主機〕、照預設靠右",
+          r.st === "" && r.kids.join() === "plan-id,plan-ttl,plan-bal plan-kv" && r.ttl === '[h6:p3.a.title · plan.cyc.monthly|plan-badge:pv.st.trial' + JSON.stringify(planVars()) + "]|btn-quiet:plan.trialCancel"
+          && r.head.length === 1 && r.head[0].dataset.k === "trial:head"
+          && r.kv === 'p3.set.firstL|p3.set.firstV{"d":"' + md + '","p":"888"}' && JSON.stringify(r.rules) === JSON.stringify(['p3.f.renew{"pd":"30"}', "p3.f.trialConvertNoNum"])
+          && r.actCls === "plan-act" && JSON.stringify(r.acts) === JSON.stringify(["btn-out:p3.h.title"]) && !/pv\.h\.ready|pv\.d\.trial|p3\.f\.trial\b|p3\.f\.trial\{/.test(r.texts)
+          && !/is-tight/.test(css + src) && !/\.plan-ttl[^{]*\.btn-quiet\{[^}]*margin/.test(css) && /\.plan-ttl\{[^}]*column-gap:var\(--space-16\);row-gap:var\(--space-4\)/.test(css) && /\.plan-ttl-h\{display:inline-flex;flex-wrap:wrap;align-items:center;gap:var\(--space-8\)\}/.test(css)
+          && /:is\([^)]*\.plan-ttl\) \.btn-quiet::before[^{]*\{[^}]*height: 44px/.test(fs.readFileSync(path.join(R, "planv3.css"), "utf8")), JSON.stringify(r));
+        ok("…餘額 tooltip 往下開(這一組在框頂,往上開會被切掉;設計稽核 D1)", /\.plan-id \.p3-tipw \.tip\{top:calc\(100% \+ 6px\);bottom:auto\}/.test(css));
+        seen.length = 0; featured.length = 0; r.head[0]._click(); r.btns[0]._click();
+        ok("…〔到網站取消試用〕外開方案卡、記 trial_cancel_web(埋點不變);〔開雲端主機〕開 app 內加購框、記 cloud_open_web", seen.join() === "ext:" + planPayUrl() + ",addon:cloud" && featured.join() === "trial_cancel_web,cloud_open_web", seen.join() + "|" + featured.join());
+        ok("…餘額標籤是 tooltip 觸發鈕(.mp-tip＋相鄰 .tip、role=tooltip、aria-describedby);泡泡第一句 p3.set.balTip、第二句自動儲值門檻(公開價目 50／300);餘額下面不再有「AI 超額時自動儲值」那行",
+          r.lbl === TIP && r.tipOk && !/p3\.topup\b|p3\.topup"|plan\.topupShort/.test(r.texts) && r.fine === "", r.lbl + "|" + r.fine);
+        PV_X = "8,880";
+        r = D({ ...TRIAL, plan: { ...TRIAL.plan, next_cycle: "annual" } });
+        ok("v3 試用中、已排年繳:標題「· 年繳」、扣款列 8,880、續扣每 365 天", r.ttl.startsWith("[h6:p3.a.title · plan.cyc.annual|") && r.kv === 'p3.set.firstL|p3.set.firstV{"d":"' + md + '","p":"8,880"}' && r.rules[0] === 'p3.f.renew{"pd":"365"}', JSON.stringify(r));
+        PV_X = "";
+        r = D({ ...TRIAL, plan: { ...TRIAL.plan, next_cycle: "annual" } });
+        ok("…api 沒給下一期金額:年繳退報價的年價(不退月價 888)", r.kv === 'p3.set.firstL|p3.set.firstV{"d":"' + md + '","p":"8,880"}', r.kv);
+        PV_P = ""; PV_Y = ""; PV_PD = "";
+        r = D(TRIAL);
+        ok("…金額與一期天數都讀不到:扣款列右邊只放日期、續扣用 NoNum 句;不印空的 TWD", r.kv === "p3.set.firstL|" + md && JSON.stringify(r.rules) === JSON.stringify(["p3.f.renewNoNum", "p3.f.trialConvertNoNum"]) && !/TWD/.test(r.texts.replace(/p3\.set\.\w+|p3\.f\.\w+/g, "")), JSON.stringify(r));
+        PV_P = "888"; PV_PD = "30"; PV_X = "888";
+        r = D({ ...TRIAL, trial_cancel_at_end: true, plan: { ...TRIAL.plan, cancel_at_period_end: true } });
+        ok("v3 試用已取消:徽章換「已取消試用 · {d}結束」、沒有扣款列與續扣句,只留開主機那句;徽章後面〔到網站恢復試用〕(記 trial_resume_web)、鈕列只剩〔開雲端主機〕",
+          /^\[h6:p3\.a\.title · plan\.cyc\.monthly\|plan-badge:pv\.st\.trialCancelled\{[^\]]*\]\|btn-quiet:plan\.trialResume$/.test(r.ttl) && r.kv === "" && JSON.stringify(r.rules) === JSON.stringify(["p3.f.trialConvertNoNum"])
+          && /\|btn-quiet:plan\.trialResume$/.test(r.ttl) && JSON.stringify(r.acts) === JSON.stringify(["btn-out:p3.h.title"]) && (featured.length = 0, r.head[0]._click(), featured.join() === "trial_resume_web"), JSON.stringify(r));
+        r = D({ ...TRIAL, plan: { ...TRIAL.plan, no_auto_payment: "auto_topup_off" } });
+        ok("v3 試用中、到期不會扣(no_auto_payment／內部帳號):沒有扣款列、續扣句與取消鈕,只剩〔開雲端主機〕", r.kv === "" && r.head.length === 0 && JSON.stringify(r.rules) === JSON.stringify(["p3.f.trialConvertNoNum"]) && JSON.stringify(r.acts) === JSON.stringify(["btn-out:p3.h.title"])
+          && D({ ...TRIAL, plan: { ...TRIAL.plan, next_charge_source: "free" } }).kv === "", JSON.stringify(r));
+        r = D({ ...TRIAL, trial_gen: "v2" });
+        ok("時閘前的試用(trial_gen 不是 v3):照現行那格(狀態列、pv.h.ready、兩顆分開),只換餘額 tooltip", /pv\.st\.trial/.test(r.st) && r.ttl === "" && /pv\.h\.ready/.test(r.texts) && r.actCls === "plan-act" && r.lbl === TIP, JSON.stringify(r));
+        PV_N = 0; PV_U = "12 月 4 日";
+        r = D({ data_access: "included", has_card: true, plan: { state: "none", tier: "agent", paid_until: AHEAD } });
+        ok("v3 已付費、沒主機(planOn):狀態列「方案有效」、說明 p3.d.planOn、鈕照舊;只多餘額 tooltip", /pv\.st\.planOn/.test(r.st) && r.ttl === "" && /p3\.d\.planOn/.test(r.texts) && r.actCls === "plan-act"
+          && JSON.stringify(r.acts) === JSON.stringify(["btn-quiet:plan.manageStopped", "btn-out:p3.h.title"]) && r.lbl === TIP && r.tipOk && r.fine === "", JSON.stringify(r));
+        PV_U = "";
+        r = D({ data_access: "payment_failed", has_card: true });
+        ok("v3 扣款失敗(payFail):紅點「扣款失敗」、唯一的鈕〔重新付款〕照舊;只多餘額 tooltip", /pv\.st\.payFail/.test(r.st) && JSON.stringify(r.acts) === JSON.stringify(["btn-fill:plan.repay"]) && r.lbl === TIP && r.ttl === "", JSON.stringify(r));
+        PV_PR = 1440;
+        r = D({ data_access: "plan_required", has_card: true });
+        ok("v3 沒有方案:狀態「沒有方案」、鈕照舊;只多餘額 tooltip", /pv\.st\.noPlan/.test(r.st) && JSON.stringify(r.acts) === JSON.stringify(["btn-quiet:pv.apiPlan", "btn-fill:plan.startM"]) && r.lbl === TIP && r.ttl === "", JSON.stringify(r));
+        r = D({ data_access: "plan_required", has_card: false, reason: "NO_CARD", trial_eligible: false });
+        const offAuto = D({ data_access: "plan_required", has_card: true, auto_topup: false }), nullAuto = D({ data_access: "plan_required", has_card: true, auto_topup: null });
+        PUBV3.ai_credit = {}; const noNum = D({ data_access: "plan_required", has_card: true }); PUBV3.ai_credit = { auto_topup_min: 50, auto_topup_amount: 300 };
+        ok("餘額 tooltip 第二句:沒卡、關了自動儲值(auto_topup:false)、門檻讀不到 → 只有第一句;auto_topup 是 null 照有卡判", r.lbl === TIP1 && offAuto.lbl === TIP1 && noNum.lbl === TIP1 && nullAuto.lbl === TIP, [r.lbl, offAuto.lbl, noNum.lbl, nullAuto.lbl].join("\n"));
+        V3 = false;
+        r = D({ data_access: "plan_required", has_card: true });
+        ok("v3 沒開:餘額標籤照舊是一般的 span(沒有 tooltip)", r.lbl === "l>plan.bal", r.lbl);
+        V3 = true;
+        ok("階名(planTierLabel):認得的 tier 一律對外那組 p3.tier.*(不印 api label 的 Starter／Max);認不得才用 label,再沒有就從 tier 拼",
+          (acct = { plan: { tier: "linux_starter", label: "Starter" } }, tierLabel()) === "p3.tier.linux_starter" && (acct = { plan: { tier: "windows_max", label: "Max" } }, tierLabel()) === "p3.tier.windows_max"
+          && (acct = { plan: { tier: "agent", label: "Agent" } }, tierLabel()) === "Agent" && (acct = { plan: { tier: "mac_mini" } }, tierLabel()) === "Mac Mini");
+        ok("徽章與頭的樣式只用 token(中性 Mini tag 色、--radius-pill);扣款列沿用 .plan-bal 的左標右值、去掉細線",
+          /\.plan-badge\{[^}]*border-radius:var\(--radius-pill\);background:var\(--tag-neutral-bg\);color:var\(--tag-neutral-text\)/.test(css) && !/\.plan-badge\{[^}]*#[0-9a-f]{3}/i.test(css)
+          && /\.plan-ttl\{display:flex;flex-wrap:wrap;align-items:center;column-gap:var\(--space-16\);row-gap:var\(--space-4\)\}/.test(css) && /\.plan-kv\{margin:var\(--space-12\) 0 0;padding:0;border:0\}/.test(css));
+        PV_N = 0; PV_PD = "30"; PV_YD = ""; PV_X = ""; PV_P = ""; PV_D = ""; PV_PR = null; planLastView = null; } }
     PV_P = ""; PV_PR = null; acct = { plan: { state: "running" } }; }
   // 內文講切換器、標題不動。哪些事歸給網頁工作頁、哪些不可以再歸給它——那條規則由 check_shell_strings.js 守,這裡只守「內文確實在講切換器」。
   // spec-desktop-settings-cleanup §4:運行中那段收成一句「那一邊有什麼」;「方案內容與計費」那段(pv.inc.*)已隨方案頁拿掉
@@ -1435,9 +1527,9 @@ ok("chip 與 h5 不重講同一事實:方案已結束 → h5 講出口(恢復會
   ["zh", "en"].every((l) => /恢復|Resum/.test(STR[l]["pv.h.ended"]) && !/恢復|Resum/.test(STR[l]["pv.d.ended"] + STR[l]["pv.d.endedNoNum"]) && /重新付款|Pay again/.test(STR[l]["pv.h.stopped.m"])) && /沒付款/.test(STR.zh["plan.st.stoppedPlan"]) && !/未付款/.test(STR.zh["plan.st.stoppedPlan"]));
 ok("版面保險:鈕列放不下就折行(.plan-act / .cv-act flex-wrap)", /\.plan-act\{[^}]*flex-wrap:wrap/.test(css) && /\.cv-act \{[^}]*flex-wrap: wrap/.test(trcss));
 ok("409 重開那一句跟網站 bc_cycle_requote 同字", STR.zh["cf.m.repriced"] === "金額已更新，請再確認一次。" && STR.en["cf.m.repriced"] === "The amount was updated. Please confirm again.");
-// 設計 r8:開通確認框講出階名(固定 Linux Starter、之後開同階主機不另收);鈕字與用詞跟網站同一個字
-ok("確認框字(r8):body1 有 Linux Starter;鈕「付 {x} TWD 開通」/ Pay {x} TWD to Start Plan;試用 en Start Now, Pay {x} TWD on {d};計費週期;Yearly",
-  STR.zh["cf.m.body1"].includes("Linux Starter") && STR.en["cf.m.body1"].includes("Linux Starter") && STR.zh["cf.m.ok"] === "付 {x} TWD 開通" && STR.en["cf.m.ok"] === "Pay {x} TWD to Start Plan"
+// 設計 r8:開通確認框講出階名(固定 Linux 基本、之後開同階主機不另收);鈕字與用詞跟網站同一個字。階名用對外那組(pricing §2.2,spec host-card-relayout §0),不再出 Starter
+ok("確認框字(r8):body1 有 Linux 基本／Linux Basic、沒有 Starter;鈕「付 {x} TWD 開通」/ Pay {x} TWD to Start Plan;試用 en Start Now, Pay {x} TWD on {d};計費週期;Yearly",
+  STR.zh["cf.m.body1"].includes("Linux 基本") && STR.en["cf.m.body1"].includes("Linux Basic") && !/Starter/.test(STR.zh["cf.m.body1"] + STR.en["cf.m.body1"]) && STR.zh["cf.m.ok"] === "付 {x} TWD 開通" && STR.en["cf.m.ok"] === "Pay {x} TWD to Start Plan"
   && STR.en["cf.m.okTrial"] === "Start Now, Pay {x} TWD on {d}" && STR.zh["cf.m.pick"] === "計費週期" && STR.en["plan.cyc.annual"] === "Yearly");
   // 0.1.37 說明句收進泡泡、空狀態那句拿掉(spec desktop-settings-tooltips-qr-2026-10-30)
   ok("防睡／06:00 自動更新／識別碼三列:泡泡 role=tooltip,開關或〔複製〕aria-describedby 指它;名稱只指 label 裡那個 span;#set-id-note 刪了",

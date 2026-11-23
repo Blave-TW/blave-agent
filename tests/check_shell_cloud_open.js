@@ -35,10 +35,10 @@ function paint(lang, kind, token, pv, o) {
   const nums = o.pub === false ? { p: "", t: "", pd: "", yd: "", v: "" } : { p: "1,440", pd: "30", yd: "365", t: 14, v: "10" };
   const V = { h: mo ? "" : "2", pr: mo ? 1440 : null, b: "300", d: "", n: 0, u: "", gu: "", x: "", cy: "", q: "999", ...nums, ...(o.v || {}) };
   const env = { document: { createElement: (tag) => new El(tag), activeElement: null }, $: (id) => E[id], t, LANG: lang, hasToken: token, acct: ac, acctPending: false, pub: pb,
-    planView: () => pv, planVars: () => V, planSpec: (own) => { if (o.onSpec) o.onSpec.push(!!own); return o.pub === false ? null : { label: "Starter", vcpu: 2, ram: 4 }; }, ENV: { sig: {}, askedAt: o.onAsk ? 0 : Date.now() }, planSince: o.slow ? 1 : 0, PLAN_SLOW_MS: o.slow ? 0 : 1e9, planErr: o.err || null,
+    planView: () => pv, planVars: () => V, planSpec: (own) => { if (o.onSpec) o.onSpec.push(!!own); return o.pub === false ? null : { tier: o.tier || "linux_starter", label: "Starter", vcpu: 2, ram: 4 }; }, ENV: { sig: {}, askedAt: o.onAsk ? 0 : Date.now() }, planSince: o.slow ? 1 : 0, PLAN_SLOW_MS: o.slow ? 0 : 1e9, planErr: o.err || null,
     planLoginBusy: !!o.loginBusy, cur: "claude", window: { blave: { openExternal: (u) => seen().push("ext:" + u), cloudRefresh: () => seen().push("cloudRefresh") } }, trEl: (tag, cls, text) => { const n = new El(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; },
     planOpen() { seen().push("planOpen"); }, planLogin() {}, planRelogin() {}, planAsk() {}, acctUrl: () => "u", acctCheck() { seen().push("acctCheck"); }, pubLoad: async () => { if (o.onAsk) o.onAsk.push("pubLoad"); }, envPlanChanged() {}, trPollSoon() { seen().push("after"); }, hoBack() {}, hoStay() {},
-    planMo: () => mo, planFailing: () => false, planRepay() {}, planPriceOk: (v) => (mo ? !!v.pr : !!(v.p && v.h)), bindGo: (n) => seen().push("bind:" + n), planWebGo() {}, trackFeature: (n) => seen().push("feature:" + n) };
+    p3TrialV3: () => !!o.p3trial, planMo: () => mo, planFailing: () => false, planRepay() {}, planPriceOk: (v) => (mo ? !!v.pr : !!(v.p && v.h)), bindGo: (n) => seen().push("bind:" + n), planWebGo() {}, trackFeature: (n) => seen().push("feature:" + n) };
   env.cloudPricingGo = new Function("trackFeature", "window", "LANG", cut(app, "cloudPricingGo") + "\nreturn cloudPricingGo;")(env.trackFeature, env.window, lang);
   env.cloudWebGo = () => {};
   env.pvK = (k) => (mo ? k + ".m" : k); env.planTrialCx = () => false;
@@ -63,11 +63,13 @@ const one = (r, cls) => walk(r.page).find((n) => (" " + n.className + " ").inclu
 const mainBtn = (r) => walk(r.page).find((n) => n.dataset.k === "main");
 const noPitch = (r) => !one(r, "cv-card") && !r.text.includes("1,440") && !one(r, "ln-arrow");
 for (const lang of ["zh", "en"]) {
-  const S = STR[lang], sub = (k, o) => { let s = S[k]; for (const x in o || {}) s = s.split("{" + x + "}").join(o[x]); return s; }, spec = "Starter · 2 vCPU · 4 GB";
+  const S = STR[lang], sub = (k, o) => { let s = S[k]; for (const x in o || {}) s = s.split("{" + x + "}").join(o[x]); return s; }, spec = (lang === "zh" ? "Linux 基本" : "Linux Basic") + "2 vCPU · 4 GB";
   const out = paint(lang, "none", false, "out", { mo: true });
   ok(lang + " out:一個標題、一張卡;標題同 web bc_intro_h1;規格列 → 價格與其他方案同一塊 → 含什麼 → 試用句 → 主鈕 → 鈕下一行;沒有「雲端」＋「還沒有雲端主機」那組頁首",
     out.parts.join() === "h3,div.cv-card" && one(out, "cv-card").kids.map((k) => k.className).join() === "cv-top,cv-note,cv-slot,cv-acts,cv-foot" && one(out, "cv-prw").kids.map((k) => k.className).join() === "cv-pr,ln-arrow" && out.page.kids[0].textContent === W[lang].h, out.parts.join());
-  ok(lang + " out:規格讀 planSpec、價格走 env.open.price(每 30 天,不是月換算)", one(out, "cv-spec").textContent === spec && one(out, "cv-pr").textContent === W[lang].price, one(out, "cv-pr") && one(out, "cv-pr").textContent);
+  // 階名用對外那組(Linux 基本,pricing §2.2;spec host-card-relayout §0),不印 api 的 label「Starter」;規格是另一段 12px 小字(cv-spec-hw)
+  ok(lang + " out:規格讀 planSpec(階名 p3.tier.*、規格小字 p3.h.specV,不出 Starter)、價格走 env.open.price(每 30 天,不是月換算)", one(out, "cv-spec").textContent === spec && one(out, "cv-spec-hw").textContent === "2 vCPU · 4 GB"
+    && !/Starter/.test(out.text) && paint(lang, "none", false, "out", { mo: true, tier: "mystery_x" }).text.includes("Starter2 vCPU") && /\.cv-spec-hw \{[^}]*font-size: 12px; color: var\(--ink-3\)/.test(css) && one(out, "cv-pr").textContent === W[lang].price, one(out, "cv-pr") && one(out, "cv-pr").textContent);
   ok(lang + " out:含什麼 11 字那句、試用句帶天數、鈕字不帶金額;不預告登入送的額度", one(out, "cv-note").textContent === W[lang].note && one(out, "cv-slot").textContent === sub("env.open.trialOffer", { t: 14 })
     && mainBtn(out).textContent === S["cn.blave.btn"] && one(out, "cv-foot").textContent === W[lang].cli && !out.text.includes("30 " + (lang === "zh" ? "額度" : "credit")) && !/999/.test(out.text), out.text);
   const seen = [], more = walk(out.page).find((n) => n.dataset.k === "more"); more.click(seen);
@@ -88,6 +90,9 @@ for (const lang of ["zh", "en"]) {
   const trial = paint(lang, "none", true, "trial", { mo: true, v: { d: "11/14", n: 13 } }), yr = paint(lang, "none", true, "trial", { mo: true, v: { d: "11/14", n: 13, x: "14,400" } });
   ok(lang + " 試用中:右上換日期、不擺價格、沒有招攬;回答開機要不要加錢;金額跟著 plan(年繳 14,400)", one(trial, "cv-pr").textContent === sub("env.open.tagTrial", { d: "11/14" }) && one(trial, "cv-pr").className.includes("is-tag") && !one(trial, "ln-arrow") && one(trial, "cv-note").textContent === S["env.open.trialOff"]
     && one(trial, "cv-slot").textContent === sub("env.open.trial", { p: "1,440" }) && one(yr, "cv-slot").textContent === sub("env.open.trial", { p: "14,400" }), trial.text);
+  // v3 代試用:訊息格講開主機就結束試用,右上不掛「試用到」(也不換成價格);改價前的試用照舊有那顆標籤(上一條)
+  const v3t = paint(lang, "none", true, "trial", { mo: true, v: { d: "11/14", n: 13 }, p3trial: true });
+  ok(lang + " v3 代試用中:右上沒有「試用到」標籤、也不補價格", !one(v3t, "cv-pr") && !v3t.text.includes(sub("env.open.tagTrial", { d: "11/14" })) && !v3t.text.includes("11/14"), v3t.text);
   const off = paint(lang, "none", true, "trial", { mo: true, v: { d: "11/14", n: 13 }, acct: { plan: { tier: "linux_starter", next_charge_source: "none" } } });
   ok(lang + " 試用中但到期不會扣:只講開機不另收,不講扣款", one(off, "cv-note").textContent === S["env.open.trialOff"] && !one(off, "cv-slot"), off.text);
   const on = paint(lang, "none", true, "planOn", { mo: true, v: { u: "12/01" } });

@@ -297,6 +297,20 @@ app.whenReady().then(async () => {
   ok(`⑲ 補救連結在句尾:熱區不探出部位大小那一區的右緣:${JSON.stringify([sz["544link"].edge, sz["800link"].edge])}`, [sz["544link"].edge, sz["800link"].edge].every((e) => e && e.own && !e.out));
   ok(`⑲ 旁邊的投入資金、目標值格熱區還是 44:${JSON.stringify(Object.fromEntries(Object.entries(sz).map(([k, v]) => [k, [v.fund.h, v.t && v.t.h]])))}`, Object.values(sz).every((v) => v.fund.h >= 44 && (v.t === null || v.t.h >= 44)));
   ok(`⑲ 窄版:目標值格右緣 = 投入資金格 = 〔套用金額〕(${JSON.stringify(sz["544on"].right)});寬版目標值格照舊 76(${sz["800on"].tw})`, sz["544on"].right[0] === sz["544on"].right[1] && sz["544on"].right[1] === sz["544on"].right[2] && sz["800on"].tw === 76);
+  // ⑳ 優化工具列右側常駐的〔重算權重〕(Wei 11-20):窄 544／寬 800 都在工具列裡、不探出右緣,文字鈕熱區 ≥44×44,停用時也是。
+  //    帶時間那一行放不下、整組換行(380)時,問號跟〔重算權重〕同一列、靠右緣,不會自己掉到第二列左邊(designer 11-21)
+  const rr = await X(`(async () => { ${HIT} const out = {};
+    for (const W of [380, 544, 800]) for (const off of [false, true]) {
+      const host = document.createElement("div"); host.className = "pf"; host.style.cssText = "position:fixed;left:100px;top:60px;width:" + W + "px;background:#fff;z-index:99"; document.body.appendChild(host);
+      const tb = host.appendChild(mgToolbar(false)), end = tb.querySelector(".mg-tb-end"); let line = tb.querySelector(".mg-rerun"); if (!line) { line = mgRerunLine(mgBag()); end.insertBefore(line, end.firstChild); }
+      if (!line.querySelector("#mg-last-run")) { const s = document.createElement("span"); s.id = "mg-last-run"; s.textContent = t("mg.lastRun", { t: "11/20 16:29" }); line.insertBefore(s, line.firstChild); }
+      const b = line.querySelector(".btn-quiet"), help = end.querySelector(".mg-help"); b.disabled = off; await new Promise((r) => setTimeout(r, 30));
+      const hr = tb.getBoundingClientRect(), lr = line.getBoundingClientRect(), hp = help.getBoundingClientRect(), set = tb.querySelector(".tb-set").getBoundingClientRect();
+      out[W + (off ? "off" : "on")] = { hit: __hit(b), inside: lr.right <= hr.right + 0.5 && lr.left >= hr.left - 0.5, text: b.textContent, helpRight: Math.round(hr.right - end.getBoundingClientRect().right), helpLast: end.lastElementChild === help, sameRow: hp.top < lr.bottom && hp.bottom > lr.top, wrapped: lr.top >= set.bottom };
+      host.remove(); }
+    return out; })()`);
+  ok(`⑳ 〔重算權重〕窄／寬、可按／停用:熱區 ≥44×44、整行在工具列內;問號跟它同一列、是右端那一組的最後一個、那一組貼工具列右緣(380 寬整組換行時也是):${JSON.stringify(rr)}`, Object.keys(rr).length === 6
+    && Object.values(rr).every((v) => ge44(v.hit) && v.inside && v.text === "重算權重" && v.sameRow && v.helpRight <= 1 && v.helpLast) && rr["380on"].wrapped && !rr["800on"].wrapped);
   console.log(red ? `\n${red} 紅` : "\nALL PASS");
   app.exit(red ? 1 : 0);
 });

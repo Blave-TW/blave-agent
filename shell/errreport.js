@@ -21,6 +21,7 @@ const EXC_TYPE_RE = /^[A-Za-z_][A-Za-z0-9_.]{0,79}$/;
 const FILE_RE = /^(lib|runtime|manager|shell)\/[A-Za-z0-9_./-]{1,80}$/;
 const FUNC_RE = /^[A-Za-z_<>$.][A-Za-z0-9_<>$.]{0,59}$/;
 const PY_VERSION_RE = /^3\.[0-9]{1,2}(\.[0-9]{1,3})?$/;
+const SID_RE = /^desktop-[a-z0-9]{4,16}$/;   // 對話 id(同 main.js 的格式檢查):lib/error_report.py 記的是哪條對話,只在本機、不送
 
 // ── message 清洗:redact() 之後的五條,順序與寫法同 api desktop_error_report.py(數字一律 [0-9]) ──
 const ID_RE = /(?:TW)?[A-Z][A-D1289][0-9]{8}1?|[A-Z][0-9]{9}/g;
@@ -84,8 +85,9 @@ function parseLine(raw) {
   if (!frames) return null;
   const py = o.py_version;
   if (o.source === "py_lib" ? !(typeof py === "string" && PY_VERSION_RE.test(py)) : py !== undefined) return null;
+  if (o.sid !== undefined && !(typeof o.sid === "string" && SID_RE.test(o.sid))) return null;
   return { ts: Number.isFinite(o.ts) ? o.ts : 0, source: o.source, exc_type: o.exc_type, message: o.message, frames,
-    ...(o.source === "py_lib" ? { py_version: py } : {}) };
+    ...(o.source === "py_lib" ? { py_version: py } : {}), ...(o.sid ? { sid: o.sid } : {}) };
 }
 /* lib／manager 對官方 manifest、runtime／shell 對隨包;對不上換 <other>,連續的 <other> 併一格。
    最內層那格自家 frame(寫入端據以判定「是我們的」那一格)對不上 → null:那是 agent 加或改過的檔,等同用戶的 code(spec §3.1) */
@@ -233,18 +235,35 @@ function createErrReport(o) {
     return Promise.allSettled(items.map((it) => o.post(o.endpoint, body(it.view, consent))));   // 429 / 送不出去:丟掉,不重試
   }
 
-  /* 回合結束、或剛開 app:有新記錄而且今天還沒出過卡 → { id, n, text }(text = 卡上〔看內容〕顯示的那一份);其餘 null。
+  /* 卡只問出事的那條對話、那一輪剛結束時(0.1.59:前一天別條對話的錯出現在新對話裡)。
+     scope = { sid, since, running: Map(sid → 那一輪開跑時間) }:sid 那一輪剛結束,只問它 since 之後記的;
+     沒有 sid = 剛開 app,只問不屬於任何對話的(主行程、背景程式)。
+     屬於某條對話、但那條沒在跑或記在它這一輪開跑之前的:再也輪不到它的卡,直接丟。自動送不分,照舊全送 */
+  function scoped(lines, scope) {
+    const run = (scope && scope.running) || new Map(), sid = scope && scope.sid, use = [], stale = [];
+    for (const raw of lines) {
+      const r = parseLine(raw);
+      if (!r) use.push(raw);   // 壞行交給 views 丟
+      else if (!r.sid) { if (!sid) use.push(raw); }
+      else if (sid && r.sid === sid && r.ts >= scope.since) use.push(raw);
+      else if (!(run.has(r.sid) && r.ts >= run.get(r.sid))) stale.push(raw);
+    }
+    return { use, stale };
+  }
+  /* 回合結束(scope)、或剛開 app:有新記錄而且今天還沒出過卡 → { id, n, text }(text = 卡上〔看內容〕顯示的那一份);其餘 null。
      自動送在這裡背景送掉;不送 = 清檔 */
-  function pending() {
+  function pending(scope) {
     const s = load();
     if (s.mode === "off") { rewrite([]); cur = null; return null; }
     const lines = readLines();
     if (!lines.length) return null;
     const t = now();
     for (const [k, v] of Object.entries(s.declined)) if (t - v > DECLINE_MS) delete s.declined[k];
-    const v = views(lines, s.mode === "auto" ? "always" : "once");
+    const sid = scope && scope.sid;
+    const { use, stale } = s.mode === "auto" ? { use: lines, stale: [] } : scoped(lines, scope);
+    const v = views(use, s.mode === "auto" ? "always" : "once");
     if (!v) return null;
-    let items = v.items, done = v.bad;
+    let items = v.items, done = v.bad.concat(stale);
     if (s.mode === "auto") {
       send(items, "always");
       consume(done.concat(...items.map((it) => it.raws)));
@@ -253,8 +272,11 @@ function createErrReport(o) {
     const quiet = items.filter((it) => s.declined[it.fp]);
     done = done.concat(...quiet.map((it) => it.raws));
     items = items.filter((it) => !s.declined[it.fp]);
+    if (!items.length || s.asked === localDay(t)) {
+      consume(sid ? done.concat(...items.map((it) => it.raws)) : done);   // 這一輪今天問不了:之後也不該在別處冒出來
+      save(); return null;
+    }
     consume(done);
-    if (!items.length || s.asked === localDay(t)) { save(); return null; }
     s.asked = localDay(t); save();
     cur = { id: crypto.randomBytes(8).toString("hex"), items };
     return { id: cur.id, n: items.length, text: shownText(items.map((it) => it.view)) };

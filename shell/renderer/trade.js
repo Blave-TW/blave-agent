@@ -1445,7 +1445,10 @@ function trRejectCode(err) {
   const names = [m[2]], rest = s.slice(m.index + m[0].length), re = /^\u3001\u300c([A-Za-z0-9_-]{1,64})\u300d/;
   let k = rest, x; while ((x = re.exec(k))) { names.push(x[1]); k = k.slice(x[0].length); }
   const mk = /\u662f(\u53f0\u6307\u671f|\u500b\u80a1\u671f\u8ca8|\u53f0\u80a1)\u7b56\u7565/.exec(rest);   // MARKET_VENUE 反方向:「是台指期／個股期貨／台股策略」
-  return { code: m[1], name: m[2], names, market: mk ? mk[1] : null, crypto: /\u52a0\u5bc6\u8ca8\u5e63\u4ea4\u6613\u6240/.test(rest) };
+  // VENUE_SYMBOL:「的下單標的 A、B[ 等 7 檔] 在 OKX 沒有可下單的合約／現貨」(runtime _venue_symbol_refusal 最多列五檔;N 是全部幾檔)
+  const vs = m[1] === "VENUE_SYMBOL" ? /^\u7684\u4e0b\u55ae\u6a19\u7684 (\S+?)(?: \u7b49 (\d+) \u6a94)? \u5728 (\S+) \u6c92\u6709\u53ef\u4e0b\u55ae\u7684(\u5408\u7d04|\u73fe\u8ca8)\u3002/.exec(rest) : null;
+  return { code: m[1], name: m[2], names, market: mk ? mk[1] : null, crypto: /\u52a0\u5bc6\u8ca8\u5e63\u4ea4\u6613\u6240/.test(rest),
+    venueSymbol: vs ? { syms: vs[1].split("\u3001"), total: vs[2] ? Number(vs[2]) : null, venue: vs[3], spot: vs[4] === "\u73fe\u8ca8" } : null };
 }
 // 其餘拒絕照原文放進「沒有接受這個指令(…)」:去掉 Python 的例外名與開頭的代碼(同 trAskAccount、網頁)
 function trRejectText(err) {
@@ -1682,7 +1685,8 @@ function envOpenView(kind, hasTok, pv) {
 function envOpenCard(view, pv, v, mo, err) {
   const trial = view === "start" && pv === "trial", pitch = !err && (view === "out" || view === "card" || (view === "start" && !trial));
   const amt = view === "repay" ? v.x || v.p : v.p, n = view === "repay" && v.cy === "annual" ? v.yd : v.pd;
-  const tag = trial && v.d ? t("env.open.tagTrial", v) : view === "web" && v.u ? t("env.open.tagPlan", v) : "";
+  // v3 代試用:開主機就結束試用(訊息格那句講了),右上不再掛「試用到」
+  const tag = trial && v.d && !(typeof p3TrialV3 === "function" && p3TrialV3()) ? t("env.open.tagTrial", v) : view === "web" && v.u ? t("env.open.tagPlan", v) : "";
   const price = trial || view === "web" || !amt || (typeof p3Live === "function" && p3Live()) ? "" : !mo ? t("plan.month", v) : n ? t("env.open.price", { p: amt, n }) : "";
   let msg = "";
   if (view === "out") msg = mo && v.t ? t("env.open.trialOffer", v) : "";
@@ -2459,6 +2463,11 @@ function trRejectSentence(rc) {
   if (rc.code === "MARKET_VENUE" && rc.crypto && rc.market) return t("tr.marketVenue.crypto", { name, more, market: t({ "\u53f0\u6307\u671f": "tr.mktName.txf", "\u500b\u80a1\u671f\u8ca8": "tr.mktName.stockFut", "\u53f0\u80a1": "tr.mktName.twStock" }[rc.market]) });
   if (rc.code === "US_SYMBOL") return t("tr.usSymbol.rejected", { name, more });   // 美股訊號策略(runtime _us_signal_refusal),同網頁一碼一句
   if (rc.code === "US_VENUE") return t("tr.usVenue.rejected", { name, more });
+  // 綁的加密交易所沒有這支的下單標的(runtime _venue_symbol_refusal):合約／現貨各一句,標的與交易所照原句填;超過五檔列五檔再接「等 N 檔」(同網頁);原句形狀對不上就照原文那句
+  const vs = rc.code === "VENUE_SYMBOL" ? rc.venueSymbol : null;
+  if (vs) { const n = vs.total && vs.total > vs.syms.length ? vs.total : vs.syms.length;
+    const symbol = vs.syms.join(t("wf.listSep")) + (n > vs.syms.length ? t("tr.venueSymbol.more", { total: n, more: n - vs.syms.length }) : "");
+    return t(vs.spot ? "tr.venueSymbol.rejectedSpot" : "tr.venueSymbol.rejected", { name, symbol, venue: vs.venue }); }
   if (rc.code === "MARKET_VENUE") return t("tr.marketVenue.rejected", { name, more, president: trTwVenueName("president"), capital: trTwVenueName("capital") });
   return null;
 }
@@ -6242,7 +6251,7 @@ function trOvEvents(r, z) {
     // halt 的字照 source(trEvLevel);顏色在 push 那裡讓 api 的 level 蓋過
     if (ev.type === "halt" && d.unexplained === true) { head = t("tr.ov.evHaltUnexplained"); lv = 1; code = trUnxSym(d) || null; note = t("tr.ov.evHaltUnexplainedNote", { venue: trUnxVenue(d) }); tip = typeof d.reason === "string" && d.reason ? d.reason : null; unxSeen.add(String(d.park_id || "")); }
     // 這次平倉什麼都沒平、只有台指期休市留著:照一般暫停寫,台指期由緊接的 kept 列講
-    else if (ev.type === "halt" || ev.type === "halt_close") { lv = trEvLevel(ev.type, d); const closes = lv !== 1 && trHaltCloses(ev.type, trHaltNow(ev, d, r)); head = t(lv === 1 || d.source === "hang_watch" ? "tr.ov.evHaltAuto" : closes ? "tr.ov.evHaltClose" : d.by === "phone" ? "tr.ov.evHaltPhone" : "tr.ov.evHalt"); note = d.source === "hang_watch" ? t("tr.ov.evHaltHangNote") : trHaltUnconfirmedSym(d) != null ? trHaltUnconfirmedNote(d) : trHaltStopsAll(d) || trHaltFreeze(r) ? t("tr.ov.evRestartStoppedNote") : closes ? null : t("tr.ov.evHaltNote"); uiHalts.push(ev.ts * 1000); lastRun = "halt"; }
+    else if (ev.type === "halt" || ev.type === "halt_close") { lv = trEvLevel(ev.type, d); const closes = lv !== 1 && trHaltCloses(ev.type, trHaltNow(ev, d, r)); head = t(lv === 1 || d.source === "hang_watch" ? "tr.ov.evHaltAuto" : closes ? "tr.ov.evHaltClose" : d.by === "phone" ? "tr.ov.evHaltPhone" : "tr.ov.evHalt"); note = d.source === "hang_watch" ? t("tr.ov.evHaltHangNote") : trHaltUnconfirmedSym(d) != null ? trHaltUnconfirmedNote(d) : closes ? null : trHaltStopsAll(d) || trHaltFreeze(r) ? t("tr.ov.evRestartStoppedNote") : t("tr.ov.evHaltNote"); uiHalts.push(ev.ts * 1000); lastRun = "halt"; }
     // 前一筆是暫停才叫「恢復」;第一次啟動(或之前的暫停不在紀錄裡,例如對帳器自動暫停)寫「已啟動下單」。標題已經講完,不帶說明
     else if (ev.type === "resume" || ev.type === "resume_wait") { head = t(lastRun === "halt" ? "tr.ov.evResume" : "tr.ov.evStart"); lastRun = "resume"; }
     else if (ev.type === "venue_connected" && venue) head = ["tr.ov.evConnected", { venue }];
@@ -6260,10 +6269,10 @@ function trOvEvents(r, z) {
     const auto = !!halt.source && halt.source !== "web";
     const closes = !auto && trHaltCloses("halt", halt);
     body.appendChild(trEl("span", trEvClass(trEvLevel("halt", halt)), auto ? t("tr.ov.evHaltAuto") : t(closes ? "tr.ov.evHaltClose" : trHaltByPhone(halt) ? "tr.ov.evHaltPhone" : "tr.ov.evHalt")));
-    // 平倉那一列標題已經講完,不再帶「平倉與停損停利照常執行」(設計稽核 S2);什麼單都不下那句照舊
+    // 平倉那一列標題已經講完,不帶說明(設計稽核 S2);「什麼單都不送」也不帶——平倉單正在送(QA 0158 P1-1)
     if (halt.source === "hang_watch") body.append(" ", trEl("span", "dim", "— " + t("tr.ov.evHaltHangNote")));   // 下單程式反覆卡住(0.1.58)
     else if (trHaltUnconfirmedSym(halt) != null) body.append(" ", trEl("span", "dim", "— " + trHaltUnconfirmedNote(halt)));
-    else if (trHaltStopsAll(halt) || !closes) body.append(" ", trEl("span", "dim", "— " + (trHaltStopsAll(halt) ? t("tr.ov.evRestartStoppedNote") : t("tr.ov.evHaltNote"))));   // A′:什麼單都不下,同重開那一句
+    else if (!closes) body.append(" ", trEl("span", "dim", "— " + (trHaltStopsAll(halt) ? t("tr.ov.evRestartStoppedNote") : t("tr.ov.evHaltNote"))));   // A′:什麼單都不下,同重開那一句
   });
   // 帳戶對不上(halt.unexplained):平台已記成事件的(雲端,同 park_id)上面畫過了;這台電腦沒有平台事件,從狀態檔畫
   // 標題「部位對不上」＋標的(mono)＋「— 先到{venue}核對」,tooltip 是機器那句原因(口數、送單前後),同雲端那一列
@@ -7538,7 +7547,8 @@ function envPaintEmpty(kind, pid) {
     if (pid) page.appendChild(trEl("p", "cv-pend", t("env.open.pend", { id: pid })));
     if (spec || c.tag || c.price || c.more) {
       const top = trEl("div", "cv-top"), right = trEl("div", "cv-prw");
-      if (spec) top.appendChild(trEl("span", "cv-spec", t("env.open.spec", spec)));
+      // 階名用對外那組(「Linux 基本」,pricing §2.2),不印 api 的 label(Starter);認不得的 tier 才退 label。規格另起一段小字
+      if (spec) { const k = "p3.tier." + spec.tier, s = trEl("span", "cv-spec", t(k) !== k ? t(k) : spec.label); s.appendChild(trEl("span", "cv-spec-hw", t("p3.h.specV", { c: spec.vcpu, r: spec.ram }))); top.appendChild(s); }
       if (c.tag || c.price) right.appendChild(trEl("span", "cv-pr" + (c.tag ? " is-tag" : ""), c.tag || c.price));
       if (c.more) { const a = btn("ln-arrow", "", cloudPricingGo, "more"), ar = trEl("span", "ar", "→"); ar.setAttribute("aria-hidden", "true"); a.append(trEl("span", "lbl", t("env.open.more")), ar); right.appendChild(a); }
       if (c.tag || c.price || c.more) top.appendChild(right);

@@ -10,8 +10,8 @@
 const MKT_VALUES = ["crypto", "twstock", "txf", "usstock"];
 // 策略庫的市場選單值(library.js LIB_MARKETS 同一組);all／沒設 → 全部
 const mktLibOf = (v) => (MKT_VALUES.includes(v) ? v : "all");
-// 歡迎頁資料清單的分段(welcome.js WD_ROWS 的市場欄);資料清單沒有美股分段,美股與沒設都停在加密
-const mktWdOf = (v) => (v === "twstock" ? "tw" : v === "txf" ? "txf" : "crypto");
+// 歡迎頁資料清單的分段(welcome.js WD_ROWS 的市場欄);沒設停在加密
+const mktWdOf = (v) => (v === "twstock" ? "tw" : v === "txf" ? "txf" : v === "usstock" ? "us" : "crypto");
 // 第二步出不出:這個安裝要問、本機還沒有值(帳號值由主行程對帳寫進本機,已知時已經算在 v 裡)
 const mktAsks = (st) => !!st && st.ask === true && !MKT_VALUES.includes(st.v) && st.v !== "all";
 // 連接帳戶框:主要市場是台指期時台灣期貨那組排前面,不預選

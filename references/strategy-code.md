@@ -93,7 +93,7 @@ The flow is FORK → EDIT → DEPLOY → SWITCH:
    name that carries a version is *Forking from a version* below, where
    `{name}_v{n}` says which version the code came from.)
 3. Backtest the fork; show the result next to the original's current stats.
-   Not satisfied → iterate (Iteration Brakes apply as usual) or discard the
+   Not satisfied → iterate (AGENTS.md › Iteration Brakes, by tier) or discard the
    fork; the live strategy was never touched.
 4. **Deploy the fork's signal schedule BEFORE switching** and confirm one run
    has written `strategies/<fork>/state.json`. A funded strategy with no
@@ -150,7 +150,7 @@ can ask to go back to one. Nothing to run by hand — `run()` does it.
 - **Numbers are never reused.** Restoring v5 makes v5 current again — no new number. A
   backtest whose code equals a stored version mints nothing and points current back at it:
   a re-run without an edit adds no version.
-- **20 versions per strategy** are kept on the machine; older ones are deleted. Never quote
+- **30 versions per strategy** are kept on the machine; older ones are deleted. Never quote
   a version the index no longer lists.
 - `from lib.strategy import list_versions` → `list_versions(name)` returns those summary
   entries (`n`, `at`, `note`, `ret`, `sharpe`, `sortino`, `mdd`, `trades`, `mcpt_p`,
@@ -217,7 +217,7 @@ The user already chose in the dialog: no confirmation question. Do these, in thi
 
 1. Never call `restore()` and never write any file of `{name}` — it keeps trading.
 2. Take the code from `strategies/{name}/versions/v{n}.json` (its `code` field), not from the
-   current `strategy.py`. File missing → say only the last 20 versions are kept, name the ones
+   current `strategy.py`. File missing → say only the last 30 versions are kept, name the ones
    `list_versions(name)` has, and stop.
 3. Save it as a NEW strategy: its own `STRATEGY_NAME` (default `{name}_v{n}`; the folder name
    equals it), its own `DISPLAY_NAME` / `DESCRIPTION`, and `VERSION_NOTE = "分岔自 {name} v{n}"`
@@ -553,7 +553,7 @@ After combining, the only hard checks are the per-side ones — `BUY_TH > SELL_T
 
 1. **Round 1 — the two most likely sensitive constants**, everything else pinned at the values `strategy.py` holds now. Thresholds first (entry/exit levels move the Sharpe most), then window lengths, then the rest. Every constant must be a `compute_signals` kwarg so the pinned ones are just passed through. `find_plateau` → pin that pair at its plateau.
 2. **Round 2 — the next pair** (or, with three constants, the remaining one paired with the most sensitive one from round 1), thresholds pinned at the round-1 plateau. `find_plateau` → done.
-3. **Stop after two rounds.** Each round is one iteration under `AGENTS.md` › *Iteration Brakes*; do not re-scan round 1 with the round-2 windows, do not add a third pair. Report both plateaus and let the user choose. The border extension (`on_edge → extend_axis → rescan`, once) applies to **round 1 only** — it stays inside that iteration and is what `scan.json` gets; round 2 is the last iteration and never extends.
+3. **Stop after two rounds.** Both rounds together are the scan step of `AGENTS.md` › *Iteration Brakes*; do not re-scan round 1 with the round-2 windows, do not add a third pair. Report both plateaus and let the user choose. The border extension (`on_edge → extend_axis → rescan`, once) applies to **round 1 only** — it stays inside that iteration and is what `scan.json` gets; round 2 is the last iteration and never extends.
 
 Every round gets its own `plot_heatmap` PNG (`heatmap.png`, `heatmap_round2.png` — they reach the user through the workspace chat / Telegram). **`write_scan` is called once, for the round-1 pair only.** Reason: the web's adopt prompt only changes the two constants in `scan.json`, and round 1 is the only grid computed with every *other* constant at the file's current value — so its `current` mark is honest and 「把 ENTRY_Z 改成 …」 lands on a cell that was actually scanned. Round 2 was computed with the thresholds pinned at the plateau, not the file's values; writing it would mark a current cell whose Sharpe was never measured under the file's constants. The round-2 recommendation goes in the conversation. Long/short threshold pairs that decouple by turning the other side off (previous section) are a separate case — two independent 2D scans, write the side you recommend.
 

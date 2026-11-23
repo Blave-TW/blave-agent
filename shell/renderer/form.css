@@ -23,5 +23,3 @@
 /* 一個事實講一次:三個分 K 共用一句,放在週期那題底下。要讀到才做得了決定,用 ink-2 不用 ink-3 */
 .cform-note { margin: 0; font-size: 12px; line-height: 1.5; color: var(--ink-2); }
 .cform-acts { display: flex; align-items: center; gap: var(--space-16); margin-top: var(--space-16); }
-/* 「我自己打」熱區補到 44(全域 .btn-quiet::before 的 -6／-4 只有約 30 高),視覺不動;同 .busy-fix::before */
-.cform-self::before { inset: auto; left: 50%; top: 50%; width: max(44px, calc(100% + 8px)); height: 44px; transform: translate(-50%, -50%); }

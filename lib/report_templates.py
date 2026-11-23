@@ -1605,7 +1605,7 @@ def publish(pack, narrative=None, report_id=None, title=None, origin=None, lang=
     if origin not in (None, "chat", "scheduled"):
         problems.append("origin must be 'chat' or 'scheduled'")
     if problems:
-        raise ValueError(_refusal(pack, problems))
+        raise _report.ReportRefused(_refusal(pack, problems))
     counted = len(out) + 1 - len(image_blocks)   # 引用圖是用戶點名要的,不算進 R4 的 16 塊
     if counted > MAX_BLOCKS:
         print(f"NOTE for you, not for the reply: {counted} blocks, over {MAX_BLOCKS} (references/reports.md §1b R4). "

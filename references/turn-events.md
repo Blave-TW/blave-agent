@@ -1,4 +1,4 @@
-# Turn Events — `done.awaiting`, `done.kinds`, session `waiting`, `form`
+# Turn Events — `done.awaiting`, `done.kinds`, session `waiting`, `form`, `answers`, `auto_iter`
 
 Contract between the runtime (`runtime/agent_turn.py`), the api (`openclaw/webchat.py`), the web
 workspace and the desktop shell. Each layer reads only this file, never another layer's code. The
@@ -9,7 +9,7 @@ runtime side ships first (api, then web / desktop, follow the same contract).
 - Written by the model on its own line at the very end of the reply body — after an
   `<export … />` marker. A turn that writes `<await/>` carries no `<suggest>` block. Rule text lives
   in the runtime prompt (`_AWAIT_RULE`); nothing here needs the agent's attention.
-- Meaning: the turn ends needing the user's answer to continue — a clarification question, numbered
+- Meaning: the turn ends needing the user's answer to continue — a clarification question,
   options the user must pick from, information only the user has. Not for reporting results,
   suggestion chips, or chit-chat.
 - It is a **model-declared** signal: it can be missed or over-used. No surface may infer waiting
@@ -125,7 +125,7 @@ own copy off the code; `message` stays the redacted engine text.
   fall back to the catalog default; an unknown id, a missing id, `</form>`, paired or malformed tags
   are stripped and trigger nothing.
 - Stripped in every sink like `<await/>` (pattern `</?form\b[^<>]*>`): `WebSink`, `LocalSink`,
-  `ReportSink` send the chunk; `TelegramSink` only strips (no card; numbered proposals per
+  `ReportSink` send the chunk; `TelegramSink` only strips (no card; listed proposals per
   AGENTS.md). `tests/check_await_marker.py` enumerates the sinks.
 - Surfaces: desktop shell passes `--clarify-form` unconditionally (runtime ships in the package);
   web sends `context.clarify_form: true`, the api forwards it untouched, `web_bridge` passes the flag
@@ -141,8 +141,8 @@ own copy off the code; `message` stays the redacted engine text.
  ]}
 ```
 
-- Order on the wire: `text_replace` → `export` → `form` → `suggestions` → `done`. Not sent when the
-  turn was stopped or failed.
+- Order on the wire: `text_replace` → `export` → `form` → `answers` → `suggestions` → `done`. Not sent
+  when the turn was stopped or failed.
 - `value` — always present, always one of `options` (the model's value or the catalog default);
   surfaces keep no default table of their own.
 - `note` — only on `tf`, only on the desktop with `BLAVE_DATA_ACCESS=0`: `nodata_signed_out` when
@@ -163,6 +163,67 @@ own copy off the code; `message` stays the redacted engine text.
   `nodata_signed_out`; `years` keys `[a-z0-9_]{1,16}`, values ints 1900–2100. Any field out of shape →
   the whole chunk is refused with `400 invalid form chunk` and nothing is published. No
   `session_id` → dropped like every per-turn chunk. The desktop relay does not carry it.
+
+## The `<answers>` block and `answers` chunk (answer buttons)
+
+- Written by the model only when this turn's rule (`_ANSWERS_RULE`, attached per turn when the surface
+  passes `--answer-buttons`) asks for it: one question, 2–4 mutually exclusive answers. Shape: the body is
+  the question alone, then `<answers default="N">` with one option per line, then `<await/>`; no
+  `<suggest>`, no `<form>`. Options are never numbered; `default` (1-based) is the option the agent
+  recommends, preselected on screen (Wei 11-20). Never for orders, starting or resuming trading, going live,
+  amounts, purchases, card binding or charges (rule text only; surfaces cannot tell).
+- The runtime keeps the last complete block (`_ANSWERS_BLOCK_RE`) and strips every block plus an
+  unclosed tail (`_ANSWERS_OPEN_TAIL_RE`) in every sink. Leading `-•*‧·` and blank lines are dropped;
+  nothing is cut or padded. A `default` past the last option is dropped (the options stay).
+- Valid = the turn has `<await/>`, no `form` chunk, was not stopped, the surface passed the flag, and
+  the lines are 2–`ANS_MAX_ITEMS` (4), each 1–`ANS_MAX_CHARS` (32) code points (`Array.from`), no
+  control or format characters (Unicode Cc/Cf), no duplicates. Valid → the chunk is sent and no `suggestions` chunk follows.
+  Anything else → no chunk, and the options are appended to the reply as a plain `- ` list, the default
+  one tagged 「（建議）」 / " (recommended)" (the rule keeps them out of the body, so they must not vanish).
+  `TelegramSink` always appends the list.
+- History: the session store (desktop reload, phone relay, next turn's context) gets the reply plus
+  the same plain list even when the chunk was sent; the buttons live in memory only.
+- Surfaces: desktop shell passes `--answer-buttons` except on phone turns; web sends
+  `context.answer_buttons: true`, the api forwards it untouched, `web_bridge` passes the flag only when
+  the value is `true` itself. Telegram never. Without the flag the model keeps a plain list with the
+  recommended option marked (`AGENTS.md` › Response Style).
+- The two limits and both regexes are the same on runtime, desktop and web
+  (`tests/check_web_desktop_parity.js`). Streaming deltas may carry a half block; surfaces hide it
+  (desktop `LIVE_TAIL_TAGS` / `ANS_OPEN_TAIL`).
+
+```json
+{"type": "answers", "session_id": "<sid>", "items": ["重跑回測", "先不要"], "default": 1}
+```
+
+- `default` is optional; surfaces that do not know it draw the group without a preselected option.
+
+### api (`openclaw/webchat.py`)
+
+- `_clean_turn_text` turns the last complete `<answers>` block into the same plain list (other blocks
+  and an unclosed tail are dropped), so web reloads and the phone see the options.
+- `/report` rebuilds `answers` from validated fields only with the same limits; `default` kept only when
+  it is an int within the list; anything else out of shape → `400 invalid answers chunk`, nothing
+  published. The desktop relay does not carry it.
+- Ship order: api first (an un-updated api forwards the raw block into history and drops the chunk).
+
+## `auto_iter` chunk (auto-iterate session end; telemetry only)
+
+```json
+{"type": "auto_iter", "session_id": "<sid>", "done": "full.good", "rounds": "4_6"}
+```
+
+- Sent by the runtime right before `done`, once per auto-iterate session the turn ran (`lib/iterate.py`),
+  after the runtime closed any session still open (`python -m lib.iterate close-turn`). A session with only its
+  baseline backtest and no parameter scan is closed without a line. Not on scheduled turns, not on Telegram.
+- A stopped turn (`user`) is closed as it stands — no revert, no quiet rerun — and the runtime sends `ping`
+  every second while the close runs (the desktop shell kills a runtime silent for 5 s after Stop).
+- `done` = `<tier>.<stop>`: tier `basic` | `full`; stop `good` | `cap` | `time` | `steps` | `credit` | `user` |
+  `fault` | `done`. `rounds` = logic rounds after round 0, bucketed `0` | `1` | `2_3` | `4_6` | `7_10`.
+- Desktop: the shell's main process records `auto_iter_done {r}` and `auto_iter_rounds {n}` and does not pass it
+  to the window. The phone relay does not carry it.
+- api `/report`: values outside the two lists → `400 invalid auto_iter chunk`; otherwise one `agent_event`
+  (`auto_iter_done`, excluded from the workspace timeline), never published, never in history. Ship order: api
+  first (an un-updated api answers 400 for an unknown chunk type, which the runtime only logs).
 
 ## Status-line phases (`kind`) — notes for the phase table
 

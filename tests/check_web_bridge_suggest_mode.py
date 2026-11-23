@@ -96,6 +96,24 @@ check("False／None／怪值不帶 --clarify-form",
       all("--clarify-form" not in cf[k] for k in ("False", "None", "'true'", "1")), cf)
 check("_worker 把 entry 的 clarify_form 交給 run_agent_turn", 'clarify_form=entry.get("clarify_form")' in src)
 
+# 答案鈕的能力旗標(spec chat-answer-buttons §10.5):context.answer_buttons 同樣只認 True 本身
+check("context.answer_buttons: true → entry True", ingest("m5", {"answer_buttons": True}).get("answer_buttons") is True)
+check("答案鈕:缺／false／怪值 → entry False",
+      all(ingest(f"m6{i}", ctx).get("answer_buttons") is False
+          for i, ctx in enumerate(({}, {"answer_buttons": False}, {"answer_buttons": "true"}, {"answer_buttons": 1}))))
+ab = {}
+try:
+    for val in (True, False, None, "true", 1):
+        wb.subprocess.Popen = lambda cmd, *a, _v=val, **kw: (ab.__setitem__(repr(_v), cmd), FakeProc())[1]
+        wb.run_agent_turn("s1", "hi", answer_buttons=val)
+finally:
+    wb.subprocess.Popen = real
+check("True → argv 帶 --answer-buttons(在 -- 之前)",
+      "--answer-buttons" in ab["True"] and ab["True"].index("--answer-buttons") < ab["True"].index("--"), ab["True"])
+check("False／None／怪值不帶 --answer-buttons",
+      all("--answer-buttons" not in ab[k] for k in ("False", "None", "'true'", "1")), ab)
+check("_worker 把 entry 的 answer_buttons 交給 run_agent_turn", 'answer_buttons=entry.get("answer_buttons")' in src)
+
 shutil.rmtree(_tmp, ignore_errors=True)
 if failures:
     sys.exit(f"{len(failures)} failed")

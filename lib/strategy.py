@@ -310,7 +310,7 @@ def twstock_universe_by_sector(stock_list, total=100, seed=42, industries=None):
 # strategies/<name>/versions/; the functions below read them back for the agent
 # ("which version had the best Sharpe") and for the workspace's 還原 flow.
 
-VERSIONS_KEEP = 20  # canon §8 — the api sweeps its own copy, the machine sends no DELETE
+VERSIONS_KEEP = 30  # canon §8 (20 → 30 for auto-iterate, Wei 11-16) — the api sweeps its own copy (api first), the machine sends no DELETE
 
 # Capability flag, read as TEXT by the runtime (strategy_reporter.lib_restore_in_place) — the
 # runtime never imports lib. The runtime updates itself; lib only updates when the user asks,

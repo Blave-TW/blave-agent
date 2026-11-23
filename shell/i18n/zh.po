@@ -826,7 +826,7 @@ msgid "bt.mcptDistTitle"
 msgstr "MCPT · 隨機打亂 {n} 次的 Sharpe 分佈，p = {p}"
 
 msgid "bt.mcptDistActual"
-msgstr "實際 Sharpe {v}"
+msgstr "實際 Sharpe {v}（部位按波動調整）"
 
 msgid "bt.mcptDistUnit"
 msgstr "次"
@@ -3150,9 +3150,6 @@ msgstr "含 Blave 行情與籌碼資料。"
 
 msgid "env.open.more"
 msgstr "其他方案與價格"
-
-msgid "env.open.spec"
-msgstr "{label} · {vcpu} vCPU · {ram} GB"
 
 msgid "env.open.price"
 msgstr "{p} TWD／{n} 天"
@@ -7512,7 +7509,7 @@ msgid "ver.frozenRerunFailed"
 msgstr "灰掉的分頁沒有資料，回測重跑完才有。"
 
 msgid "ver.rsErrGone"
-msgstr "主機上已經沒有 {v}（只保留最近 20 版），這一版只能看、不能還原。"
+msgstr "主機上已經沒有 {v}（只保留最近 30 版），這一版只能看、不能還原。"
 
 msgid "ver.rsErr"
 msgstr "沒能還原到 {v}。稍後再試，或在對話裡請 agent 看看。"
@@ -7955,6 +7952,9 @@ msgstr "可以回測的資料"
 msgid "wd.mk.crypto"
 msgstr "加密"
 
+msgid "wd.mk.us"
+msgstr "美股"
+
 msgid "wd.mk.tw"
 msgstr "台股"
 
@@ -8084,6 +8084,19 @@ msgstr "2025-09 起"
 
 msgid "wd.r.fr.an"
 msgstr "資金費率"
+
+# 0.1.59 美股日 K(lib/data.py fetch_usstock_price;免費欄,沒有 Blave 付費美股資料:Wei 11-20 已裁第 4 條)。不寫供應商名稱;起始年沒有單一值
+msgid "wd.r.usd.nm"
+msgstr "美股個股日線（已還原分割與股息）"
+
+msgid "wd.r.usd.fq"
+msgstr "日"
+
+msgid "wd.r.usd.sy"
+msgstr "依個股上市日起"
+
+msgid "wd.r.usd.an"
+msgstr "美股個股日線"
 
 msgid "wd.r.twd.nm"
 msgstr "個股日線（原始與還原）"
@@ -8747,7 +8760,7 @@ msgid "tr.cloud.stoppedPlan2NoNum"
 msgstr "一直沒付款會刪除主機，策略、資料與金鑰一併清除。"
 
 msgid "cf.m.body1"
-msgstr "方案（Linux Starter）含 Blave 資料，電腦版馬上就能用。不會開雲端主機，之後到網站開一台 Linux Starter 不另收費。"
+msgstr "方案（Linux 基本）含 Blave 資料，電腦版馬上就能用。不會開雲端主機，之後到網站開一台 Linux 基本主機不另收費。"
 
 msgid "cf.m.body2"
 msgstr "第一期現在付。錢包夠就扣錢包，不夠就整筆刷卡。"
@@ -9718,6 +9731,17 @@ msgstr "「{name}」{more}用的是美股訊號：只能用 Type A 單一標的�
 msgid "tr.usVenue.rejected"
 msgstr "「{name}」{more}的下單標的在這家交易所沒有對應的股票永續。改綁有這檔股票永續的交易所，或到「選擇策略」取消勾選後再儲存。"
 
+# runtime _venue_symbol_refusal(VENUE_SYMBOL):綁的加密交易所沒有這支的下單標的,合約／現貨照原句分兩句。{venue} 是交易所品牌名(runtime 原句的那個),{symbol} 用 wf.listSep 接好(同網頁 workspace_pf_rej_venue_symbol／_spot)
+msgid "tr.venueSymbol.rejected"
+msgstr "「{name}」的下單標的 {symbol} 在 {venue} 沒有可下單的合約。請 agent 改成 {venue} 有的標的，或到「選擇策略」取消勾選後再儲存。"
+
+msgid "tr.venueSymbol.rejectedSpot"
+msgstr "「{name}」的下單標的 {symbol} 在 {venue} 沒有可下單的現貨。請 agent 改成 {venue} 有的標的，或到「選擇策略」取消勾選後再儲存。"
+
+# 超過五檔:列出的五檔後面接這段。{total} = 全部幾檔(zh),{more} = 沒列出的幾檔(en)(同網頁 workspace_pf_rej_venue_symbol_more)
+msgid "tr.venueSymbol.more"
+msgstr " 等 {total} 檔"
+
 msgid "tr.mktName.txf"
 msgstr "台指期"
 
@@ -9788,6 +9812,10 @@ msgstr "改配置"
 
 msgid "mg.why.tbMethod"
 msgstr "〔方法〕"
+
+# 優化工具列右側常駐的〔重算權重〕(mg.why.rerun)前面那段:這一組權重上次算好的時間,{t} = 月/日 時:分(同網頁 workspace_mg_last_run)
+msgid "mg.lastRun"
+msgstr "上次計算 {t}"
 
 msgid "mg.why.rerun"
 msgstr "重算權重"
@@ -11005,8 +11033,25 @@ msgstr "分 K 要 Blave 資料，要先登入"
 msgid "form.use"
 msgstr "用這些設定"
 
-msgid "form.self"
-msgstr "我自己打"
+# 策略類型選「其他，自己描述」時,組出的句子以冒號結尾(半句):主鈕換這個字,按了只填進輸入框、不送
+msgid "form.fill"
+msgstr "填進輸入框"
+
+# 聊天欄答案鈕那一組的可及名稱(role=group)
+msgid "ans.group"
+msgstr "回答"
+
+# 答案鈕畫出來時讀屏念一次;{s} 是各鈕字,zh 用頓號、en 用逗號接
+msgid "ans.say"
+msgstr "可以按鈕回答：{s}"
+
+# 預選那一顆的讀屏說明(aria-describedby 指到的 .sr-only 節點;鈕名仍是鈕字)
+msgid "ans.defMark"
+msgstr "建議"
+
+# ans.say 裡 agent 建議、畫面預選的那一顆;{s} 是鈕字
+msgid "ans.def"
+msgstr "{s}（建議）"
 
 # 表單畫出來那一刻讀屏念一次(只在眼前分頁)
 msgid "form.say"
@@ -11833,7 +11878,7 @@ msgid "p3.w.trialNoEligNoNum"
 msgstr "這個帳號不符合試用資格。驗證金已存進錢包。"
 
 msgid "p3.a.oncePerCard"
-msgstr "每張卡限試用一次。"
+msgstr "每個帳號、每張卡都只能試用一次。"
 
 msgid "pv.f.noTrial.v3"
 msgstr "綁卡就付第一期 {p} TWD，之後每 {pd} 天續扣。"
@@ -11843,6 +11888,17 @@ msgstr "綁卡就付第一期 {p} TWD，之後按期續扣。"
 
 msgid "priv.c.feat.10"
 msgstr "開方案或主機的框時，記從哪開、選了哪一階與結果類別"
+
+msgid "priv.c.feat.11"
+msgstr "自動調整策略時，記額度類別、為何停下與輪數，不含績效"
+
+# 0.1.59 答案鈕(answer_shown／answer_sent／answer_missed／answer_undo):只記幾顆、第幾顆
+msgid "priv.c.feat.12"
+msgstr "答案鈕出現幾顆、按了第幾顆或改自己打，不含選項文字"
+
+# 0.1.59 海外(lib_mkt／lib_use_mkt／wd_mkt):只記市場代號,不記策略 id 或名稱。隱私政策附錄那句由 Wei 定稿
+msgid "priv.c.feat.13"
+msgstr "策略庫與資料清單切到哪個市場、裝的策略屬哪個市場"
 
 msgid "p3.f.trialConvert"
 msgstr "開雲端主機會結束試用，今天付第一期：{tier}合計 {p} TWD。"
@@ -12117,3 +12173,26 @@ msgstr "已用 {p}%"
 
 msgid "p3.set.reset"
 msgstr "{at} 重置。"
+
+# 設定 › 帳號與方案,v3 試用格(spec host-card-relayout D1、Wei 11-20):標題下一列左標右值「試用結束扣第一期｜MM/DD · 金額」;金額讀 api(next_charge_twd,沒有才退報價);金額讀不到右邊只放日期
+msgid "p3.set.firstL"
+msgstr "試用結束扣第一期"
+
+msgid "p3.set.firstV"
+msgstr "{d} · {p} TWD"
+
+# 試用格鈕上方兩行的第一行(第二行是 p3.f.trialConvertNoNum);{pd} 跟著下一期的週期(年繳 365)
+msgid "p3.f.renew"
+msgstr "之後每 {pd} 天自動續扣。錢包夠就扣錢包，不夠就整筆刷卡。"
+
+msgid "p3.f.renewNoNum"
+msgstr "之後每期自動續扣。錢包夠就扣錢包，不夠就整筆刷卡。"
+
+# 「Blave 餘額」標籤的 tooltip(收掉原本餘額下面那句「AI 超額時自動儲值」)。第一句與網頁 bc_plan_wallet_fact 逐字相同(tests/check_web_desktop_parity.js)
+msgid "p3.set.balTip"
+msgstr "錢包用來付 Blave AI，也用來付方案費。"
+
+# 第二句:有卡、沒關自動儲值、門檻讀得到才接在後面;{lo} {a} 讀公開價目 ai_credit
+msgid "p3.set.topupTip"
+msgstr "錢包低於 {lo} TWD 時，刷綁定的卡補 {a} TWD。"
+

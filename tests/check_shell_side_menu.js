@@ -44,7 +44,7 @@ for (const k of ["pending", "busy"]) { const p = paint({ inn: true, [k]: true })
 
 // ── 共用的方案狀態字 ──
 { const pp = cutFn(app, "planPaint");
-  t("§A4 planStateText 與設定 › 帳號與方案標頭同一支 planStateOf;planPaint 的表裡不再各寫一份 st", /const S = planStateOf\(view, v\);/.test(pp) && !/\bst: \[/.test(pp)
+  t("§A4 planStateText 與設定 › 帳號與方案標頭同一支 planStateOf;planPaint 的表裡不再各寫一份 st", /const S = V\.head \? null : planStateOf\(view, v\);/.test(pp) && !/\bst: \[/.test(pp)
     && /const s = planStateOf\(view, v\); return s \? s\[1\] : "";/.test(cutFn(app, "planStateText")));
   // 設計稽核 0157 S3:主機運行中那格在選單列尾只講方案(en 帶「machine running」會截到天數看不到);其他格照 planStateOf
   const st = (view, o) => vm.runInNewContext(cutFn(app, "planStateText") + "\nplanStateText()", Object.assign({ sideBooted: true, planView: () => view, planVars: () => ({ n: 3 }),

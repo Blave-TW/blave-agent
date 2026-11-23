@@ -1,6 +1,6 @@
 // 電腦版 0.0.5 視覺修(設計師 spec-desktop-005-polish + audit-desktop-005),要真的排出來 / 真的跑 DOM 才驗得到的幾條。
 // 用隨包的 Electron 開真的 index.html + CSS,window.blave 換成假的(不起主行程、不碰 workspace、不連網):
-//   ① §3 自動下單的內容上限 760、靠左;頁首跟著收到同一條右緣(〔啟動下單〕對齊表格右緣);窄的時候不受影響;引導畫面不套
+//   ① 自動下單的表(寬螢幕 A 版,取代 §3 的 760):吃滿到掃讀上限 1200、靠左;頁首照舊吃滿整欄(〔啟動下單〕貼頁首內容右緣);窄的時候表與鈕照舊對齊;引導畫面不套
 //   ② §2 雲端視角的輸入框跟這台電腦一樣:底色、框線、placeholder 色(--ink-3)都相同
 //   ③ 稽核 12 出錯的回合:工具收據自己攤開,思考文字收著、下面一顆「顯示思考內容」;正常回合照舊收起
 // 跑法:node tests/check_shell_polish005.js(找不到 shell/node_modules 的 Electron 就 SKIP)
@@ -43,13 +43,14 @@ app.whenReady().then(async () => {
     sc.appendChild(tb); $("tr-pos").appendChild(sc);
     $("tr-act").textContent = ""; const b = document.createElement("button"); b.className = "btn-fill"; b.textContent = "啟動下單"; $("tr-act").appendChild(b);
     const r = (e) => e.getBoundingClientRect(), pos = r($("tr-pos")), t = r(tb), btn = r(b), tabs = r($("tr-tabs"));
-    const pad = parseFloat(getComputedStyle($("tr-pos")).paddingLeft);
-    return { col: Math.round(pos.width), tblW: Math.round(t.width), tblL: Math.round(t.left - pos.left - pad), tblR: Math.round(t.right), btnR: Math.round(btn.right), tabsW: Math.round(tabs.width), sbR: Math.round(pos.right), pad };
+    const pad = parseFloat(getComputedStyle($("tr-pos")).paddingLeft), hd = $("tr-act").closest(".main-head"), hr = r(hd);
+    return { col: Math.round(pos.width), tblW: Math.round(t.width), tblL: Math.round(t.left - pos.left - pad), tblR: Math.round(t.right), btnR: Math.round(btn.right), tabsW: Math.round(tabs.width), sbR: Math.round(pos.right), pad,
+      headW: Math.round(hr.width), headInR: Math.round(hr.right - parseFloat(getComputedStyle(hd).paddingRight)) };
   })()`;
   await js(`paneToggle("chat", true)`); await wait(200);
   const wide = await js(MEASURE);
-  ok(`① 寬欄(內容欄 ${wide.col}px、聊天欄收起):表格上限 760、靠左(左緣 = 內容欄起點)`, wide.col > 900 && wide.tblW === 760 && wide.tblL === 0);
-  ok(`① 頁首跟著收:〔啟動下單〕右緣 = 表格右緣(${wide.btnR} vs ${wide.tblR})`, Math.abs(wide.btnR - wide.tblR) <= 1);
+  ok(`① 寬欄(內容欄 ${wide.col}px、聊天欄收起):表格吃滿到掃讀上限 1200、靠左(左緣 = 內容欄起點;寬 ${wide.tblW})`, wide.col > 900 && wide.tblW === Math.min(1200, wide.col - 2 * wide.pad) && wide.tblL === 0);
+  ok(`① 頁首照舊吃滿整欄、不跟表收(A 版):頁首寬 = 內容欄寬、〔啟動下單〕右緣 = 頁首內容右緣(${wide.headW} vs ${wide.col};${wide.btnR} vs ${wide.headInR})`, Math.abs(wide.headW - wide.col) <= 1 && Math.abs(wide.btnR - wide.headInR) <= 1);
   ok("① 分頁列不收(底線跨滿整欄);捲動容器本身照舊整欄寬(捲軸在欄的右緣)", wide.tabsW >= wide.col - 1 && wide.sbR - wide.tblR > 100);
   await js(`paneToggle("chat", false)`); w.setSize(1100, 900); await wait(300);
   const narrow = await js(MEASURE);

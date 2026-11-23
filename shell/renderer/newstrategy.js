@@ -107,7 +107,7 @@ function nsOpen(opener) {
   nsPaintEnv(); nsExPaint(); nsRefresh();
   $("view-ws").inert = true; $("set-scrim").inert = true;
   sc.hidden = false;
-  requestAnimationFrame(() => sc.classList.add("open"));
+  requestAnimationFrame(() => { if (!sc.hidden) sc.classList.add("open"); });   // 關得比 rAF 快(背景視窗節流)不留 open
   setTimeout(() => { if (!sc.hidden) $("ns-name").focus(); }, 60);
 }
 // 送出中:三顆都停用(送出後撤不回;首次裝引擎可能等一分鐘,不能讓人按了沒反應)

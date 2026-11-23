@@ -811,7 +811,7 @@ msgid "bt.mcptDistTitle"
 msgstr "MCPT · Sharpe across {n} shuffles, p = {p}"
 
 msgid "bt.mcptDistActual"
-msgstr "Actual Sharpe {v}"
+msgstr "Actual Sharpe {v} (vol-scaled position)"
 
 msgid "bt.mcptDistUnit"
 msgstr "shuffles"
@@ -3131,9 +3131,6 @@ msgstr "Blave market and positioning data included."
 
 msgid "env.open.more"
 msgstr "Other Plans and Prices"
-
-msgid "env.open.spec"
-msgstr "{label} · {vcpu} vCPU · {ram} GB"
 
 msgid "env.open.price"
 msgstr "{p} TWD / {n} days"
@@ -7490,7 +7487,7 @@ msgid "ver.frozenRerunFailed"
 msgstr "The greyed-out tabs have no data until the backtest reruns."
 
 msgid "ver.rsErrGone"
-msgstr "{v} is no longer on the machine (only the latest 20 are kept). You can view it but not restore it."
+msgstr "{v} is no longer on the machine (only the latest 30 are kept). You can view it but not restore it."
 
 msgid "ver.rsErr"
 msgstr "Couldn’t restore {v}. Try again later, or ask the agent in chat to take a look."
@@ -7933,6 +7930,9 @@ msgstr "Data You Can Backtest"
 msgid "wd.mk.crypto"
 msgstr "Crypto"
 
+msgid "wd.mk.us"
+msgstr "US Stocks"
+
 msgid "wd.mk.tw"
 msgstr "TW Stocks"
 
@@ -8062,6 +8062,19 @@ msgstr "from 2025-09"
 
 msgid "wd.r.fr.an"
 msgstr "funding rates"
+
+# 0.1.59 美股日 K(lib/data.py fetch_usstock_price;免費欄,沒有 Blave 付費美股資料:Wei 11-20 已裁第 4 條)。不寫供應商名稱;起始年沒有單一值
+msgid "wd.r.usd.nm"
+msgstr "US stock daily bars (split & dividend adjusted)"
+
+msgid "wd.r.usd.fq"
+msgstr "Daily"
+
+msgid "wd.r.usd.sy"
+msgstr "from each stock's listing"
+
+msgid "wd.r.usd.an"
+msgstr "US stock daily bars"
 
 msgid "wd.r.twd.nm"
 msgstr "Stock daily bars"
@@ -8723,7 +8736,7 @@ msgid "tr.cloud.stoppedPlan2NoNum"
 msgstr "Left unpaid, the machine is deleted, with its strategies, data and keys."
 
 msgid "cf.m.body1"
-msgstr "The plan (Linux Starter) includes Blave data, in this app right away. It doesn’t start a cloud machine; starting a Linux Starter machine on the website later costs nothing extra."
+msgstr "The plan (Linux Basic) includes Blave data, in this app right away. It doesn’t start a cloud machine; starting a Linux Basic machine on the website later costs nothing extra."
 
 msgid "cf.m.body2"
 msgstr "The first period is paid now, from your balance if it covers it all, otherwise all on your card."
@@ -9693,6 +9706,17 @@ msgstr "“{name}”{more} uses a US-stock signal: it can only trade as a Type A
 msgid "tr.usVenue.rejected"
 msgstr "“{name}”{more}: this exchange doesn’t list its symbol as a stock perpetual. Connect an exchange that lists that stock perpetual, or uncheck it in Pick Strategies, then save."
 
+# runtime _venue_symbol_refusal(VENUE_SYMBOL):綁的加密交易所沒有這支的下單標的,合約／現貨照原句分兩句。{venue} 是交易所品牌名(runtime 原句的那個),{symbol} 用 wf.listSep 接好(同網頁 workspace_pf_rej_venue_symbol／_spot)
+msgid "tr.venueSymbol.rejected"
+msgstr "“{name}”: {venue} has no tradable contract for {symbol}. Ask the agent to switch to a symbol {venue} lists, or uncheck it in Pick Strategies, then save."
+
+msgid "tr.venueSymbol.rejectedSpot"
+msgstr "“{name}”: {venue} has no spot market for {symbol}. Ask the agent to switch to a symbol {venue} lists, or uncheck it in Pick Strategies, then save."
+
+# 超過五檔:列出的五檔後面接這段。{total} = 全部幾檔(zh),{more} = 沒列出的幾檔(en)(同網頁 workspace_pf_rej_venue_symbol_more)
+msgid "tr.venueSymbol.more"
+msgstr " and {more} more"
+
 msgid "tr.mktName.txf"
 msgstr "TAIEX futures"
 
@@ -9761,6 +9785,10 @@ msgstr "Change Allocation"
 
 msgid "mg.why.tbMethod"
 msgstr "Method"
+
+# 優化工具列右側常駐的〔重算權重〕(mg.why.rerun)前面那段:這一組權重上次算好的時間,{t} = 月/日 時:分(同網頁 workspace_mg_last_run)
+msgid "mg.lastRun"
+msgstr "Last calculated {t}"
 
 msgid "mg.why.rerun"
 msgstr "Recalculate weights"
@@ -10969,8 +10997,25 @@ msgstr "Intraday bars need Blave data; sign in to Blave first"
 msgid "form.use"
 msgstr "Use these settings"
 
-msgid "form.self"
-msgstr "I'll type it"
+# 策略類型選「其他，自己描述」時,組出的句子以冒號結尾(半句):主鈕換這個字,按了只填進輸入框、不送
+msgid "form.fill"
+msgstr "Fill in"
+
+# 聊天欄答案鈕那一組的可及名稱(role=group)
+msgid "ans.group"
+msgstr "Answers"
+
+# 答案鈕畫出來時讀屏念一次;{s} 是各鈕字,zh 用頓號、en 用逗號接
+msgid "ans.say"
+msgstr "Answer with a button: {s}"
+
+# 預選那一顆的讀屏說明(aria-describedby 指到的 .sr-only 節點;鈕名仍是鈕字)
+msgid "ans.defMark"
+msgstr "Recommended"
+
+# ans.say 裡 agent 建議、畫面預選的那一顆;{s} 是鈕字
+msgid "ans.def"
+msgstr "{s} (recommended)"
 
 # 表單畫出來那一刻讀屏念一次(只在眼前分頁)
 msgid "form.say"
@@ -11794,7 +11839,7 @@ msgid "p3.w.trialNoEligNoNum"
 msgstr "This account isn't eligible for a trial. The card check is in your balance."
 
 msgid "p3.a.oncePerCard"
-msgstr "One trial per card."
+msgstr "One trial per account and per card."
 
 msgid "pv.f.noTrial.v3"
 msgstr "Adding a card pays the first period, {p} TWD, then renews every {pd} days."
@@ -11804,6 +11849,17 @@ msgstr "Adding a card pays the first period, {p} TWD, then renews each period."
 
 msgid "priv.c.feat.10"
 msgstr "Opening the plan or machine box: where from, which size you picked and the result type"
+
+msgid "priv.c.feat.11"
+msgstr "Auto-tuning a strategy: the credit tier, why it stopped and how many rounds, never the results"
+
+# 0.1.59 答案鈕(answer_shown／answer_sent／answer_missed／answer_undo):只記幾顆、第幾顆
+msgid "priv.c.feat.12"
+msgstr "Answer buttons: how many appeared, which one you pressed or that you typed your own, never their text"
+
+# 0.1.59 海外(lib_mkt／lib_use_mkt／wd_mkt):只記市場代號,不記策略 id 或名稱。隱私政策附錄那句由 Wei 定稿
+msgid "priv.c.feat.13"
+msgstr "Library and data list: which market tab you picked and the market of strategies you install"
 
 msgid "p3.f.trialConvert"
 msgstr "Starting a cloud machine ends the trial and pays the first period today: {p} TWD with {tier}."
@@ -12078,3 +12134,22 @@ msgstr "{p}% used"
 
 msgid "p3.set.reset"
 msgstr "Resets {at}."
+
+msgid "p3.set.firstL"
+msgstr "First period after trial"
+
+msgid "p3.set.firstV"
+msgstr "{d} · {p} TWD"
+
+msgid "p3.f.renew"
+msgstr "Then renews every {pd} days. From your balance if it covers it all, otherwise all on your card."
+
+msgid "p3.f.renewNoNum"
+msgstr "Then renews each period. From your balance if it covers it all, otherwise all on your card."
+
+msgid "p3.set.balTip"
+msgstr "Your balance pays for Blave AI and for your plan."
+
+msgid "p3.set.topupTip"
+msgstr "When your balance drops below {lo} TWD, your card on file adds {a} TWD."
+

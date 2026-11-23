@@ -24,5 +24,9 @@ ok("列:align-items 是 first baseline(數字對標籤第一行)", !!row && /ali
 ok("標籤鈕:display block + text-align left(折行時靠左;block 才讓 first baseline 取到第一行)", !!tip && /display: block;/.test(tip) && /text-align: left;/.test(tip), tip);
 ok("標籤仍是 .bt-mk 裡的 button.mp-tip(tooltip 相鄰選擇器與定位基準不變)", /const btn = el\("button", "mp-tip", typeof r\[0\] === "string" \? r\[0\] : null\);/.test(bt) && /\.bt-mk \{ position: relative;/.test(css));
 
+// QA 0158 P2-2:MCPT 圖的 Sharpe 是 lib/validation.mcpt 在「部位按波動調整」後的序列上算的,跟回測指標的 Sharpe 不是同一個口徑,標籤要講
+ok("MCPT 圖的實際 Sharpe 標明部位按波動調整(兩語)", STR.zh["bt.mcptDistActual"] === "實際 Sharpe {v}（部位按波動調整）" && STR.en["bt.mcptDistActual"] === "Actual Sharpe {v} (vol-scaled position)"
+  && /target_vol \/ realized_vol/.test(read(path.join(__dirname, "..", "lib", "validation.py"))), STR.zh["bt.mcptDistActual"]);
+
 console.log(red ? "\n" + red + " 紅" : "\nALL PASS");
 process.exit(red ? 1 : 0);

@@ -75,8 +75,8 @@ let red = 0; const t = (n, ok) => { console.log((ok ? "PASS  " : "FAIL  ") + n);
   t("不寫死任何金鑰;憑證檔權限太寬會拒絕", !/AKIA[0-9A-Z]{16}/.test(src) && /mode & 0o077/.test(src));
   // 測試預設不起 Electron(tests/_electron_gate.js):發版的閘門測試要完整跑,開關只給它自己起的子行程
   { const g = (src.match(/step\("閘門測試"\);[\s\S]*?\n\n/) || [""])[0];
-    t("閘門測試帶 BLAVE_TEST_WINDOW=1(不寫進 process.env)、守門檢查也在清單裡、有一段被 SKIP 就不放行",
-      /env: \{ \.\.\.process\.env, BLAVE_TEST_WINDOW: "1" \}/.test(g) && !/process\.env\.BLAVE_TEST_WINDOW\s*=/.test(src)
+    t("閘門測試帶 BLAVE_TEST_WINDOW=1 與 ELECTRON_ENABLE_STACK_DUMPING=1(不寫進 process.env)、守門檢查也在清單裡、有一段被 SKIP 就不放行",
+      /env: \{ \.\.\.process\.env, BLAVE_TEST_WINDOW: "1", ELECTRON_ENABLE_STACK_DUMPING: "1" \}/.test(g) && !/process\.env\.BLAVE_TEST_WINDOW\s*=/.test(src)
       && /\|check_tests_window_guard\)/.test(g) && /if \(\/SKIP \\\(set BLAVE_TEST_WINDOW=1\/\.test\(out\)\) die\(/.test(g)); }
   console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);
 })();

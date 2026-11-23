@@ -1,11 +1,12 @@
 // 錯誤回報詢問卡撐過對話重畫(設計稽核 0.1.56 第二批 S2):主行程一天只給一張卡,卡被 csPaintHistory → csClearChat 清掉就要等到明天。
 // 跑真的 errreport.js 與 app.js 的 faultCard／csClearChat／csPaintHistory／csDraw、chattabs.js 的 chatEl,假 DOM、假 window.blave(不開 Electron)。
 //   1. 卡所在的眼前分頁重畫:同一個節點回到最底下、只有一張、不再問主行程;〔送出〕照原 id 叫 decide
-//   2. 卡所在的分頁在背景重畫:卡搬到眼前那條的最底下,背景那條不留
+//   2. 卡所在的分頁在背景重畫:卡接回它那條的最底下,不搬到眼前那條(0.1.59:卡只出在出事的那條對話)
 //   3. 重畫的是別條:卡留在原處不動
-//   4. 回合在跑時重畫眼前那條:卡跟著即時那一段留下,不重複
+//   4. 回合在跑時重畫卡所在那條:卡跟著即時那一段留下,不重複
 //   5. 按過之後(已送出／不送的那行)重畫:不補回來
-//   6. 分頁關掉、卡跟著不見:下一次任何一條重畫時回到眼前那條(主行程那批還在等答覆)
+//   6. 分頁關掉、卡跟著不見:之後任何一條重畫都不會冒到別條
+//   7. 回合結束(onTurnEnd 帶 sid):帶 sid 問主行程、卡畫在那一輪的分頁(就算眼前是別條);那條又在跑、已關掉:不問
 // 跑法:node tests/check_shell_errreport_redraw.js
 "use strict";
 const fs = require("fs"), path = require("path"), vm = require("vm");
@@ -59,7 +60,7 @@ const ctx = {
   console, Promise, JSON, Array, String, Object, Math, Map, WeakMap,
   document: { createElement: (t) => new N(t), getElementById: () => null },
   window: { blave: {
-    errReportPending: () => { PEND.push(1); return Promise.resolve(pendingResult); },
+    errReportPending: (sid) => { PEND.push(sid === undefined ? 1 : sid); return Promise.resolve(pendingResult); },
     errReportDecide: (...a) => { DECIDE.push(a); return Promise.resolve(true); },
     errReportMode: () => Promise.resolve("ask"),
     errReportModeSet: (m) => Promise.resolve(m),
@@ -75,7 +76,7 @@ const ctx = {
   histFixOrder: (out, x) => { out.push(x); return out; },
   addHistoryYou: (s) => { const n = new N("div"); n.className = "msg you"; n._t = s; ctx.chatEl().appendChild(n); },
   addHistoryAi: (s) => { const n = new N("div"); n.className = "msg ai"; n._t = s; ctx.chatEl().appendChild(n); },
-  csAnyTurn: () => false,
+  csAnyTurn: () => false, tabRun: (T) => T.running === true,
   running: false, busy: null, liveBubble: null, swLine: null, swHeld: null, chatStick: true, chatTop: 0, acctCard: null, creditCards: [], dataCard: null, csTitle: "",
   CS: { cur: null, loaded: null, bg: false, tabs: new Map() },
   // chattabs.js 的 withTab 契約:把 T 換成載入中的那個同步跑、跑完換回(每輪全域的換手不在這支測試的範圍)
@@ -114,19 +115,18 @@ const last = (T) => T.el.children[T.el.children.length - 1];
   show(B);
   ok("前提:換到 B,卡留在 A", A.el.contains(card) && !B.el.contains(card));
   await vm.runInContext("csDraw(CS.tabs.get('A'))", ctx); await flush();
-  ok("2 背景的 A 重畫:卡搬到眼前的 B 最底下、A 不留", B.el.contains(card) && !A.el.contains(card) && last(B) === card, { inA: A.el.contains(card), inB: B.el.contains(card) });
+  ok("2 背景的 A 重畫:卡接回 A 的最底下、不搬到眼前的 B", A.el.contains(card) && !B.el.contains(card) && last(A) === card, { inA: A.el.contains(card), inB: B.el.contains(card) });
   ok("2 只有一張、沒有再問", cards().length === 1 && PEND.length === asked);
 
   // 3
-  show(A);
-  await vm.runInContext("csDraw(CS.tabs.get('A'))", ctx); await flush();
-  const before = B.el.children.indexOf(card);
-  ok("3 重畫的是 A,卡留在 B 原處", B.el.contains(card) && B.el.children.indexOf(card) === before && cards().length === 1);
+  const before = A.el.children.indexOf(card);
+  await vm.runInContext("csDraw(CS.tabs.get('B'))", ctx); await flush();
+  ok("3 重畫的是 B,卡留在 A 原處", A.el.contains(card) && A.el.children.indexOf(card) === before && cards().length === 1);
 
   // 4
-  show(B); ctx.running = true;
-  await vm.runInContext("csDraw(CS.tabs.get('B'))", ctx); await flush();
-  ok("4 回合在跑時重畫:卡跟著即時那一段留在 B、只有一張", B.el.contains(card) && cards().length === 1, cards().length);
+  show(A); ctx.running = true;
+  await vm.runInContext("csDraw(CS.tabs.get('A'))", ctx); await flush();
+  ok("4 回合在跑時重畫:卡跟著即時那一段留在 A、只有一張", A.el.contains(card) && cards().length === 1, cards().length);
   ctx.running = false;
 
   // 〔送出〕照原 id
@@ -135,7 +135,7 @@ const last = (T) => T.el.children[T.el.children.length - 1];
 
   // 5
   ok("前提:按過之後 errLive 收掉", errLive() === null);
-  await vm.runInContext("csDraw(CS.tabs.get('B'))", ctx); await flush();
+  await vm.runInContext("csDraw(CS.tabs.get('A'))", ctx); await flush();
   ok("5 按過之後重畫:那行不補回來", cards().length === 0 && !card.isConnected, cards().length);
 
   // 6
@@ -145,7 +145,18 @@ const last = (T) => T.el.children[T.el.children.length - 1];
   show(B);
   ok("前提:分頁關掉,卡跟著不見", !c2.isConnected);
   await vm.runInContext("csDraw(CS.tabs.get('B'))", ctx); await flush();
-  ok("6 下一次重畫時回到眼前那條、只有一張、沒有再問", B.el.contains(c2) && cards().length === 1 && PEND.length === asked + 1, { inB: B.el.contains(c2), n: cards().length, pend: PEND.length });
+  ok("6 別條重畫:卡不冒到 B、也不再問", !B.el.contains(c2) && cards().length === 0 && errLive() === null && PEND.length === asked + 1, { inB: B.el.contains(c2), n: cards().length, pend: PEND.length });
+
+  // 7
+  const C = tab("C"); show(B);
+  pendingResult = { id: "b3", n: 1, text: "[]" };
+  await vm.runInContext("errAsk('C')", ctx); await flush();
+  ok("7 回合結束:帶那條的 sid 問主行程", PEND[PEND.length - 1] === "C", PEND);
+  ok("7 …卡畫在 C(眼前是 B)", errLive() && C.el.contains(errLive().el) && !B.el.contains(errLive().el));
+  const n7 = PEND.length;
+  C.running = true; await vm.runInContext("errAsk('C')", ctx);
+  C.running = false; await vm.runInContext("errAsk('gone')", ctx);
+  ok("7 那條又在跑、或已經不在:不問", PEND.length === n7, PEND);
 
   console.log(red ? `\n${red} FAIL` : "\nALL PASS");
   process.exit(red ? 1 : 0);

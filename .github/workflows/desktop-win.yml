@@ -80,6 +80,7 @@ jobs:
         env:
           BLAVE_TEST_PYTHON: ${{ steps.py.outputs.python-path }}
           BLAVE_TEST_WINDOW: "1"
+          ELECTRON_ENABLE_STACK_DUMPING: "1"
         run: |
           red=0
           for t in tests/check_shell_*.js tests/check_version_matrix_shell.js tests/check_tests_window_guard.js; do

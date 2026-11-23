@@ -745,6 +745,8 @@ function libMktPick(mkt) {
   if (mkt === libBag().mkt) return;
   libBag().mktUser = true;   // 手動切過:之後改主要市場不蓋回去(renderer/market.js)
   libBag().mkt = mkt; LIB.gone = false; libTrack("lib_mkt_pick"); libPaint();
+  // 選了哪個市場(0.1.59 海外;lib_mkt_pick 只有名字、api 只收一格屬性,另開單一屬性的事件,同 lib_sort)
+  if (typeof trackEvent === "function") trackEvent("lib_mkt", { v: mkt === "all" || LIB_MARKETS.includes(mkt) ? mkt : "all" });
 }
 // 排序選單(§3.4):選中那項、觸發器上的值
 function libPaintSort() {
@@ -1300,6 +1302,7 @@ async function libSend(s, o) {
   sent.then((ok) => {
     if (ok) {
       libPendingSet(s.id, { id: s.id, env, before, sid: at.sid }); LIB.noNew = null; libTrack("library_use");
+      if (typeof trackEvent === "function") trackEvent("lib_use_mkt", { mkt: libMarket(s) || "unk" });   // 裝的是哪個市場的策略(null = 分不出來)
       if (o && o.from === "welcome") libTrack(local ? "wcard_use" : "wcard_use_cloud");
       // 這支的資料需求(§8):只在本機送——雲端沒有資料牆,這個屬性在那邊沒有意義
       if (local) { try { window.blave.trackEvent("lib_pick", { data: libPickData(s) }); } catch (_) { } }

@@ -3,7 +3,8 @@
 //   2. formPick:不可信的 chunk 只收型錄裡的形狀,任何一項不合整張丟
 //   3. formSentence:zh／en 組句(年份跟著商品、other 句尾、EN 小寫與冠詞);另跑網頁那份 web/tests/form_vectors.json
 //   4. 分派鏈:type "form" 進 formChunk;不認得的型別不丟錯
-//   5. 回合結束畫在這一輪最後一則還在 DOM 的回覆裡(背景分頁也是它自己那條);填入、我自己打、送出結算、送不出去
+//   5. 回合結束畫在這一輪最後一則還在 DOM 的回覆裡(背景分頁也是它自己那條);主鈕直接送出(spec chat-answer-buttons §8)、
+//      句子以冒號結尾時鈕字換「填進輸入框」只填不送、防誤觸、送出結算、送不出去、撤回
 //   6. 接線、字串、token、樣式、埋點白名單、手機中轉不轉 form
 // 跑法:node tests/check_shell_form.js(網頁那棵用 BLAVE_WEB_DIR、api 那棵用 BLAVE_API_DIR 指定)
 const fs = require("fs"), path = require("path");
@@ -49,12 +50,14 @@ const node = (tag) => { const e = { tagName: String(tag).toUpperCase(), children
 const all = (root) => [root].concat(...root.children.map(all));
 const ta = node("textarea"); ta.id = "ta";
 const ctx = { $: (id) => (id === "ta" ? ta : null), document: { createElement: node }, LANG: "zh", STRINGS: STR, sessionId: "desktop-aaaa1111", turnAiBubbles: [],
-  tracked: [], said: [], trackFeature: (n) => ctx.tracked.push(n), srSay: (s) => ctx.said.push(s), autosize: () => {} };
+  tracked: [], said: [], trackFeature: (n) => ctx.tracked.push(n), srSay: (s) => ctx.said.push(s), autosize: () => {},
+  now: 10000, performance: { now: () => ctx.now }, motionBaseMs: () => 180, sent: [], sendOk: true,
+  submitMessage: (m, o) => { ctx.sent.push([m, o]); return { then: (f) => f(ctx.sendOk) }; } };
 ctx.t = (k, v) => { let s = (STR[ctx.LANG] && STR[ctx.LANG][k]) || STR.en[k] || k; if (v) for (const n in v) s = s.split("{" + n + "}").join(v[n]); return s; };
 let loaded = false;
 try {
   new Function("ctx", "with (ctx) { " + formSrc.replace(/^let FORM = /m, "var FORM = ") +
-    "\n Object.assign(ctx, { formPick, formSentence, formChunk, formTurnEnd, formSnap, formSettle, formUnsend, formRepaint, getForm: () => FORM, setForm: (v) => { FORM = v; } }); }")(ctx);
+    "\n Object.assign(ctx, { formPick, formSentence, formChunk, formTurnEnd, formSnap, formSettle, formUnsend, formUndo, formRepaint, getForm: () => FORM, setForm: (v) => { FORM = v; } }); }")(ctx);
   loaded = typeof ctx.formPick === "function";
 } catch (e) { console.log("      " + e.message); }
 ok("renderer/form.js 載得起來(formPick／formSentence／formChunk／formTurnEnd／formSnap／formSettle／formUnsend／formRepaint)", loaded);
@@ -159,29 +162,49 @@ ok("formPick:chunk 不是物件 → null", loaded && ctx.formPick(null) === null
   pick("tmf");
   ok("換商品:年份跟著換;改選項什麼都不送、不記", lab("all") === "全部可用資料（2024 起）" && ctx.tracked.length === 0 && ta.value === "");
   const btn = (cls) => all(live).find((n) => n.tagName === "BUTTON" && new RegExp("\\b" + cls + "\\b").test(n.className));
-  ok("動作列:.btn-fill「用這些設定」＋.btn-quiet「我自己打」", !!btn("btn-fill") && btn("btn-fill").textContent === "用這些設定" && !!btn("btn-quiet") && btn("btn-quiet").textContent === "我自己打");
+  const btns = all(live).filter((n) => n.tagName === "BUTTON");
+  ok("動作列只剩一顆 .btn-fill「用這些設定」(「我自己打」拿掉)", btns.length === 1 && !!btn("btn-fill") && btn("btn-fill").textContent === "用這些設定" && !btn("btn-quiet"));
   pick("mxf");
-  btn("btn-fill").fire("click"); focused = null; btn("btn-fill").fire("click");
   const want = "幫我做台指期 MXF 5 分 K 的均線交叉策略回測，用全部可用資料（2001 起）";
-  ok("主鈕:組句填進輸入框、焦點進輸入框、游標句尾、記 clarify_filled、不送", ta.value === want && focused === "ta" && J(ta.sel) === J([want.length, want.length]) && F().filled === want && ctx.tracked[0] === "clarify_filled" && !!F().live);
+  ctx.now = F().shownAt + 100; ctx.sent = [];
+  btn("btn-fill").fire("click");
+  ok("畫出來 --motion-base(180ms)內按主鈕不算", ctx.sent.length === 0 && ctx.tracked.length === 0);
+  ctx.now = F().shownAt + 200; ta.value = "我的草稿";
+  btn("btn-fill").fire("click");
+  ok("主鈕:組好的句子直接送出(跟輸入框同一條路、typed)、草稿留著不清不合併、還沒記", J(ctx.sent) === J([[want, { typed: true }]]) && ta.value === "我的草稿" && ctx.tracked.length === 0 && !!F().live);
+  ctx.formSettle(want);
+  ok("回合真的送出去:表單整張收掉、記 clarify_click", !F().live && !all(A).some((n) => /\bcform\b/.test(n.className)) && J(ctx.tracked) === '["clarify_click"]');
   ctx.tracked = [];
-  btn("btn-quiet").fire("click");
-  ok("我自己打:輸入框裡是組出的句子就清掉、焦點回輸入框、記 clarify_self", ta.value === "" && focused === "ta" && F().filled === null && J(ctx.tracked) === '["clarify_self"]');
-  ta.value = "我自己的字"; btn("btn-quiet").fire("click");
-  ok("…輸入框是用戶自己打的字就不動", ta.value === "我自己的字");
-  // 送出:sendDraft 清空輸入框前 formSnap、回合 started／queued 才 formSettle;送不出去 formUnsend
+  ctx.formUndo(want, true);
+  ok("主鈕送出的那輪沒回覆沒收據就被停 → clarify_undo(只記一次)", J(ctx.tracked) === '["clarify_undo"]' && (ctx.formUndo(want, true), ctx.tracked.length === 1));
+  const again = () => { ctx.formChunk(CHUNK); ctx.formTurnEnd(true); ctx.tracked = []; ctx.now = F().shownAt + 200; return F().live; };
+  let el = again(); ta.value = ""; ctx.sent = []; ctx.sendOk = false;
+  all(el).find((n) => /\bbtn-fill\b/.test(n.className)).fire("click");
+  ok("送不出去(busy／引擎起不來):表單留著、inflight 清掉、不記", !!F().live && F().inflight === null && ctx.tracked.length === 0);
+  ctx.sendOk = true;
+  // 策略類型選「其他，自己描述」:組出的句子以冒號結尾 → 鈕字換「填進輸入框」、只填不送;選回別的換回來
+  const radiosOf = (root) => all(root).filter((n) => n.tagName === "INPUT");
+  const pickIn = (root, v) => { const rs = radiosOf(root), r0 = rs.find((x) => x.value === v); rs.filter((r) => r.name === r0.name).forEach((r) => { r.checked = r.value === v; }); r0.fire("change"); };
+  const useBtn = () => all(el).find((n) => /\bbtn-fill\b/.test(n.className));
+  pickIn(el, "other");
+  ok("選「其他」:鈕字換「填進輸入框」(掛 data-i18n form.fill)", useBtn().textContent === "填進輸入框" && useBtn().dataset.i18n === "form.fill");
+  ctx.sent = []; focused = null; useBtn().fire("click");
+  const half = "幫我做台指期 MXF 5 分 K 的策略回測，用全部可用資料（2001 起），策略是：";
+  ok("「填進輸入框」:只填不送、焦點進輸入框、游標句尾、記 clarify_filled", ctx.sent.length === 0 && ta.value === half && focused === "ta" && J(ta.sel) === J([half.length, half.length]) && F().filled === half && J(ctx.tracked) === '["clarify_filled"]');
+  pickIn(el, "ma");
+  ok("選回均線交叉:鈕字換回「用這些設定」", useBtn().textContent === "用這些設定" && useBtn().dataset.i18n === "form.use");
+  // 填入那條的結算照舊:sendDraft 清空輸入框前 formSnap、started／queued 才 formSettle;送不出去 formUnsend
   const send = (msg, started) => { ctx.formSnap(msg); ta.value = ""; if (started) ctx.formSettle(msg); else ctx.formUnsend(); };
-  ctx.tracked = []; btn("btn-fill").fire("click"); ctx.tracked = [];
-  send(want, false);
-  ok("送不出去(busy／引擎起不來):表單 DOM 還在、filled 還原、不記", !!F().live && F().live.parentNode === b3 && F().filled === want && ctx.tracked.length === 0);
-  send(want, true);
-  ok("填入原句送出、回合跑起來:表單整張收掉、記 clarify_sent", !F().live && !all(A).some((n) => /\bcform\b/.test(n.className)) && F().shown === false && F().filled === null && J(ctx.tracked) === '["clarify_sent"]');
-  const again = () => { ctx.formChunk(CHUNK); ctx.formTurnEnd(true); ctx.tracked = []; return F().live; };
-  let el = again(); all(el).find((n) => /\bbtn-fill\b/.test(n.className)).fire("click"); ctx.tracked = [];
-  send(ta.value + "，加停損", true);
-  ok("填入後改字送出 → clarify_sent_ed", !F().live && J(ctx.tracked) === '["clarify_sent_ed"]');
+  pickIn(el, "other"); useBtn().fire("click"); ctx.tracked = [];
+  send(half, false);
+  ok("填入後送不出去:表單 DOM 還在、filled 還原、不記", !!F().live && F().filled === half && ctx.tracked.length === 0);
+  send(half + "RSI 背離", true);
+  ok("填入後補字送出 → clarify_sent_ed,表單收掉", !F().live && J(ctx.tracked) === '["clarify_sent_ed"]');
+  el = again(); pickIn(el, "other"); useBtn().fire("click"); ctx.tracked = [];
+  send(half, true);
+  ok("填入原句送出 → clarify_sent", !F().live && J(ctx.tracked) === '["clarify_sent"]');
   again(); send("我自己想做 RSI", true);
-  ok("畫過、沒填、自己打字送出 → clarify_missed,表單也收掉", !F().live && J(ctx.tracked) === '["clarify_missed"]');
+  ok("畫過、沒按、自己打字送出 → clarify_missed,表單也收掉", !F().live && J(ctx.tracked) === '["clarify_missed"]');
   again(); ctx.formSettle("卡片送的那句");
   ok("沒經過 sendDraft 的入口(重送、卡片)送出:表單收掉、不記", !F().live && ctx.tracked.length === 0);
   ctx.formChunk(CHUNK); ctx.formTurnEnd(false);
@@ -193,7 +216,7 @@ ok("formPick:chunk 不是物件 → null", loaded && ctx.formPick(null) === null
   ok("這一輪沒有回覆泡泡:不畫", !F().live && all(C).length === 1);
   // 背景分頁:回合結束時 turnAiBubbles 是那條自己的(TAB_KEYS 換進來),畫在它的 .chat-thread 裡,眼前那條不多東西
   const B = thread("desktop-bbbb2222"), bb = bubble(B);
-  const saved = F(); ctx.setForm({ pending: null, live: null, filled: null, shown: false, inflight: null });
+  const saved = F(); ctx.setForm({ pending: null, live: null, filled: null, shown: false, inflight: null, shownAt: 0, undoable: null });
   ctx.sessionId = "desktop-bbbb2222"; ctx.turnAiBubbles = [bb];
   ctx.formChunk(Object.assign({}, CHUNK, { session_id: "desktop-bbbb2222" })); ctx.formTurnEnd(true);
   const bgLive = F().live; ctx.setForm(saved); ctx.sessionId = "desktop-aaaa1111";
@@ -207,18 +230,19 @@ ok("formPick:chunk 不是物件 → null", loaded && ctx.formPick(null) === null
 })();
 
 // ── 6. 接線、字串、token、樣式 ──
-ok("app.js:FORM_TAG 同 runtime _FORM_STRIP_RE 的 </?;FORM_OPEN_TAIL 藏長半截;LIVE_TAIL_TAGS 加 <form", app.includes('const FORM_TAG = /[ \\t]*<\\/?form\\b[^<>]*>[ \\t]*/g;') && app.includes("const FORM_OPEN_TAIL = /[ \\t]*<form\\b[^<>]*$/;") && /const LIVE_TAIL_TAGS = \[[^\]]*"<form"\]/.test(app)
+ok("app.js:FORM_TAG 同 runtime _FORM_STRIP_RE 的 </?;FORM_OPEN_TAIL 藏長半截;LIVE_TAIL_TAGS 加 <form", app.includes('const FORM_TAG = /[ \\t]*<\\/?form\\b[^<>]*>[ \\t]*/g;') && app.includes("const FORM_OPEN_TAIL = /[ \\t]*<form\\b[^<>]*$/;") && /const LIVE_TAIL_TAGS = \[[^\]]*"<form"[,\]]/.test(app)
   && /if \(text\.indexOf\("<form"\) >= 0 \|\| text\.indexOf\("<\/form"\) >= 0\) text = text\.replace\(FORM_TAG, ""\)\.replace\(\/\\s\+\$\/, ""\);/.test(app) && /if \(live\) \{\n    text = text\.replace\(FORM_OPEN_TAIL, ""\);/.test(app));
 ok("app.js 接線:sendDraft 清空前 formSnap;沒送出去的 unlock 叫 formUnsend;started／queued 才 formSettle;回合結束 formTurnEnd(!stopped && !faulted);換語言 applyStatic 叫 formRepaint",
   /if \(typeof sugSnap === "function"\) sugSnap\(msg\); if \(typeof formSnap === "function"\) formSnap\(msg\);[^\n]*\n  \$\("ta"\)\.value = "";/.test(app)
-  && /const unlock = \(\) => \{ if \(typeof sugUnsend === "function"\) sugUnsend\(\); running = false; turnStopping = false; turnUiSync\(\); if \(typeof formUnsend === "function"\) formUnsend\(\); \};/.test(app)
+  && /const unlock = \(\) => \{ if \(typeof sugUnsend === "function"\) sugUnsend\(\); running = false; turnStopping = false; turnUiSync\(\); if \(typeof formUnsend === "function"\) formUnsend\(\);[^\n]*\};/.test(app)
+  && /if \(typeof sugUndo === "function"\) sugUndo\(lastUserText, !turnGotReply && !turnHadTool\);[^\n]*\n    if \(typeof formUndo === "function"\) formUndo\(lastUserText, !turnGotReply && !turnHadTool\);/.test(app)
   && /if \(\(r\.started \|\| r\.queued\) && typeof formSettle === "function"\) formSettle\(msg\);/.test(app)
   && /if \(typeof sugTurnEnd === "function"\) sugTurnEnd\(!stopped && !faulted\);[^\n]*\n  if \(typeof formTurnEnd === "function"\) formTurnEnd\(!stopped && !faulted\);/.test(app)
   && /if \(typeof formRepaint === "function"\) formRepaint\(\);/.test(cut(app, "function applyStatic(", "\n}\n")));
 { const si = html.indexOf('<script src="suggest.js">'), fi = html.indexOf('<script src="form.js">'), ci = html.indexOf('<script src="chattabs.js">');
   ok("index.html:form.js 在 suggest.js 之後、chattabs.js 之前;form.css 有載", si > 0 && fi > si && ci > fi && /<link rel="stylesheet" href="form\.css">/.test(html)); }
 ok("form.js:四個常數(同網頁,parity 比原文)、狀態只在記憶體", /^const FORM_IDS = \["txf_backtest"\];$/m.test(formSrc) && /^const FORM_MAX_QUESTIONS = 5;$/m.test(formSrc) && /^const FORM_MAX_OPTIONS = 7;$/m.test(formSrc)
-  && /^let FORM = \{ pending: null, live: null, filled: null, shown: false, inflight: null \};$/m.test(formSrc) && !/localStorage|lsSet|saveSession|chat-results/.test(formSrc));
+  && /^let FORM = \{ pending: null, live: null, filled: null, shown: false, inflight: null, shownAt: 0, undoable: null \};$/m.test(formSrc) && !/localStorage|lsSet|saveSession|chat-results/.test(formSrc));
 ok("form.js 不讀「有沒有回合」(回合結束在 turnEndPost 裡同步跑,已在那個分頁的 withTab 裡)、不用 $(\"chat-scroll\")", !!formSrc && !/\brunning\b|busyOn\(|csAnyTurn\(|chat-scroll/.test(formSrc.replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, "")));
 { const po = (lang) => { const s = fs.readFileSync(path.join(SHELL, "i18n", lang + ".po"), "utf8"), o = {}; for (const m of s.matchAll(/^msgid "([^"]+)"\nmsgstr "((?:[^"\\]|\\.)*)"/gm)) o[m[1]] = m[2]; return o; };
   const zh = po("zh"), en = po("en");
@@ -229,7 +253,7 @@ ok("form.js 不讀「有沒有回合」(回合結束在 turnEndPost 裡同步跑
     "form.txf_backtest.per.all": ["全部可用資料（{year} 起）", "All available data (from {year})"], "form.txf_backtest.per.y3": ["近 3 年", "Last 3 years"], "form.txf_backtest.per.y1": ["近 1 年", "Past year"],
     "form.txf_backtest.st.ma": ["均線交叉", "MA crossover"], "form.txf_backtest.st.ch": ["通道突破", "Channel breakout"], "form.txf_backtest.st.other": ["其他，自己描述", "Other, I'll describe"],
     "form.note.nodata": ["分 K 要 Blave 資料，這個帳號目前拿不到", "Intraday bars need Blave data; this account can't get it right now"], "form.note.nodata_signed_out": ["分 K 要 Blave 資料，要先登入", "Intraday bars need Blave data; sign in to Blave first"],
-    "form.use": ["用這些設定", "Use these settings"], "form.self": ["我自己打", "I'll type it"], "form.say": ["有幾個設定要選，表單在回覆下面", "A few settings to pick; the form is under the reply"],
+    "form.use": ["用這些設定", "Use these settings"], "form.fill": ["填進輸入框", "Fill in"], "form.say": ["有幾個設定要選，表單在回覆下面", "A few settings to pick; the form is under the reply"],
     "form.txf_backtest.sentence": ["幫我做台指期 {code} {tf} 的{st}策略回測，用{per}", "Backtest {st} strategy on TAIFEX {code} {tf} bars, using {per}"],
     "form.txf_backtest.sentence_other": ["幫我做台指期 {code} {tf} 的策略回測，用{per}，策略是：", "Backtest a strategy on TAIFEX {code} {tf} bars, using {per}; the strategy is:"],
   };
@@ -249,7 +273,7 @@ ok("form.js 不讀「有沒有回合」(回合結束在 turnEndPost 裡同步跑
     && /\.cform-opts \{[^}]*flex-wrap: wrap;[^}]*column-gap: var\(--space-16\);/.test(css) && /\.cform-opt \{[^}]*min-height: 44px;/.test(css) && /\.cform-opt input \{[^}]*width: 18px; height: 18px;[^}]*border-radius: var\(--radius-pill\);[^}]*var\(--check-bg\)[^}]*border: 1px solid var\(--check-border\);/.test(css)
     && /\.cform-opt input:checked \{[^}]*background-color: var\(--check-on-bg\);[^}]*border-color: var\(--check-on-bg\);[^}]*background-image: var\(--check-on-radio\);/.test(css) && /\.cform-opt input:focus-visible \{ outline: 2px solid var\(--focus-ring\); outline-offset: 2px; \}/.test(css));
   ok("form.css:題與題之間 24(設計稽核:組內列距約 26,組間要比它大)", /\.cform fieldset \+ fieldset \{ margin-top: var\(--space-24\); \}/.test(css));
-  ok("form.css:「我自己打」熱區照 .busy-fix 補到 44(全域 .btn-quiet::before 只有 -6／-4)", /\.cform-self::before \{ inset: auto; left: 50%; top: 50%; width: max\(44px, calc\(100% \+ 8px\)\); height: 44px; transform: translate\(-50%, -50%\); \}/.test(css));
+  ok("form.css:「我自己打」拿掉,它的熱區規則一起拿掉", !/cform-self/.test(css) && !/cform-self|clarify_self|form\.self/.test(formSrc));
   ok("form.css:新寫的 :hover 都包在 @media (hover: hover)", !!css && hovers === inHover, { hovers, inHover }); }
 // 全 app 的 checkbox／radio(appearance: none 的 18px 控件)off 框都讀 --check-border:dark 值換 greyMedium(Wei 拍 B)一處改全站。列舉,多一顆沒跟就紅
 { const hits = [];

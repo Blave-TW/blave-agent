@@ -518,6 +518,11 @@ VALIDATE_TIMEOUT_S = 5
 _REFUSED = (400, 413)   # = report_uploader._PERMANENT_STATUS: the same bytes will never pass
 
 
+class ReportRefused(ValueError):
+    """A report refused on purpose with what to fix; the agent fixes it and sends again in the same
+    turn, so lib/error_report.py does not offer it to the user as a bug."""
+
+
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
     # urllib turns a POST answered 301/302/303 into a GET to the Location — any host, plain http —
     # and keeps x-api-key on it. A 3xx here is an HTTPError instead: no verdict, written unchecked.
@@ -556,7 +561,7 @@ def _platform_check(doc):
             detail = json.loads(e.read() or b"{}").get("error") or ""
         except Exception:  # noqa: BLE001 - an unreadable body still means refused
             detail = ""
-        raise ValueError(f"The platform refused report {doc['id']}, so nothing was written: "
+        raise ReportRefused(f"The platform refused report {doc['id']}, so nothing was written: "
                          f"HTTP {e.code} {detail}".rstrip() + ". Fix what it names and call it again "
                          "with the same id in this turn.") from None
     except Exception:  # noqa: BLE001 - no verdict (offline, timeout, TLS…) never blocks a report

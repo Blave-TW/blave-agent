@@ -23,9 +23,11 @@ const cutFn = (s, name) => { const i = s.indexOf("function " + name + "("); if (
 // 列表(WD_ROWS 與來源常數)從原文切出來跑:測試列舉的就是畫面用的那一份
 const TAB = (() => { const a = src.indexOf("const WD_P ="), b = src.indexOf("const WD = {"); const P = {}; vm.createContext(P); vm.runInContext(src.slice(a, b).replace(/^const /gm, "var "), P); return P; })();
 const ROWS = TAB.WD_ROWS;
-// 「看全部資料」該開的網址:逐字寫在這裡(不從被測的程式推)。台指期在台股那一頁
-const DOCS = { zh: { crypto: "https://blave.org/docs/zh/data_crypto", tw: "https://blave.org/docs/zh/data_twstock", txf: "https://blave.org/docs/zh/data_twstock" },
-  en: { crypto: "https://blave.org/docs/en/data_crypto", tw: "https://blave.org/docs/en/data_twstock", txf: "https://blave.org/docs/en/data_twstock" } };
+// 「看全部資料」該開的網址:逐字寫在這裡(不從被測的程式推)。台指期在台股那一頁;美股沒有資料頁(web _DOCS_PAGES 沒有),null = 不出連結、不開
+const DOCS = { zh: { crypto: "https://blave.org/docs/zh/data_crypto", us: null, tw: "https://blave.org/docs/zh/data_twstock", txf: "https://blave.org/docs/zh/data_twstock" },
+  en: { crypto: "https://blave.org/docs/en/data_crypto", us: null, tw: "https://blave.org/docs/en/data_twstock", txf: "https://blave.org/docs/en/data_twstock" } };
+// 分段順序(Wei 11-20 已裁第 1 條,中英同序)與每個市場該有哪幾欄(已裁第 4 條:美股只有免費欄,沒有 Blave 付費美股資料)
+const MKS = ["crypto", "us", "tw", "txf"];
 // 點某一列該落進輸入框的句子:模板代入那一列的 .an。比對時拿掉半形空白(中文模板在英數兩側補的那一格由 wdAsk 管,另外斷言)
 const nosp = (x) => String(x).replace(/ /g, "");
 const askOf = (L, id) => String(STR[L]["wd.ask"]).replace("{name}", STR[L]["wd.r." + id + ".an"]);
@@ -91,9 +93,9 @@ if (!process.versions.electron) {
     /<button class="wl-fold" id="wl-fold" type="button" aria-expanded="false" aria-controls="wl"><span data-i18n="wd\.title"><\/span><span class="mp-chev" aria-hidden="true"><\/span><\/button>/.test(html)
     && /\.wl-fold \{[^}]*display: inline-flex; align-items: center;/.test(css) && /\.wl-fold\[aria-expanded="true"\] \.mp-chev \{ transform: rotate\(-135deg\); margin-bottom: -2px; \}/.test(css) && !/›/.test(html.slice(html.indexOf('id="wl-fold"'), html.indexOf("</button>", html.indexOf('id="wl-fold"')))) && /<div class="wl" id="wl" hidden>/.test(html)
     && !/localStorage|Prefs|prefs/.test(src.slice(src.indexOf('$("wl-fold").addEventListener'), src.indexOf("/* ── 入門步驟(E)"))));
-  ok("② #wl 骨架:頂端小標拿掉(摺疊鈕已經寫了 wd.title)、市場分段 #wl-seg(.lib-seg 配方、三格 crypto / tw / txf、加密預設選中)、#wl-body、頁尾 .wl-foot 裡依序是 #wl-all(.btn-quiet、字固定 = data-i18n wd.all,同設定頁條款那兩顆外開鈕的做法)與 #wl-state(aria-live);狀態句不在清單上面",
+  ok("② #wl 骨架:頂端小標拿掉(摺疊鈕已經寫了 wd.title)、市場分段 #wl-seg(.lib-seg 配方、四格依序 crypto / us / tw / txf、加密預設選中)、#wl-body、頁尾 .wl-foot 裡依序是 #wl-all(.btn-quiet、字固定 = data-i18n wd.all,同設定頁條款那兩顆外開鈕的做法)與 #wl-state(aria-live);狀態句不在清單上面",
     /<div class="wl-top">\s*<span class="lib-seg" id="wl-seg" role="group" data-i18n-aria="wd\.title">/.test(html)
-    && (html.slice(html.indexOf('id="wl-seg"'), html.indexOf("</span>", html.indexOf('id="wl-seg"'))).match(/data-mk="(crypto|tw|txf)" aria-pressed="(true|false)" data-i18n="wd\.mk\.\1"/g) || []).length === 3
+    && (html.slice(html.indexOf('id="wl-seg"'), html.indexOf("</span>", html.indexOf('id="wl-seg"'))).match(/data-mk="(crypto|us|tw|txf)" aria-pressed="(true|false)" data-i18n="wd\.mk\.\1"/g) || []).map((x) => /data-mk="([a-z]+)"/.exec(x)[1]).join() === MKS.join()
     && /data-mk="crypto" aria-pressed="true"/.test(html) && /<div class="wl-body" id="wl-body"><\/div>\s*<div class="wl-foot"><button class="btn-quiet" id="wl-all" type="button" data-i18n="wd\.all"><\/button><p class="wl-state" id="wl-state" aria-live="polite"><\/p><\/div>/.test(html)
     && html.split('id="wl-state"').length === 2);
   ok("② 載入順序:welcome.css 有載;welcome.js 在 app.js 之後(用 app.js 的 $ / t / acct / planVars / autosize / trackFeature;放最後,只有 0.1.33 第一次對話 intro.js(用 welcome.js 的 stFill / runningNow)排在它後面;不插進 app.js → suggest.js 之間)", /<link rel="stylesheet" href="welcome\.css">/.test(html) && html.indexOf('src="welcome.js"') > html.indexOf('src="app.js"') && (html.match(/<script src="[^"]+"><\/script>/g) || []).slice(-4).join() === '<script src="welcome.js"></script>,<script src="intro.js"></script>,<script src="chattabs.js"></script>,<script src="promptslot.js"></script>');   // 0.1.37 對話分頁核心(chattabs.js)要用前面每一支的全域;0.1.45 提示格(promptslot.js)要用 chattabs.js 的 csAnyAwait,接在最後
@@ -118,19 +120,25 @@ if (!process.versions.electron) {
   const FIELDS = ["nm", "fq", "sy", "an"], missing = [];
   for (const [id, mk, s] of ROWS) {
     for (const L of ["zh", "en"]) for (const f of FIELDS) if (!STR[L]["wd.r." + id + "." + f]) missing.push(L + ":wd.r." + id + "." + f);
-    if (!["crypto", "tw", "txf"].includes(mk) || ![TAB.WD_P, TAB.WD_B].includes(s)) missing.push("bad row " + id);
+    if (!MKS.includes(mk) || ![TAB.WD_P, TAB.WD_B].includes(s)) missing.push("bad row " + id);
   }
-  ok("② 每一列的字 zh / en 都齊(" + ROWS.length + " 列 × nm / fq / sy / an)", ROWS.length === 16 && ROWS.every((r) => r.length === 3) && missing.length === 0, missing.join(", "));
+  ok("② 每一列的字 zh / en 都齊(" + ROWS.length + " 列 × nm / fq / sy / an)", ROWS.length === 17 && ROWS.every((r) => r.length === 3) && missing.length === 0, missing.join(", "));
   const rowKeys = new Set(ROWS.flatMap((r) => FIELDS.map((f) => "wd.r." + r[0] + "." + f)));
   const extra = []; for (const L of ["zh", "en"]) for (const k of Object.keys(STR[L])) if (k.startsWith("wd.r.") && !rowKeys.has(k)) extra.push(L + ":" + k);
   ok("② 字串表的 wd.r.* 恰好是 WD_ROWS × 四個欄位:沒有多出來的列(BingX、CME／ICE、公開大盤、公開期貨法人、異常漲跌,與只進目錄的 14 列)、沒有多出來的欄位(.nt / .sn / .us / .wnm)", extra.length === 0, extra.join(", "));
-  ok("② 列的順序就是畫面順序(WD_ROWS 沒有順序欄):加密 bnk fng ti conc liq fr、台股 twd inst rev twm br、台指期 txd txk txio fi pcr",
-    ["crypto", "tw", "txf"].map((mk) => ROWS.filter((r) => r[1] === mk).map((r) => r[0]).join(" ")).join("|") === "bnk fng ti conc liq fr|twd inst rev twm br|txd txk txio fi pcr" && /const wdWel = \(mk\) => WD_ROWS\.filter\(\(r\) => r\[1\] === mk\);/.test(src));
-  const fixed = ["wd.title", "wd.mk.crypto", "wd.mk.tw", "wd.mk.txf", "wd.col.free", "wd.col.blave", "wd.note.out", "wd.note.out.m", "wd.note.outNoNum", "wd.note.none", "wd.note.trial", "wd.note.noneNoNum", "wd.note.billed", "wd.note.billedNoNum", "wd.note.noplan", "wd.note.payfail", "wd.note.nobal", "wd.note.topup", "wd.state.trial", "wd.all", "wd.sep", "wd.ask", "wd.ask.build"];
-  ok("② 固定字 " + fixed.length + " 個 zh / en 都有、wd.* 除了列的字就只有這些;三個市場的歡迎頁兩欄都有列(免費欄空著那句 wd.empty.* 與 .wl-empty 隨台指期免費日線退役)", fixed.every((k) => STR.zh[k] && STR.en[k])
+  ok("② 列的順序就是畫面順序(WD_ROWS 沒有順序欄):加密 bnk fng ti conc liq fr、美股 usd、台股 twd inst rev twm br、台指期 txd txk txio fi pcr;WD_ROWS 裡市場第一次出現的順序 = 分段順序",
+    MKS.map((mk) => ROWS.filter((r) => r[1] === mk).map((r) => r[0]).join(" ")).join("|") === "bnk fng ti conc liq fr|usd|twd inst rev twm br|txd txk txio fi pcr"
+    && ROWS.map((r) => r[1]).filter((v, i, a) => a.indexOf(v) === i).join() === MKS.join() && /const wdWel = \(mk\) => WD_ROWS\.filter\(\(r\) => r\[1\] === mk\);/.test(src));
+  const fixed = ["wd.title", "wd.mk.crypto", "wd.mk.us", "wd.mk.tw", "wd.mk.txf", "wd.col.free", "wd.col.blave", "wd.note.out", "wd.note.out.m", "wd.note.outNoNum", "wd.note.none", "wd.note.trial", "wd.note.noneNoNum", "wd.note.billed", "wd.note.billedNoNum", "wd.note.noplan", "wd.note.payfail", "wd.note.nobal", "wd.note.topup", "wd.state.trial", "wd.all", "wd.sep", "wd.ask", "wd.ask.build"];
+  ok("② 固定字 " + fixed.length + " 個 zh / en 都有、wd.* 除了列的字就只有這些;每個市場的欄恰好是 COLS 列的那幾欄、每欄都有列——加密、台股、台指期兩欄,美股只有免費欄(Wei 11-20 已裁第 4 條:沒有 Blave 付費美股資料)(免費欄空著那句 wd.empty.* 與 .wl-empty 隨台指期免費日線退役)", fixed.every((k) => STR.zh[k] && STR.en[k])
     && ["zh", "en"].every((L) => Object.keys(STR[L]).filter((k) => k.startsWith("wd.") && !k.startsWith("wd.r.")).sort().join() === fixed.slice().sort().join())
-    && ["crypto", "tw", "txf"].every((mk) => [TAB.WD_P, TAB.WD_B].every((sr) => ROWS.some((r) => r[1] === mk && r[2] === sr)))
+    && (() => { const COLS = { crypto: [TAB.WD_P, TAB.WD_B], us: [TAB.WD_P], tw: [TAB.WD_P, TAB.WD_B], txf: [TAB.WD_P, TAB.WD_B] };
+      return Object.keys(COLS).join() === MKS.join() && MKS.every((mk) => [TAB.WD_P, TAB.WD_B].every((sr) => ROWS.some((r) => r[1] === mk && r[2] === sr) === COLS[mk].includes(sr))); })()
     && !/wl-empty|wd\.empty/.test(src + css));
+  ok("② 試用那句(wd.state.trial)只在這個分段有 Blave 欄時出:美股只有免費欄,不講「這些資料免費用到…」;狀態句其餘時候清空(#wl-state 每次重畫先清)",
+    /st\.textContent = ""; body\.textContent = "";/.test(cutFn(src, "wdPaint"))
+    && /\n  if \(m\.k === "trial" && wdWel\(WD\.mk\)\.some\(\(r\) => r\[2\] === WD_B\)\) st\.textContent = t\("wd\.state\.trial", v\);\n/.test(cutFn(src, "wdPaint"))
+    && (src.match(/wd\.state\.trial/g) || []).length === 1 && !ROWS.some((r) => r[1] === "us" && r[2] === TAB.WD_B));
   const wd = (L) => Object.keys(STR[L]).filter((k) => k.startsWith("wd.")).map((k) => STR[L][k]);
   ok("② 字裡不出現「付費」/ paid;價格只在 wd.note.billed 一句({r} 由 account_status 下發,不寫死 2 TWD);試用天數也是 {t}", !wd("zh").some((s) => /付費/.test(s)) && !wd("en").some((s) => /\bpaid\b/i.test(s))
     && ["zh", "en"].every((L) => Object.keys(STR[L]).filter((k) => k.startsWith("wd.") && /\{r\}/.test(STR[L][k])).join() === "wd.note.billed") && !wd("zh").concat(wd("en")).some((s) => /\d\s*TWD/.test(s))
@@ -196,20 +204,23 @@ if (!process.versions.electron) {
     // 「看全部資料」:wdDocs 原文 + app.js 的 docsUrl 原文在純 node 跑;外開與埋點換成記錄器
     { const dl = /^const docsUrl = \(page\) => "https:\/\/blave\.org\/docs\/" \+ LANG \+ "\/" \+ page;$/m.exec(appSrc);
       const docs = (L, mk) => { const log = { ext: [], tf: [], painted: 0 }, C = { LANG: L, WD: { mk }, trackFeature: (n) => log.tf.push(n), wdPaint: () => { log.painted++; }, window: { blave: { openExternal: (u) => { log.ext.push(u); } } } };
-        vm.createContext(C); vm.runInContext((dl ? dl[0] : "") + "\n" + cutFn(src, "wdDocs") + "\nwdDocs();", C); return log; };
+        vm.createContext(C); vm.runInContext((dl ? dl[0] : "") + "\n" + ((/^const WD_DOCS = .*$/m.exec(src) || [""])[0]) + "\n" + cutFn(src, "wdDocs") + "\nwdDocs();", C); return log; };
       const got = {}, badDocs = [];
-      for (const L of ["zh", "en"]) { got[L] = {}; for (const mk of ["crypto", "tw", "txf"]) { const g = docs(L, mk); got[L][mk] = g.ext[0];
-        if (g.ext.length !== 1 || g.ext[0] !== DOCS[L][mk] || g.tf.join() !== "welcome_data_all" || g.painted !== 0) badDocs.push(L + ":" + mk + " " + JSON.stringify(g)); } }
-      ok("② 點「看全部資料」→ 用瀏覽器開網站的資料文件頁:加密 → /docs/<語言>/data_crypto、台股與台指期 → /docs/<語言>/data_twstock(三個市場 × zh / en 六個網址逐字比對),各外開恰好一次、記 welcome_data_all、不重畫清單",
+      for (const L of ["zh", "en"]) { got[L] = {}; for (const mk of MKS) { const g = docs(L, mk); got[L][mk] = g.ext[0];
+        const want = DOCS[L][mk];
+        if (want === null ? g.ext.length !== 0 || g.tf.length !== 0 || g.painted !== 0 : g.ext.length !== 1 || g.ext[0] !== want || g.tf.join() !== "welcome_data_all" || g.painted !== 0) badDocs.push(L + ":" + mk + " " + JSON.stringify(g)); } }
+      ok("② 點「看全部資料」→ 用瀏覽器開網站的資料文件頁:加密 → /docs/<語言>/data_crypto、台股與台指期 → /docs/<語言>/data_twstock(三個市場 × zh / en 六個網址逐字比對),各外開恰好一次、記 welcome_data_all、不重畫清單;美股沒有資料頁:什麼都不開、不記",
         !!dl && badDocs.length === 0, badDocs.join("\n    ") || JSON.stringify(got));
       ok("② 接線:#wl-all 的 click 直接接 wdDocs(不切換任何模式、WD 沒有 all 這個狀態);網址的 base 與語言段同 legalUrl / acctUrl 那一套(app.js docsUrl,用 LANG);字是固定的 wd.all、wdPaint 不再改它",
-        /\n\$\("wl-all"\)\.addEventListener\("click", wdDocs\);\n/.test(src) && (src.match(/\$\("wl-all"\)/g) || []).length === 1 && !/WD\.all|\ball:/.test(src.slice(src.indexOf("const WD = {"), src.indexOf("\n", src.indexOf("const WD = {"))))
-        && !/blave\.org/.test(src.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "")) && /docsUrl\(WD\.mk === "crypto" \? "data_crypto" : "data_twstock"\)/.test(cutFn(src, "wdDocs")) && !/wdPaint|WD\.\w+\s*=[^=]/.test(cutFn(src, "wdDocs"))
+        /\n\$\("wl-all"\)\.addEventListener\("click", wdDocs\);\n/.test(src) && (src.match(/\$\("wl-all"\)/g) || []).length === 2
+        && /\n  \$\("wl-all"\)\.hidden = !WD_DOCS\[WD\.mk\];\n/.test(cutFn(src, "wdPaint"))
+        && /const WD_DOCS = \{ crypto: "data_crypto", tw: "data_twstock", txf: "data_twstock" \};/.test(src) && !/WD\.all|\ball:/.test(src.slice(src.indexOf("const WD = {"), src.indexOf("\n", src.indexOf("const WD = {"))))
+        && !/blave\.org/.test(src.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "")) && /const page = WD_DOCS\[WD\.mk\];\n  if \(!page\) return;\n  trackFeature\("welcome_data_all"\);\n  window\.blave\.openExternal\(docsUrl\(page\)\);/.test(cutFn(src, "wdDocs")) && !/wdPaint|WD\.\w+\s*=[^=]/.test(cutFn(src, "wdDocs"))
         && STR.zh["wd.all"] === "看全部資料" && STR.en["wd.all"] === "See All Data");
       // 主行程那一關:open-external IPC 走 openWebSafe(webUrl:http(s)、不帶帳密),六個網址原樣放行
       const mainSrc = read(path.join(SHELL, "main.js")), M = {}; vm.createContext(M); vm.runInContext(cutFn(mainSrc, "webUrl") + "\nthis.webUrl = webUrl;", M); M.URL = URL;
       ok("② 主行程放行:open-external 的 handler 是 openWebSafe,六個網址過 webUrl 原樣回來(/docs/ 路徑不會被擋)", /handle\("open-external", \(_e, url\) => openWebSafe\(url\), false\);/.test(mainSrc)
-        && ["zh", "en"].every((L) => ["crypto", "tw", "txf"].every((mk) => M.webUrl(DOCS[L][mk]) === DOCS[L][mk]))); }
+        && ["zh", "en"].every((L) => MKS.filter((mk) => DOCS[L][mk]).every((mk) => M.webUrl(DOCS[L][mk]) === DOCS[L][mk]))); }
     ok("② 第一次上色不靠載入順序:welcome.js 檔尾在 applyStatic 已經跑過時(#wl-seg 的 aria-label 是它填的)自己補畫一次", /\nif \(\$\("wl-seg"\)\.hasAttribute\("aria-label"\)\) wdPaint\(\);\n$/.test(src) && /id="wl-seg" role="group" data-i18n-aria="wd\.title">/.test(html) && !/id="wl-seg"[^>]*\saria-label=/.test(html));
     ok("② 模板 wd.ask 兩語都有、各恰好一個 {name}、沒有別的佔位", ["zh", "en"].every((L) => { const tpl = STR[L]["wd.ask"] || ""; return tpl.split("{name}").length === 2 && !/[{}]/.test(tpl.replace("{name}", "")); }), JSON.stringify([STR.zh["wd.ask"], STR.en["wd.ask"]]));
     ok("② wdAsk:中文模板貼著中文字、資料名頭尾是英數 → 補半形空白;頭尾是中文不補;英文模板不重複補;模板沒有 {name} 原樣回",
@@ -460,7 +471,7 @@ app.whenReady().then(async () => {
     ok("③ A2 hover:滑到列上 → 底色換掉、小字換成 --ink-2、› 換色;移開全部回來", !h0.on && h1.on && !h2.on && h0.bg === k.tok.bg && h1.bg !== h0.bg && h0.mt !== k.tok.ink2 && h1.mt === k.tok.ink2 && h1.go !== h0.go && JSON.stringify(h2) === JSON.stringify(h0), JSON.stringify([h0, h1, h2, k.tok])); }
   { const sh = await js(`[...$("wl-seg").querySelectorAll("button")].map((b) => { b.scrollIntoView({ block: "center" }); const r = b.getBoundingClientRect(), x = r.left + r.width / 2, cy = (r.top + r.bottom) / 2; let hit = 0;
       for (let y = Math.floor(cy) - 30; y <= Math.ceil(cy) + 30; y++) { if (document.elementFromPoint(x, y) === b) hit++; } return { h: r.height, hit }; })`);
-    ok("③ 市場分段三格的熱區實測 ≥ 44(視覺 30 高、::before 上下外擴,沒有被容器裁掉)", sh.length === 3 && sh.every((x) => x.h === 30 && x.hit >= 44), JSON.stringify(sh)); }
+    ok("③ 市場分段每一格(" + MKS.length + " 格)的熱區實測 ≥ 44(視覺 30 高、::before 上下外擴,沒有被容器裁掉)", sh.length === MKS.length && sh.every((x) => x.h === 30 && x.hit >= 44), JSON.stringify(sh)); }
   // 窄:上下疊、免費在上
   w.setSize(1000, 900); await wait(400); s = await snap();
   ok("③ 1000 寬(中欄 < 760):上下疊、免費欄在上", s.cols[1].r.top >= s.cols[0].r.bottom - 1 && s.cmp2 && s.cols.length === 2 && s.cols[0].cap === Z["wd.col.free"], JSON.stringify([s.cols[0].r, s.cols[1].r]));
@@ -493,7 +504,7 @@ app.whenReady().then(async () => {
   await js(`$("wl-seg").querySelector('[data-mk="txf"]').click()`); await wait(50); s = await snap();
   ok("③ 切到台指期:免費欄 1 列(台指期日線、小字「日・1998 年起」)、Blave 欄 4 列(第一列是分線)", s.cols[0].rows === 1 && s.cols[1].rows === 4
     && (await js(`(() => { const c = $("wl-body").querySelectorAll(".wl-col"), a = c[0].querySelector(".wd-row"), b = c[1].querySelector(".wd-row"); return a.dataset.id === "txd" && b.dataset.id === "txk" && a.querySelector(".wd-nm").textContent === t("wd.r.txd.nm") && b.querySelector(".wd-nm").textContent === t("wd.r.txk.nm") && a.querySelector(".wd-mt").textContent === t("wd.r.txd.fq") + t("wd.sep") + t("wd.r.txd.sy"); })()`)), JSON.stringify(s.cols.map((c) => c.rows)));
-  ok("③ 分段選中態跟著換", (await js(`[...$("wl-seg").querySelectorAll("button")].map((b) => b.getAttribute("aria-pressed")).join()`)) === "false,false,true");
+  ok("③ 分段選中態跟著換", (await js(`[...$("wl-seg").querySelectorAll("button")].map((b) => b.getAttribute("aria-pressed")).join()`)) === MKS.map((mk) => String(mk === "txf")).join());
   await js(`$("wl-seg").querySelector('[data-mk="crypto"]').click()`); await wait(50);
   // 登入後的各種狀態
   const base = `hasToken = true; acct = { can_run: true, data_included: false, data_access: "billed", data_hourly: 2, trial_days: 14, plan: { state: "none", trial_free_until: null } }`;

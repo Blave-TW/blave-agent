@@ -147,6 +147,16 @@ def _try_lock(fd):
         return False
 
 
+def _iterate(fn, *args):
+    """lib/iterate's per-turn counters (AGENTS.md › Iteration Brakes). A workspace without lib/iterate.py
+    (half-updated) counts nothing; IterateRefused, a SystemExit, is the one thing that stops a run."""
+    try:
+        from lib import iterate
+    except ImportError:
+        return None
+    return getattr(iterate, fn)(*args)
+
+
 def _hold_backtest_lock(name, out_dir, wait_s=0.0):
     if name in _held_backtest_locks:
         return
@@ -996,7 +1006,7 @@ def _mint_version(config, stats, mode, src=None):
                                indent=None)
 
             items.append(entry)
-            for old in items[:-VERSIONS_KEEP]:  # canon §8: keep 20; the api sweeps its own copy
+            for old in items[:-VERSIONS_KEEP]:  # canon §8: keep VERSIONS_KEEP; the api sweeps its own copy
                 try:
                     os.remove(vdir / f"v{old.get('n')}.json")
                 except OSError:
@@ -1082,6 +1092,42 @@ def _clear_rerun(strategy_name):
         os.remove(versions_dir(strategy_name) / 'rerun.json')
     except OSError:
         pass
+
+
+LIBRARY_PICKS = _REPO_ROOT / 'state' / 'library_picks.json'   # = shell/main.js LIB_PICKS_FILE
+LIBRARY_PICK_TTL_S = 24 * 3600
+
+
+def _claim_library_pick(strategy_name, out_dir, src):
+    """A desktop 策略庫 pick (shell/main.js libraryDownload records sha256(code) → listing id) gets
+    its source.json on its first backtest, so it counts as a library install whatever the agent
+    skipped (references/marketplace.md › Desktop-downloaded picks). Byte-identical code only, and
+    only while every version under this name is that code: a re-install over the user's own
+    strategy of the same name, a fork (its own STRATEGY_NAME, so other bytes) and a bundle's split
+    files never match. A matched record is used up whether or not it labels anything."""
+    if not src or (Path(out_dir) / 'source.json').exists():
+        return
+    try:
+        picks = load_json(LIBRARY_PICKS, encoding='utf-8')
+    except (OSError, ValueError):
+        return
+    digest = hashlib.sha256(src).hexdigest()
+    pick = picks.get(digest) if isinstance(picks, dict) else None
+    if not isinstance(pick, dict):
+        return
+    try:
+        del picks[digest]
+        _write_json_atomic(LIBRARY_PICKS, picks)
+    except OSError:
+        return   # not used up → not claimed: one record must never label two strategies
+    sid, at = pick.get('id'), pick.get('at')
+    if not (type(sid) is int and 0 < sid < 10 ** 10 and isinstance(at, (int, float))
+            and 0 <= time.time() - at / 1000 <= LIBRARY_PICK_TTL_S):
+        return
+    from lib.strategy import hash_matches, load_index
+    items = [i for i in ((load_index(strategy_name) or {}).get('items') or []) if isinstance(i, dict)]
+    if items and all(hash_matches(src, i.get('code_hash')) for i in items):
+        _write_json_atomic(Path(out_dir) / 'source.json', {'marketplace_id': sid}, indent=None)
 
 
 FEED_WAIT_ENV = 'BLAVE_FEED_WAIT_FILE'   # = manager/wait_for_bar FEED_WAIT_ENV
@@ -2501,6 +2547,7 @@ def _run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
     if mode == 'backtest':
         _hold_backtest_lock(strategy_name, out_dir,
                             QUIET_LOCK_WAIT_S if os.environ.get('BLAVE_QUIET') == '1' else 0.0)
+        _iterate('before_backtest', strategy_name, src0)   # may refuse (round / time limit), before any fetch
     # Without Telegram, make_sender() (evaluated before run()) logs a warning first, which
     # implicitly installs a bare stderr StreamHandler and would make basicConfig a no-op.
     # Drop only that one (not force=True) so handlers other code attached stay in place.
@@ -2671,6 +2718,9 @@ def _run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
         total_ret  = float(np.prod(1 + np.nan_to_num(pf_ret)) - 1) * 100
         mdd        = -abs(mdd_raw) * 100  # drawdown is a loss from peak → always ≤ 0
         bench_ret  = (close_v[-1] / close_v[0] - 1) * 100
+        # Same-symbol buy-and-hold Sharpe on the same bars: the auto-iterate stop rule compares risk-adjusted
+        # (lib/iterate.good_enough); return alone is beaten by raising exposure
+        bench_sharpe = compute_stats(np.concatenate([[0.0], np.diff(close_v) / close_v[:-1]]), df.index)[0]
         total_fees = float(tc_daily.sum()) * 100
         n_trades   = count_trades(delta_w)
 
@@ -2789,6 +2839,7 @@ def _run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
                  'fee [%]': round(fee * 100, 4),
                  'Total Return [%]':     _v(total_ret),
                  'Benchmark Return [%]': _v(bench_ret),
+                 'Benchmark Sharpe Ratio': _v(bench_sharpe),
                  'Max Drawdown [%]':     _v(mdd),
                  'Sharpe Ratio':         _v(sharpe),
                  'Sortino Ratio':        _v(sortino),
@@ -2846,14 +2897,21 @@ def _run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
             _keep_exec_test(stats, out_dir, src0)
             _write_stats(out_dir, stats)
             _write_preview(out_dir, backtest_state, src0)
+            ver = None
             if mode == 'backtest':
                 try:  # a version is a record of the run, not part of it — never fail the backtest
-                    _mint_version(config, stats, mode, src0)
+                    ver = _mint_version(config, stats, mode, src0)
                 except VersionIndexUnreadable:
                     raise  # except this: minting past an index it cannot read would rewrite history
                 except Exception as e:
                     logging.warning("version mint failed: %s", e)
                 _clear_rerun(strategy_name)
+                try:
+                    _claim_library_pick(strategy_name, out_dir, src0)
+                except Exception as e:
+                    logging.warning("library pick not recorded: %s", e)
+        if mode == 'backtest':
+            _iterate('after_backtest', strategy_name, src0, stats, ver, w_curr)
 
         # Full chart export on every user-run backtest; a refresh re-serializing years of bars
         # each time would burn the VM for nothing (the uploader is content-hashed, but the
@@ -3037,14 +3095,21 @@ def _run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
             _keep_exec_test(stats, out_dir, src0)
             _write_stats(out_dir, stats)
             _write_preview(out_dir, backtest_state, src0)
+            ver = None
             if mode == 'backtest':
                 try:  # same as Type A: the record must not be able to fail the run
-                    _mint_version(config, stats, mode, src0)
+                    ver = _mint_version(config, stats, mode, src0)
                 except VersionIndexUnreadable:
                     raise
                 except Exception as e:
                     logging.warning("version mint failed: %s", e)
                 _clear_rerun(strategy_name)
+                try:
+                    _claim_library_pick(strategy_name, out_dir, src0)
+                except Exception as e:
+                    logging.warning("library pick not recorded: %s", e)
+        if mode == 'backtest':
+            _iterate('after_backtest', strategy_name, src0, stats, ver, w_curr)
 
         if not quiet:
             plot_pnl_portfolio(pf_series, close_df, title=strategy_name,

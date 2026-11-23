@@ -7,8 +7,8 @@ workspace and asserts the rules that are expensive to get wrong:
     a deployed 1h strategy would otherwise bury its real versions within a day
   - an unchanged VERSION_NOTE is stored empty, and stays empty on the third identical
     run (comparing against the STORED note would make it reappear every other version)
-  - past 20 versions the oldest entry AND its blob are gone, and version numbers keep
-    counting (v21 exists while v1 does not)
+  - past VERSIONS_KEEP (30) versions the oldest entry AND its blob are gone, and version numbers keep
+    counting (v31 exists while v1 does not)
   - a live tick over an edited file writes the drift flag, and the next backtest clears it
   - restore() on a funded strategy raises and leaves the file byte-identical; on an
     unfunded one it puts the old code back (in-place semantics: tests/check_restore_in_place.py)
@@ -109,19 +109,22 @@ backtest(note="same", code="# c\n")
 notes = [i["note"] for i in index()["items"]]
 check(notes[-3:] == ["same", "", ""], f"an unchanged note stays empty (got {notes[-3:]})")
 
-# ── retention: 20 kept, numbers never reused ─────────────────────────────────
-while index()["current"] < 21:
+# ── retention: VERSIONS_KEEP (30) kept, numbers never reused ─────────────────
+KEEP = strategy.VERSIONS_KEEP
+LAST = KEEP + 1
+check(KEEP == 30, f"VERSIONS_KEEP is 30 (canon §8; api agent_strategy_versions.VERSIONS_KEEP the same) — got {KEEP}")
+while index()["current"] < LAST:
     backtest(note=f"r{index()['current']}", code=f"# {index()['current']}\n")
 ns = [i["n"] for i in index()["items"]]
-check(len(ns) == 20 and ns[0] == 2 and ns[-1] == 21, f"20 kept, oldest dropped (got {ns})")
-check(not (VDIR / "v1.json").exists() and (VDIR / "v21.json").exists(),
+check(len(ns) == KEEP and ns[0] == 2 and ns[-1] == LAST, f"{KEEP} kept, oldest dropped (got {ns})")
+check(not (VDIR / "v1.json").exists() and (VDIR / f"v{LAST}.json").exists(),
       "the pruned version's blob is deleted")
 check([i["n"] for i in strategy.list_versions(NAME)] == ns, "list_versions returns the index")
 
 # ── drift: live tick over an edited file flags, next backtest clears ─────────
 backtest(note="drifted", code="# edited by hand\n", live=True)
 check((VDIR / "drift.json").exists(), "a live tick over changed code writes the drift flag")
-check(index()["current"] == 21, "…and still mints nothing")
+check(index()["current"] == LAST, "…and still mints nothing")
 backtest(note="rerun", code="# edited by hand\n")
 check(not (VDIR / "drift.json").exists(), "a backtest clears the drift flag")
 backtest(note="clean", code="# edited by hand\n", live=True)
@@ -139,7 +142,7 @@ def set_amount(amount):
 before = SRC.read_bytes()
 set_amount(500)
 try:
-    strategy.restore(NAME, 21)
+    strategy.restore(NAME, LAST)
     check(False, "restore refuses a funded strategy")
 except ValueError as e:
     check("fork" in str(e) or "new strategy" in str(e), "restore refuses a funded strategy")
@@ -148,7 +151,7 @@ check(SRC.read_bytes() == before, "…and the file was never touched")
 set_amount(500)
 os.chdir(WS / "strategies")   # the gate reads manager/ relative to cwd — must refuse
 try:
-    strategy.restore(NAME, 21)
+    strategy.restore(NAME, LAST)
     check(False, "restore refuses to run from outside the workspace root")
 except RuntimeError:
     check(True, "restore refuses to run from outside the workspace root")

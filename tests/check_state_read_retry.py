@@ -82,6 +82,7 @@ EXEMPT_CATEGORIES = {
 }
 # (file, function, the open's path argument, category, why) — one row per read point
 EXEMPT = [
+    ('lib/iterate.py', 'plan', '(sdir / "strategy.py").read_bytes', 'code', 'strategy source, read once to classify it'),
     ('lib/account_bitget.py', 'load_json', 'path',
      'helper', "the half-updated-workspace fallback (lib/winreplace.py without load_json)"),
     ('lib/account_bitget.py', '_read_lines', 'path',

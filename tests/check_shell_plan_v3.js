@@ -266,7 +266,9 @@ const PV = { agent: { monthly_twd: 888, annual_twd: 8880, period_days: 30, ai_cr
     && /function cloudWebGo\(\) \{ trackFeature\("cloud_open_web"\); if \(typeof p3Live === "function" && p3Live\(\)\) \{ p3OpenAddon\(null, undefined, undefined, "cloud"\); return; \}/.test(app));
   ok("③ 30 TWD 卡:只有 v3 開著才換 C 版,關著照舊那張卡", (app.match(/else if \(free && typeof p3Live === "function" && p3Live\(\)\) p3FreeCardPaint\(/g) || []).length === 2);
   ok("③ 30 TWD 卡的鈕記既有的綁卡漏斗(acct_card_click),〔看我的策略〕只導頁不代填不代啟動", /on: \(\) => \{ acctClicked\(where, s\); p3OpenAgent\(null, null, "free"\); \}/.test(src) && /on: \(\) => \{ trackEvent\("acct_card_alt_click", \{ card: where === "pre" \? "pre_free" : "turn_free" \}\); stratSelect\(bt\.name\); \}/.test(src));
-  ok("③ 設定頁「AI 超額時自動儲值」那句:auto_topup 是 false 才不出,缺或 null 照有卡判;回合結束把 acct.auto_topup 傳進去", /if \(!acctNoCard\(acct\) && !\(acct && acct\.auto_topup === false\)\)/.test(src) && /autoTopup: acct \? acct\.auto_topup : undefined/.test(src));
+  ok("③ 設定頁自動儲值(收進「Blave 餘額」的 tooltip,spec host-card-relayout D1):auto_topup 是 false 才不出,缺或 null 照有卡判;p3PlanRows 不再另出一行;回合結束把 acct.auto_topup 傳進去",
+    /if \(!acctNoCard\(acct\) && !\(acct && acct\.auto_topup === false\) && ac\.auto_topup_min && ac\.auto_topup_amount\) txt \+=/.test((src.match(/function p3BalLabel[\s\S]*?\n\}/) || [""])[0])
+    && !/p3TopupLine|auto_topup/.test((src.match(/function p3PlanRows[\s\S]*?\n\}/) || [""])[0]) && /autoTopup: acct \? acct\.auto_topup : undefined/.test(src));
   ok("③ 自動儲值告知:第一次讀只記基準,at 變了、30 分鐘內才講", /const topNew = seen !== undefined && top && top\.at !== seen && Date\.now\(\) - Date\.parse\(top\.at\) < 30 \* 60 \* 1000 \? top : null;/.test(src));
   ok("③ 一鍵扣款時框鎖住(不能關框重按)、送出的來源是那一格的", /sc\.dataset\.lock = "1"/.test(src) && /plan3Addon\(\{ tier: m\.tier, cycle: m\.cycle, confirm: m\.total, source: m\.src \}\)/.test(src));
   ok("③ 扣了錢主機沒開成:不講付款失敗,講已扣與這期重開不另收費", /if \(b\.charged_twd > 0\) \{[^\n]*p3Unlaunched\(null, b\.charged_twd\)/.test(src));
@@ -392,8 +394,9 @@ const PV = { agent: { monthly_twd: 888, annual_twd: 8880, period_days: 30, ai_cr
         R({ amount_twd: 888 }, null).key === "p3.w.trialCardUsedNoNum" && !R({ amount_twd: 888 }, null).vars
         && R({ amount_twd: 10, reason_code: "TRIAL_NOT_ELIGIBLE" }, 10).key === "p3.w.trialNoElig" && R({ amount_twd: 888, refund_review: true }, 10).refund !== true
         && C.p3ResultView({ status: "wallet", amount_twd: 888 }, "plan").key === "p3.w.wallet");
-      ok("④ 試用 wallet 四句與「每張卡限試用一次」兩語都有;zh 不用分號", ["p3.w.trialCardUsed", "p3.w.trialCardUsedNoNum", "p3.w.trialNoElig", "p3.w.trialNoEligNoNum", "p3.a.oncePerCard"]
-        .every((k) => STR.zh[k] && STR.en[k] && !/；|;/.test(STR.zh[k] + STR.en[k])));
+      ok("④ 試用 wallet 四句與試用次數那句兩語都有;zh 不用分號;次數那句照 Wei 11-20 各表面同一句「每個帳號、每張卡都只能試用一次。」", ["p3.w.trialCardUsed", "p3.w.trialCardUsedNoNum", "p3.w.trialNoElig", "p3.w.trialNoEligNoNum", "p3.a.oncePerCard"]
+        .every((k) => STR.zh[k] && STR.en[k] && !/；|;/.test(STR.zh[k] + STR.en[k])) && STR.zh["p3.a.oncePerCard"] === "每個帳號、每張卡都只能試用一次。" && STR.en["p3.a.oncePerCard"] === "One trial per account and per card."
+        && !Object.values(STR.zh).some((v) => v === "每張卡限試用一次。"));
       ok("④ 主行程收 reason_code(只認兩個值)", M.resultBody({ bind: { kind: "trial", status: "wallet", amount_twd: 10, reason_code: "TRIAL_CARD_USED" } }).reason_code === "TRIAL_CARD_USED"
         && M.resultBody({ bind: { kind: "trial", status: "wallet", reason_code: "x; y" } }).reason_code === null); }
     { reset(); const proQ = Q({ trial: nt, has_card: true, card_last4: "4242", agent_offer: payQ.agent_offer, studio_subscription: { source: "apple", plan: "pro", auto_renew: true, expires_at: "2026-12-03T00:00:00Z" } });

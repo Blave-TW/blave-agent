@@ -9,7 +9,7 @@
 //      → turn-end 記對照表 → 已安裝;沒新策略的灰字;購買框六個分支(第一段、購買中鎖框、餘額不足有卡第二段、沒卡、409、失敗行、
 //      成功後本機代下載再送 lib.msgLocal);en 的價格與那句話;api 來的字只進 textContent。
 // ⑥ 本機「用這支」(spec-0.1.13 §4;不起 Electron):先代下載再送 lib.msgLocal、下載中擋重入、失敗三種、雲端照舊、確認框的資料費那一行。
-//    主行程的 libraryDownload 在 ② 用真的 fs 跑(0600、symlink、security.json、失敗分類)。
+//    主行程的 libraryDownload 在 ② 用真的 fs 跑(0600、symlink、security.json、失敗分類、state/library_picks.json 記下那份碼)。
 // ⑤ 成功筆記(canon › 說明文章外連;不起 Electron):入口只認這一語言的 id / 標題、主行程收兩欄、卡是連結、點了開瀏覽器帶 src 並記 lib_note_web;閱讀頁已拿掉。
 // 跑法:node tests/check_shell_library.js(找不到 shell/node_modules 的 Electron 時 ④ SKIP,①②③ 照跑)
 const fs = require("fs"), path = require("path"), vm = require("vm"), os = require("os");
@@ -269,14 +269,25 @@ if (!process.versions.electron) {
     const REPOd = path.join(base, "repo");
     const D = { require, Buffer, WS: WSd, REPO: REPOd, API_BASE: "https://api.test", calls: [], next: null, token: "t", key: { api_key: "k1", secret_key: "s1" } };
     vm.createContext(D);
-    vm.runInContext("var fs = require('fs'), path = require('path'), crypto = require('crypto'), wsfile = require(" + JSON.stringify(path.join(__dirname, "..", "shell", "wsfile.js")) + ");\n" + ["LIB_CODE_MAX", "LIB_CONTRACT_ANCHOR", "readVersion", "LIB_VER_RE"].map((n) => mainSrc.match(new RegExp("^const " + n + " = [^\\n]*$", "m"))[0].replace(/^const /, "var ")).join("\n")
+    vm.runInContext("var fs = require('fs'), path = require('path'), crypto = require('crypto'), wsfile = require(" + JSON.stringify(path.join(__dirname, "..", "shell", "wsfile.js")) + ");\n" + ["LIB_CODE_MAX", "LIB_CONTRACT_ANCHOR", "readVersion", "LIB_VER_RE", "LIB_PICKS_FILE"].map((n) => mainSrc.match(new RegExp("^const " + n + " = [^\\n]*$", "m"))[0].replace(/^const /, "var ")).join("\n")
       + "\n" + cutFn(mainSrc, "libContractReady")
       + "\nvar libCache = null, tmOn = true, live = true, uiNow = 'en';\nfunction siteLang() { return uiNow; }\nfunction telemetryLive() { return live; }\nfunction tm() { return { isEnabled: () => tmOn, installId: () => '3f2a9c1e-7b04-4d6e-9e21-5c0b8d4f1a77' }; }\nfunction loadToken() { return token; }\nfunction loadDataKey() { return key; }\nasync function getJSON(url, headers) { calls.push([url, headers]); const n = Array.isArray(next) ? next.shift() : next; if (n === 'throw') throw new Error('net'); return n; }\n"
-      + cutFn(mainSrc, "libWriteWs") + "\n" + cutFn(mainSrc, "libVerHeader") + "\n" + cutFn(mainSrc, "libTooOldKind") + "\nasync " + cutFn(mainSrc, "libraryDownload"), D);
+      + cutFn(mainSrc, "libWriteWs") + "\n" + cutFn(mainSrc, "libVerHeader") + "\n" + cutFn(mainSrc, "libTooOldKind") + "\n" + cutFn(mainSrc, "libPickRecord") + "\nasync " + cutFn(mainSrc, "libraryDownload"), D);
     const dl = async (id, resp) => { D.next = resp; return D.libraryDownload(id); };
     const file = path.join(WSd, "tmp", "library_102.py"), sec = path.join(WSd, "tmp", "library_102.security.json"), J = (x) => JSON.stringify(x);
     const r1 = await dl(102, { status: 200, body: { code: "print(1)\n" } });
-    const a1 = { r: J(r1), body: fs.readFileSync(file, "utf8"), mode: fs.statSync(file).mode & 0o777, url: D.calls[0][0], hdr: J(D.calls[0][1]), stray: fs.readdirSync(path.join(WSd, "tmp")).join() };
+    const a1 = { r: J(r1), body: fs.readFileSync(file, "utf8"), mode: fs.statSync(file).mode & 0o777, url: D.calls[0][0], hdr: J(D.calls[0][1]), stray: fs.readdirSync(path.join(WSd, "tmp")).join(),
+      pick: JSON.parse(fs.readFileSync(path.join(WSd, "state", "library_picks.json"), "utf8"))[require("crypto").createHash("sha256").update("print(1)\n").digest("hex")] };
+    // 稽核 0.1.59 S-1:策略碼寫得到 state/。picks 讀法走 wsfile.read(不跟 symlink、不是一般檔或超過 64 KB → 當空表),FIFO／指向 /dev/zero 的 symlink 卡不住主行程
+    const picksF = path.join(WSd, "state", "library_picks.json"), planted = path.join(base, "planted.json"), fakeK = "f".repeat(64);
+    fs.writeFileSync(planted, JSON.stringify({ [fakeK]: { id: 7, at: Date.now() } })); fs.rmSync(picksF); fs.symlinkSync(planted, picksF);
+    await dl(102, { status: 200, body: { code: "print(1)\n" } });
+    const s1Link = !fs.lstatSync(picksF).isSymbolicLink() && !(fakeK in JSON.parse(fs.readFileSync(picksF, "utf8"))) && fs.readFileSync(planted, "utf8").includes(fakeK);
+    fs.writeFileSync(picksF, JSON.stringify({ [fakeK]: { id: 7, at: Date.now() }, pad: "x".repeat(64 * 1024) }));
+    await dl(102, { status: 200, body: { code: "print(1)\n" } });
+    const s1Big = !(fakeK in JSON.parse(fs.readFileSync(picksF, "utf8")));
+    ok("② picks 讀法:symlink 不跟(外面那份不被讀進來、也不被改)、超過 64 KB 當空表;用 wsfile.read、不用 readFileSync(稽核 0.1.59 S-1)",
+      s1Link && s1Big && /wsfile\.read\(file, 64 \* 1024\)/.test(cutFn(mainSrc, "libPickRecord")) && !/readFileSync/.test(cutFn(mainSrc, "libPickRecord")), J({ s1Link, s1Big }));
     const r2 = await dl(102, { status: 200, body: { code: "x = 2\n", security: { blocked: false, findings: [{ level: "WARNING" }] } } });
     const a2 = { r: J(r2), sec: JSON.parse(fs.readFileSync(sec, "utf8")).findings.length, body: fs.readFileSync(file, "utf8") };
     const r3 = await dl(102, { status: 200, body: { code: "x = 3\n" } });
@@ -352,6 +363,7 @@ if (!process.versions.electron) {
     fs.rmSync(base, { recursive: true, force: true });
     ok("② 代下載:用桌面 key 打 /code、寫 workspace/tmp/library_<id>.py(0600、不留暫存檔)、回 { ok: true }", a1.r === '{"ok":true}' && a1.body === "print(1)\n" && a1.mode === 0o600 && a1.url === "https://api.test/openclaw/marketplace/strategies/102/code?lang=en"
       && a1.hdr === '{"api-key":"k1","secret-key":"s1"}' && a1.stray === "library_102.py", J(a1));
+    ok("② 代下載也記下 sha256(碼) → 策略庫 id(lib/runner.py 第一次回測補寫 source.json)", a1.pick && a1.pick.id === 102 && Number.isFinite(a1.pick.at), J(a1.pick));
     ok("② 代下載:回應帶 security → 另存 .security.json;下一次沒帶 → 刪掉舊的那份;碼寫不進去 → fail 且不留掃描結果", a2.r === '{"ok":true}' && a2.sec === 1 && a2.body === "x = 2\n" && a3.r === '{"ok":true}' && a3.secGone
       && a3b.r === '{"ok":false,"kind":"fail"}' && a3b.sec === false, J([a2, a3, a3b]));
     ok("② 代下載失敗分四種:掃描擋下 blocked、404 gone、key 被撤(403 ERR005 / 401)signin、其餘(403 未購、5xx、code 不是字串 / 空白 / 超過 1 MB、打不到、body 壞)fail;失敗不動上一份檔",
@@ -461,7 +473,7 @@ if (!process.versions.electron) {
       ["ArrowDown", "ArrowUp", "Home", "End", "Tab"].every((k) => src.includes('e.key === "' + k + '"')) && /if \(e\.key === "Escape"\) \{ e\.preventDefault\(\); e\.stopPropagation\(\); close\(true\); \}/.test(src)
       && /menuKeys\("lib-mkt-menu", libMktClose\); menuKeys\("lib-sort-menu", libSortClose\);/.test(src)
       && /document\.addEventListener\("pointerdown", \(e\) => \{ if \(!g\("lib-mkt-menu"\)\.hidden && !g\("lib-mkt"\)\.contains\(e\.target\)\) libMktClose\(false\); \}, true\);/.test(src)
-      && /function libMktPick\(mkt\) \{\s*libMktClose\(true\);\s*if \(mkt === libBag\(\)\.mkt\) return;\s*(?:libBag\(\)\.mktUser = true;[^\n]*\n)?\s*libBag\(\)\.mkt = mkt; LIB\.gone = false; libTrack\("lib_mkt_pick"\); libPaint\(\);\s*\}/.test(src) && (src.match(/libTrack\("lib_mkt_pick"\)/g) || []).length === 1
+      && /function libMktPick\(mkt\) \{\s*libMktClose\(true\);\s*if \(mkt === libBag\(\)\.mkt\) return;\s*(?:libBag\(\)\.mktUser = true;[^\n]*\n)?\s*libBag\(\)\.mkt = mkt; LIB\.gone = false; libTrack\("lib_mkt_pick"\); libPaint\(\);\n  \/\/ [^\n]*\n  if \(typeof trackEvent === "function"\) trackEvent\("lib_mkt", \{ v: mkt === "all" \|\| LIB_MARKETS\.includes\(mkt\) \? mkt : "all" \}\);\s*\}/.test(src) && (src.match(/libTrack\("lib_mkt_pick"\)/g) || []).length === 1
       && /libMktClose\(!det && \$\("lib-mkt-menu"\)\.contains\(document\.activeElement\)\);[^\n]*\n  if \(det\)/.test(cutFn(src, "libPaint")) && /libMktClose\(false\); \$\("lib"\)\.hidden = true;/.test(cutFn(src, "libLeave"))
       && /^function libPaintList\(\) \{\n[^\n]*\n  libPaintMkt\(\);/.test(cutFn(src, "libPaintList")) && /ideaOpen\(b, from, libIdeaMkt\(libBag\(\)\.mkt\)\)/.test(src)); }
   ok("③ #lib 的骨架:region + aria-labelledby 到 h5、h5 tabindex=-1、返回鈕、#lib-body tabindex=0、#lib-state role=status", /<div class="lib" id="lib" role="region" aria-labelledby="lib-h" hidden>/.test(html) && /<h5 class="main-head-name" id="lib-h" tabindex="-1" data-i18n="lib\.nav">/.test(html)
@@ -529,7 +541,14 @@ if (!process.versions.electron) {
   ok("③ 已安裝:頁首只有「打開這支策略」+「再下載一份」、鈕下不寫說明句(lib.note.installed 連字串一起拿掉,覆蓋說明搬進確認框)", !/lib\.note\.installed/.test(src) && !("lib.note.installed" in STR.zh) && !("lib.note.installed" in STR.en)
     && /case "installed":\n\s*row\.append\(btn\("btn-fill", t\("lib\.open"\)[^\n]*\n\s*if \(relogin\)[^\n]*\n\s*else if \(c\.again\) row\.appendChild\(btn\("btn-quiet", t\("lib\.again"\), \(b\) => libAsk\(s, b\)\)\);\n\s*break;/.test(src));
   { const css = read(path.join(R, "library.css"));
-    ok("③ 詳情頁頭單欄、主鈕登入前後同一點(designer library-detail-head 案 C):拿掉 640 斷點與右欄;.lib-dhead 直排、.lib-cta 是可換行的一列、再下載一份照 DOM 順序在主鈕右邊;鈕下句跟在鈕右邊,結果句／錯誤句／自動儲值句各佔一整列", !/@container \(min-width: 640px\)/.test(css) && /\.lib-dhead \{ display: flex; flex-direction: column;/.test(css) && !/\.lib-dhead-l \{[^}]*flex: 1 1/.test(css)
+    // Wei 11-20:中欄 ≥ 560(1280 寬開著對話時約 592)鈕列移到標題那一列右端、每一態同一點;更窄退回案 C 單欄
+    const wide = /@container \(min-width: 560px\) \{\n([\s\S]*?)\n\}/.exec(css), wb = wide ? wide[1] : "", at = (re) => css.search(re);
+    ok("③ 詳情頁頭:中欄 ≥ 560 時 .lib-dhead 是 1fr auto 格線、左欄與 #lib-cta 攤平(display: contents)、鈕列(.row)在標題那一列(第 2 列)右端,鈕下句／結果句／錯誤句在摘要下各佔整列;斷點區塊排在 .lib-dhead-l 與 .lib-cta 各條之後(同權重才蓋得過);只有這一個寬斷點",
+      !!wide && /\.lib-dhead \{ display: grid; grid-template-columns: minmax\(0, 1fr\) auto;/.test(wb) && /\.lib-dhead-l, \.lib-dhead \.lib-cta \{ display: contents; \}/.test(wb)
+      && /\.lib-dhead h5 \{ grid-column: 1; grid-row: 2; \}/.test(wb) && /\.lib-cta > \.row \{ grid-column: 2; grid-row: 2;/.test(wb) && /\.lib-dhead-l > \*, \.lib-cta > \* \{ grid-column: 1 \/ -1; \}/.test(wb)
+      && at(/@container \(min-width: 560px\)/) > at(/\.lib-cta \.err \{ margin: 0;/) && at(/@container \(min-width: 560px\)/) > at(/\.lib-dhead-l \{ display: flex;/) && (css.match(/@container \(min-width/g) || []).length === 1 && !/#[0-9a-fA-F]{3,8}\b|\d+ms/.test(wb)
+      && /hl\.append\(badges, libEl\("h5", "", s\.title\), meta\);/.test(src) && /head\.append\(hl, cta\);/.test(src));
+    ok("③ 詳情頁頭窄的時候單欄、鈕列接在摘要下(designer library-detail-head 案 C):拿掉 640 斷點;.lib-dhead 直排、.lib-cta 是可換行的一列、再下載一份照 DOM 順序在主鈕右邊;鈕下句跟在鈕右邊,結果句／錯誤句／自動儲值句各佔一整列", !/@container \(min-width: 640px\)/.test(css) && /\.lib-dhead \{ display: flex; flex-direction: column;/.test(css) && !/\.lib-dhead-l \{[^}]*flex: 1 1/.test(css)
       && /\.lib-cta \{ display: flex; flex-wrap: wrap; align-items: center;/.test(css) && !/\.lib-cta[^{]*\{[^}]*(row-reverse|margin-left: auto|align-self: flex-end|align-items: flex-end|text-align: right)/.test(css) && /\.lib-cta \.note \{ flex: none; max-width: 100%;/.test(css) && /\.lib-cta > \.err, \.lib-cta > \.lib-res, #lib-cta-topup \{ flex-basis: 100%; \}/.test(css)); }
   ok("③ 快取作廢的四個事件都接了:登出 / 五條登入路徑(設定兩條、連結畫面兩條、重新登入一條) → libInvalidate;設定關掉 → libRefresh;主行程登出(clearToken)、換 token、下載 404 都清 libCache;購買成功後 libRefresh", (appSrc.match(/if \(typeof libInvalidate === "function"\) libInvalidate\(\);/g) || []).length === 6
     && /if \(typeof libRefresh === "function"\) libRefresh\(\);/.test(cutFn(appSrc, "setClose")) && /libCache = null;/.test(cutFn(mainSrc, "clearToken")) && (mainSrc.match(/^\s*libCache = null;/gm) || []).length === 4
@@ -763,6 +782,16 @@ app.whenReady().then(async () => {
       && s.gates === "誠實回測=通過[假設 0.05%;實際 0.04%]|統計顯著=通過[p < 0.001]|參數穩健=通過[鄰域保留 91%]" && s.lead === null
       && s.how === "第一段。\n第二段。" && s.dl === "2020-01-01 — 2026-06-30|BTC/USDT 永續 · 5 分 K|純做多|1 倍" && s.period === "2020-01-01 — 2026-06-30" && s.steps === 0 && s.focus === "lib-back", JSON.stringify(s));
     ok("④ 免費態:主鈕「用這支」、沒有說明句(免費不寫)", s.cta === (await T("lib.use")) && s.note === "", JSON.stringify(s.note)); }
+  // Wei 11-20:中欄 ≥ 560 時〔安裝並回測〕在標題那一列右端(跟標題同一列、靠詳情右緣、在摘要之上);592(1280 開著對話的實寬)也是;把 #lib 壓到 540 退回摘要下靠左
+  { const geo = await js(`(async () => { const lib = document.getElementById("lib"), keep = lib.style.width, at = () => { const b = document.querySelector("#lib-cta .btn-fill").getBoundingClientRect(),
+        h = document.querySelector("#lib-det h5").getBoundingClientRect(), sm = document.querySelector("#lib-det .lib-sum").getBoundingClientRect(), d = document.getElementById("lib-det").getBoundingClientRect();
+        return { inner: Math.round(d.width), sameRow: b.top < h.bottom && b.bottom > h.top, right: Math.round(d.right - b.right), aboveSum: b.bottom <= sm.top + 1, belowSum: b.top >= sm.bottom, left: Math.round(b.left - d.left), titleRoom: h.right <= b.left }; };
+      const to = (w) => { lib.style.width = w; return new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))); };
+      await to("1100px"); const wide = at(); await to("592px"); const real = at(); await to("540px"); const narrow = at();
+      lib.style.width = keep; return { wide, real, narrow }; })()`);
+    const top = (g) => g.sameRow && g.right <= 1 && g.aboveSum && g.titleRoom;
+    ok("④ 詳情頁頭:中欄 1100 與 592(1280 開著對話的實寬)主鈕跟標題同一列、靠右緣、在摘要之上、不壓標題;540(< 560)主鈕回摘要下、靠左",
+      top(geo.wide) && top(geo.real) && geo.narrow.belowSum && !geo.narrow.sameRow && geo.narrow.left <= 1, JSON.stringify(geo)); }
   ok("④ /report 回來(問一次、帶語言):只換曲線(#lib-chart 還在、LIB.chart 換新、canvas 在)與回測期間(backtest_start — backtest_end、.mono);頭部 / CTA / 焦點都沒重畫", JSON.stringify(r.after.calls) === "[[101,\"zh\"]]" && r.after.swapped && r.after.chart === 1 && r.after.canvas >= 1
     && r.after.period === "2019-12-02 — 2026-06-30" && r.after.periodMono === 1 && r.after.focus === "lib-back" && r.after.h5 === 1 && r.after.cta === (await T("lib.use")), JSON.stringify(r.after));
   // 跟基準比(spec library-benchmark-2026-10-27 B):/report 帶 benchmark → 第二條灰虛線(先畫、壓在下面)+ 圖例兩項 + 回測欄換成三欄表;
@@ -833,13 +862,18 @@ app.whenReady().then(async () => {
   await js(`hasToken = false; libSync();`); r = await cta();
   // 0.1.50 起訪客主鈕寫動作(spec library-free-data-one-step §2.1):#101 免費、資料需求未標 → 〔登入並使用〕;試用句要公開價目,這裡讀不到就不出
   ok("④ 未登入:主鈕〔登入並使用〕(#101 免費、未標資料需求)、鈕下沒有句子、沒有文字鈕", r.btn === (await T("lib.bb.loginUse")) && r.dis === false && r.quiet === "" && r.note === "", JSON.stringify(r));
-  // 頁頭單欄(designer library-detail-head 案 C):主鈕在摘要下、跟摘要左緣對齊;登入前後同一點;短句在鈕右邊同一列,錯誤句自己一整列
-  r = await js(`(() => { const q = (x) => document.querySelector(x), R = (x) => x.getBoundingClientRect(), sum = q("#lib-det .lib-sum") || q("#lib-det h5"), b0 = R(q("#lib-cta .btn-fill"));
+  // 頁頭單欄(designer library-detail-head 案 C,中欄 < 560):主鈕在摘要下、跟摘要左緣對齊;登入前後同一點;短句在鈕右邊同一列,錯誤句自己一整列。
+  // 中欄 ≥ 560(這個視窗的實寬):主鈕在標題列右端、登入前後同一點;短句與錯誤句在摘要下各一整列
+  const HEAD = (w) => `(async () => { const lib = document.getElementById("lib"), keep = lib.style.width; lib.style.width = ${JSON.stringify(w)}; await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    const q = (x) => document.querySelector(x), R = (x) => x.getBoundingClientRect(), sum = q("#lib-det .lib-sum") || q("#lib-det h5"), b0 = R(q("#lib-cta .btn-fill"));
     const o = { sumL: R(sum).left, sumB: R(sum).bottom, l0: b0.left, t0: b0.top };
-    const n = q("#lib-cta-note"); n.textContent = "x"; n.hidden = false; const nr = R(n); o.noteBeside = nr.left >= b0.right && nr.top < b0.bottom; n.textContent = ""; n.hidden = true;
-    const e = document.createElement("p"); e.className = "err"; e.textContent = "x"; q("#lib-cta").appendChild(e); const er = R(e); o.errRow = er.top >= b0.bottom && Math.abs(er.left - b0.left) < 1; e.remove();
-    hasToken = true; libSync(); const b1 = R(q("#lib-cta .btn-fill")); o.l1 = b1.left; o.t1 = b1.top; hasToken = false; libSync(); return o; })()`);
-  ok("④ 頁頭單欄:主鈕在摘要下方、左緣跟摘要對齊,登入前後同一點;鈕下短句在鈕右邊,錯誤句自己一整列", Math.abs(r.l0 - r.sumL) < 1 && r.t0 >= r.sumB && Math.abs(r.l1 - r.l0) < 1 && Math.abs(r.t1 - r.t0) < 1 && r.noteBeside && r.errRow, JSON.stringify(r));
+    const n = q("#lib-cta-note"); n.textContent = "x"; n.hidden = false; const nr = R(n); o.noteBeside = nr.left >= b0.right && nr.top < b0.bottom; o.noteUnder = nr.top >= o.sumB && Math.abs(nr.left - o.sumL) < 1; n.textContent = ""; n.hidden = true;
+    const e = document.createElement("p"); e.className = "err"; e.textContent = "x"; q("#lib-cta").appendChild(e); const er = R(e); o.errRow = er.top >= b0.bottom && Math.abs(er.left - b0.left) < 1; o.errUnder = er.top >= o.sumB && Math.abs(er.left - o.sumL) < 1; e.remove();
+    hasToken = true; libSync(); const b1 = R(q("#lib-cta .btn-fill")); o.l1 = b1.left; o.t1 = b1.top; hasToken = false; libSync(); lib.style.width = keep; await new Promise((r) => requestAnimationFrame(r)); return o; })()`;
+  r = await js(HEAD("540px"));
+  ok("④ 頁頭單欄(中欄 540):主鈕在摘要下方、左緣跟摘要對齊,登入前後同一點;鈕下短句在鈕右邊,錯誤句自己一整列", Math.abs(r.l0 - r.sumL) < 1 && r.t0 >= r.sumB && Math.abs(r.l1 - r.l0) < 1 && Math.abs(r.t1 - r.t0) < 1 && r.noteBeside && r.errRow, JSON.stringify(r));
+  r = await js(HEAD(""));
+  ok("④ 頁頭兩欄(這個視窗的實寬):主鈕在摘要之上(標題列右端)、登入前後同一點;鈕下短句與錯誤句在摘要下、跟摘要左緣對齊", r.t0 < r.sumB && r.l0 > r.sumL && Math.abs(r.l1 - r.l0) < 1 && Math.abs(r.t1 - r.t0) < 1 && r.noteUnder && r.errUnder, JSON.stringify(r));
   r = await js(`(async () => { const q = (x) => [...document.querySelectorAll(x)]; const n0 = window.__lib.oauth || 0; q("#lib-cta .btn-fill")[0].click(); await new Promise((r) => setTimeout(r, 60)); const out = { set: !document.getElementById("set-scrim").hidden, oauth: (window.__lib.oauth || 0) - n0, opened: window.__lib.opened, btn: (q("#lib-cta .btn-fill")[0] || {}).textContent }; if (out.set) setClose(); return out; })()`);
   ok("④ 〔登入並使用〕→ 直接開瀏覽器登入(startOAuth 一次),不開設定 › 帳號與方案;取消回來鈕字還原", !r.set && r.oauth === 1 && r.opened === undefined && r.btn === (await T("lib.bb.loginUse")), JSON.stringify(r));
   // 付不出資料費(0.1.6 §3.2):主鈕照 why 分流、鈕下說明升一階;試用天數來自 planVars().t(acct.trial_days),不寫死
@@ -1043,14 +1077,14 @@ app.whenReady().then(async () => {
   // ── 策略庫一律要登入(spec library-login-required 案 1A):真的 renderer 路徑 libSignInBtn → planSignIn → planLogin → oauthStart,只有主行程是替身 ──
   const LG_LIST = JSON.stringify({ strategies: LIST.map((x) => (x.id === 101 ? Object.assign({}, x, { blave_data: "none" }) : x)), signedIn: true, dataAccess: "included" });
   const lgStart = `running = false; LIB.pending.clear(); LIB.dlFail = null; LIB.installed = {}; LIB.gone = false; hasToken = false; LIB.data = Object.assign(${LG_LIST}, { signedIn: false, dataAccess: null, why: null, lang: LANG }); window.__lib.list = ${LG_LIST}; window.__lib.saved = []; window.__lib.oauthNext = null; await libOpen(); await new Promise((r) => setTimeout(r, 30)); LIB.data.signedIn = false; LIB.data.dataAccess = null; hasToken = false; libPaint(); libShowDetail(101);`;
-  r = await js(`(async () => { ${lgStart} const q = (x) => [...document.querySelectorAll(x)], cur0 = cur, a0 = q("#lib-cta .btn-fill")[0], x0 = a0.getBoundingClientRect().left, n0 = window.__lib.sent.length;
+  r = await js(`(async () => { ${lgStart} const q = (x) => [...document.querySelectorAll(x)], cur0 = cur, a0 = q("#lib-cta .btn-fill")[0], x0 = a0.getBoundingClientRect().left, r0 = a0.getBoundingClientRect().right, n0 = window.__lib.sent.length;
     const pre = { btn: a0.textContent, quiet: q("#lib-cta .btn-quiet").length, note: q("#lib-cta .note")[0].textContent, err: q("#lib-cta .err").length };
     let done; window.__lib.oauthNext = () => new Promise((res) => { done = res; }); a0.click(); await new Promise((r) => setTimeout(r, 20)); const waiting = q("#lib-cta .btn-fill")[0].textContent;
     a0.focus(); done({}); await new Promise((r) => setTimeout(r, 120)); const b = q("#lib-cta .btn-fill")[0];
-    return { pre, waiting, btn: b.textContent, focused: document.activeElement === b, x: b.getBoundingClientRect().left - x0, box: document.getElementById("del-scrim").hidden, detail: libBag().detail, cur0, cur, saved: window.__lib.saved, token: hasToken, intent: window.__lib.oauthIntent, nav: !document.getElementById("view-connect").hidden, sent: window.__lib.sent.length - n0 }; })()`);
+    return { pre, waiting, btn: b.textContent, focused: document.activeElement === b, x: getComputedStyle(document.querySelector("#lib-det .lib-dhead")).display === "grid" ? b.getBoundingClientRect().right - r0 : b.getBoundingClientRect().left - x0, box: document.getElementById("del-scrim").hidden, detail: libBag().detail, cur0, cur, saved: window.__lib.saved, token: hasToken, intent: window.__lib.oauthIntent, nav: !document.getElementById("view-connect").hidden, sent: window.__lib.sent.length - n0 }; })()`);
   // 0.1.50(spec library-free-data-one-step §2.1／§2.3、Wei 11-07 #1):免費不用資料 → 〔登入並安裝〕,登入完直接代下載並送一句、不出確認框;
   // 主鈕換成停用的〔安裝與回測中…〕(停用鈕接不了焦點,同 libAsk 那條)
-  ok("④ 1A:沒登入主鈕〔登入並安裝〕、鈕下沒有句子、沒有再下載;等待中「取消等待」;回來同一支直接安裝(送一句、不跳確認框),主鈕〔安裝與回測中…〕同一位置", r.pre.btn === (await T("lib.bb.loginInstall")) && r.pre.quiet === 0 && r.pre.note === "" && r.pre.err === 0 && r.waiting === (await T("oauth.cancel"))
+  ok("④ 1A:沒登入主鈕〔登入並安裝〕、鈕下沒有句子、沒有再下載;等待中「取消等待」;回來同一支直接安裝(送一句、不跳確認框),主鈕〔安裝與回測中…〕同一位置(兩欄頁頭量右緣、單欄量左緣)", r.pre.btn === (await T("lib.bb.loginInstall")) && r.pre.quiet === 0 && r.pre.note === "" && r.pre.err === 0 && r.waiting === (await T("oauth.cancel"))
     && r.btn === (await T("lib.pending")) && r.sent === 1 && r.x === 0 && r.box && r.detail === 101 && r.token, JSON.stringify(r));
   ok("④ 自帶 AI(claude)登入後:cur 不變、沒有 saveConnection、沒跳去連結畫面", r.cur0 === "claude" && r.cur === "claude" && r.saved.length === 0 && r.intent === undefined && !r.nav, JSON.stringify(r));
   r = await js(`(async () => { ${lgStart} const q = (x) => [...document.querySelectorAll(x)]; let go; window.__lib.listHold = new Promise((res) => { go = res; }); window.__lib.oauthNext = async () => ({}); q("#lib-cta .btn-fill")[0].click(); await new Promise((r) => setTimeout(r, 80));

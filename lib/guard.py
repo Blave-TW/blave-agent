@@ -1,9 +1,10 @@
 """
 Trading guard: filesystem kill switch + append-only order audit log.
 
-Why this exists: every safety rule in AGENTS.md (verify-then-report,
-iteration brakes) runs through the model following instructions. This is the
-one brake that does NOT: if the file state/HALT exists, no order leaves this
+Why this exists: most safety rules in AGENTS.md (verify-then-report) run
+through the model following instructions; the iteration brakes are counted in
+lib/iterate.py, which prevents misuse but is not a sandbox. This is the one
+money brake that does NOT depend on the model: if the file state/HALT exists, no order leaves this
 machine, regardless of what the agent believes it is doing.
 lib/order_*.py enforces it inside the transport layer, so every path that
 uses the lib — strategies, reconciler, TWAP slices, ad-hoc scripts — is

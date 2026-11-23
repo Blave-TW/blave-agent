@@ -1385,7 +1385,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     const head = fnS("trPaintHead");
     ok("A′ / B / B0 與帳戶對不上的原因行升正文墨色,用原因句本身定位(前面有「串接失敗 · 」也照升)", /const inkReason = state === "halted" && \(trRestartKind\(hr\) \|\| \(trHaltStopsAll\(hr\.halt\) && !\(trHaltFreeze\(hr\) && trHaltByUser\(hr\.halt\)\)\) \|\| trAcctAsk\(hr\) \|\| trHaltUnexplained\(hr\.halt\)\.length\) \? trHaltReasonText\(hr, TR\.acctDone\) : state === "noaccount" && trNoAccountStopped\(hr\) \? t\("tr\.cloud\.restartNoAccountZ"\) : "";/.test(head)
       && /const inkAt = inkReason \? full\.indexOf\(inkReason\) : -1;/.test(head) && !/full === text && !trFailedIds/.test(head.slice(head.indexOf("const inkReason"))));
-    ok("A′ 事件列:halt 列與 UI 補的 HALT 列都依 source 取重開那句說明", /note = d\.source === "hang_watch" \? t\("tr\.ov\.evHaltHangNote"\) : trHaltUnconfirmedSym\(d\) != null \? trHaltUnconfirmedNote\(d\) : trHaltStopsAll\(d\) \|\| trHaltFreeze\(r\) \? t\("tr\.ov\.evRestartStoppedNote"\) : closes \? null : t\("tr\.ov\.evHaltNote"\);/.test(src)
+    ok("A′ 事件列:halt 列與 UI 補的 HALT 列都依 source 取重開那句說明", /note = d\.source === "hang_watch" \? t\("tr\.ov\.evHaltHangNote"\) : trHaltUnconfirmedSym\(d\) != null \? trHaltUnconfirmedNote\(d\) : closes \? null : trHaltStopsAll\(d\) \|\| trHaltFreeze\(r\) \? t\("tr\.ov\.evRestartStoppedNote"\) : t\("tr\.ov\.evHaltNote"\);/.test(src)
       && /trHaltStopsAll\(halt\) \? t\("tr\.ov\.evRestartStoppedNote"\) : t\("tr\.ov\.evHaltNote"\)/.test(src)); }
   { // audit 2-1(B0):沒有交易所 + 重開停止
     const B0 = (o) => ({ alive: true, report: { venues: {}, halt: {}, reconciler: { alive: false, stopped: { reason: "machine_restart", at: 1, ...o } } } });
@@ -1701,7 +1701,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       ok("V2b 陷阱(行為):Z 的每一種狀態狀態句都會換行" + (noWrap.length ? ":" + noWrap.map((x) => x[0]).join() : ""), noWrap.length === 0); }
     // 陷阱:狀態句預設 nowrap + 省略號,跨滿寬之後少了 .wrap 會被截成一行**而且看起來很正常**——藏掉的是「部位現在沒有人在管」
     ok("V2b 陷阱:Z 的每一種狀態都掛 .wrap(running + Z、尚未啟動那兩種以前沒有)", /trNoAmounts\(trReport\(\)\) \|\| \(state === "noaccount" && trNoAccountStopped\(trReport\(\)\)\)\);/.test(src)
-      && /\.main-head-desc \{[^}]*white-space: nowrap; \}/.test(css2) && /\.main-head-desc\.wrap \{ white-space: normal; overflow: visible; \}/.test(css2)); }
+      && /\.main-head-desc \{[^}]*white-space: nowrap; \}/.test(css2) && /\.main-head-desc\.wrap \{ white-space: normal; overflow: visible; max-width: 44em; \}/.test(css2)); }
     ok("§8 原因行樣式:--ink-3 12px", /\.main-head \.tr-noamt \{ margin: var\(--space-4\) 0 0; font-size: 12px; line-height: 1\.5; color: var\(--ink-3\); \}/.test(css)); }
   { // 稽核 S-1:模擬帳戶送出後直接當成已連接(不進「連接中…」等待態)
     const paint = fnS("trPaint"), skel = fnS("trPaintSkel"), cx = src.slice(src.indexOf("async function cxConnectCloud("), src.indexOf("\nfunction ", src.indexOf("async function cxConnectCloud(")));
@@ -2344,6 +2344,14 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
           "ValueError: US_VENUE: 「grid」的下單標的 NVDAUSDT 在 OKX 沒有對應的股票永續——請改綁有這檔的交易所,或取消勾選後再儲存",
           "ValueError: US_VENUE: 「grid」的下單標的 NVDAUSDT 在 Gate.io 是加密幣、不是股票永續——請改綁有這檔股票永續的交易所,或取消勾選後再儲存"].map((e) => se(e, "save", env));
         ok(`被拒(${env}):US_SYMBOL → tr.usSymbol.rejected、US_VENUE → tr.usVenue.rejected,帶顯示名`, J(us) === J(Array(3).fill('tr.usSymbol.rejected {"name":"grid","more":""}').concat(Array(2).fill('tr.usVenue.rejected {"name":"grid","more":""}'))), J(us));
+        // 綁的加密交易所沒有下單標的(runtime _venue_symbol_refusal 原句,1.1.168):名字換顯示名、標的與交易所填進在地句,合約／現貨各一句;超過五檔列五檔再接「等 N 檔」(同網頁);原句形狀對不上照原文那句
+        const vsym = ["ValueError: VENUE_SYMBOL: 「grid」的下單標的 XAUUSDT 在 OKX 沒有可下單的合約。請 agent 改成 OKX 上有的標的，或取消勾選後再儲存。",
+          "ValueError: VENUE_SYMBOL: 「grid」的下單標的 A、B 在 Gate.io 沒有可下單的現貨。請 agent 改成 Gate.io 上有的標的，或取消勾選後再儲存。",
+          "ValueError: VENUE_SYMBOL: 「grid」的下單標的 A、B、C、D、E 等 7 檔 在 Bybit 沒有可下單的合約。請 agent 改成 Bybit 上有的標的，或取消勾選後再儲存。",
+          "ValueError: VENUE_SYMBOL: 「grid」換了說法"].map((e) => se(e, "save", env));
+        ok(`被拒(${env}):VENUE_SYMBOL → 合約 tr.venueSymbol.rejected／現貨 tr.venueSymbol.rejectedSpot,帶顯示名、標的、交易所;超過五檔列五檔再接 tr.venueSymbol.more(全部幾檔、沒列的幾檔);對不上形狀走一般那句`,
+          J(vsym) === J(['tr.venueSymbol.rejected {"name":"grid","symbol":"XAUUSDT","venue":"OKX"}', 'tr.venueSymbol.rejectedSpot {"name":"grid","symbol":"Awf.listSepB","venue":"Gate.io"}',
+            'tr.venueSymbol.rejected {"name":"grid","symbol":"Awf.listSepBwf.listSepCwf.listSepDwf.listSepEtr.venueSymbol.more {\\"total\\":7,\\"more\\":2}","venue":"Bybit"}', gen + ' {"err":"「grid」換了說法"}']), J(vsym));
         // 稽核 r4 P2:好幾支被點名 → 最多列三支、其餘「等 N 支」;台股綁到加密交易所 → 講到台股
         const many = se("RuntimeError: NEEDS_ROUTING: 「a」、「b」、「c」、「d」、「e」 還沒有對應的交易所——請先到策略組合存一次下單設定,再啟動下單", "save", env);
         const tw = se("ValueError: MARKET_VENUE: 「grid」是台股策略,binance 是加密貨幣交易所、下不了——請改綁台灣期貨商,或取消勾選後再儲存", "save", env);
@@ -2361,10 +2369,15 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
         ok(`被拒(${env}):五支點名 → 列前三支 + 「和另外 2 支」;台股策略綁加密 → tr.marketVenue.crypto 帶市場名(台股)`,
           many === 'tr.needsRouting.rejected {"name":"atr.rejNameSepbtr.rejNameSepc","more":"tr.rejMore {\\"n\\":2}"}' && tw === 'tr.marketVenue.crypto {"name":"grid","more":"","market":"tr.mktName.twStock"}', J([many, tw])); } }
     { const S = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8");
-      ok("tr.notTxf.rejected／tr.pick.txf／txfKeep 不再寫死「統一期貨」:帶 {venue};兩語都有 MARKET_VENUE 那句;群益在地名「群益期貨／Capital Futures」(跟選單同一個 cap.venue);美股 US_SYMBOL／US_VENUE 兩句同網頁原文",
+      ok("tr.notTxf.rejected／tr.pick.txf／txfKeep 不再寫死「統一期貨」:帶 {venue};兩語都有 MARKET_VENUE 那句;群益在地名「群益期貨／Capital Futures」(跟選單同一個 cap.venue);美股 US_SYMBOL／US_VENUE 兩句同網頁原文;VENUE_SYMBOL 合約／現貨兩句與「等 N 檔」兩語同網頁原文",
         /"tr\.notTxf\.rejected": "[^"]*\{venue\}只能下台指期。到「選擇策略」取消勾選後再儲存。"/.test(S) && /"tr\.pick\.txf": "\{venue\}只能下台指期/.test(S) && !/"tr\.(notTxf\.rejected|pick\.txf|pick\.txfKeep)": "[^"]*統一期貨/.test(S)
         && S.includes('"tr.usSymbol.rejected": "「{name}」{more}用的是美股訊號：只能用 Type A 單一標的策略下單，SYMBOL 要寫成該檔的股票永續（例如 NVDA → NVDAUSDT）。改好後再儲存，或到「選擇策略」取消勾選。"')
         && S.includes('"tr.usVenue.rejected": "“{name}”{more}: this exchange doesn’t list its symbol as a stock perpetual. Connect an exchange that lists that stock perpetual, or uncheck it in Pick Strategies, then save."')
+        && S.includes('"tr.venueSymbol.rejected": "「{name}」的下單標的 {symbol} 在 {venue} 沒有可下單的合約。請 agent 改成 {venue} 有的標的，或到「選擇策略」取消勾選後再儲存。"')
+        && S.includes('"tr.venueSymbol.rejectedSpot": "「{name}」的下單標的 {symbol} 在 {venue} 沒有可下單的現貨。請 agent 改成 {venue} 有的標的，或到「選擇策略」取消勾選後再儲存。"')
+        && S.includes('"tr.venueSymbol.rejected": "“{name}”: {venue} has no tradable contract for {symbol}. Ask the agent to switch to a symbol {venue} lists, or uncheck it in Pick Strategies, then save."')
+        && S.includes('"tr.venueSymbol.rejectedSpot": "“{name}”: {venue} has no spot market for {symbol}. Ask the agent to switch to a symbol {venue} lists, or uncheck it in Pick Strategies, then save."')
+        && S.includes('"tr.venueSymbol.more": " 等 {total} 檔"') && S.includes('"tr.venueSymbol.more": " and {more} more"')
         && S.includes('"cap.venue": "群益期貨"') && S.includes('"cap.venue": "Capital Futures"') && !S.includes("tr.venueCapitalFull") && /"tr\.marketVenue\.rejected": "[^"]*\{president\}或\{capital\}/.test(S)); }
     // 列(psRow):原因句 = 勾選框的 aria-describedby
     { const mk = (tag) => ({ tag, id: "", className: "", kids: [], text: "", attrs: {}, dataset: {}, setAttribute(k, v) { this.attrs[k] = String(v); }, appendChild(c) { this.kids.push(c); return c; }, append(...c) { c.forEach((x) => this.kids.push(x)); }, get textContent() { return this.text + this.kids.map((k) => k.textContent).join(""); }, set textContent(v) { this.text = v; } });
@@ -2680,7 +2693,15 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
         ok("暫停並關閉部位那一列不帶 evHaltNote 說明;一般暫停、只掛了暫停照帶", !/evHaltNote/.test(rc[0]) && !/evHaltNote/.test(rn[0]) && /evHaltNote/.test(rp[0]) && /evHaltNote/.test(rh[0]), J([rc, rn, rp, rh]));
         // 稽核 B-3:HALT 的 closing(runtime 判完才寫)優先於 reason——只掛了暫停(halted_only／群益手動)寫已暫停
         const rf = evRows([], { halted: true, at: new Date((now - 600) * 1000).toISOString(), source: "web", reason: "close all positions", closing: false });
-        ok("現在的 HALT:closing false(沒開始平倉)即使 reason 是 close all positions 也寫已暫停下單", rf.length === 1 && !/evHaltClose/.test(rf[0]) && /tr\.ov\.evHalt/.test(rf[0]), J(rf)); }
+        ok("現在的 HALT:closing false(沒開始平倉)即使 reason 是 close all positions 也寫已暫停下單", rf.length === 1 && !/evHaltClose/.test(rf[0]) && /tr\.ov\.evHalt/.test(rf[0]), J(rf));
+        // QA 0158 P1-1:凍結(0.1.27)或 holds_all 的暫停並關閉部位,平倉單正在送,事件列不得再寫「什麼單都不送」;沒平倉的凍結暫停照寫
+        const iso = (x) => new Date(x * 1000).toISOString();
+        const fc = evRows([{ ts: now - 60, type: "halt_close", closing: true }], { halted: true, freeze: true, at: iso(now - 60), source: "web", reason: "close all positions", closing: true });
+        const fa = evRows([], { halted: true, holds_all: true, at: iso(now - 600), source: "web", reason: "close all positions", closing: true });
+        const fp = evRows([{ ts: now - 60, type: "halt" }], { halted: true, freeze: true, at: iso(now - 60), source: "web", reason: "user request", closing: false });
+        ok("凍結／holds_all 下的暫停並關閉部位:寫 evHaltClose、不帶 evRestartStoppedNote;凍結的一般暫停照帶",
+          fc.length === 1 && /evHaltClose/.test(fc[0]) && !/evRestartStoppedNote/.test(fc[0]) && fa.length === 1 && /evHaltClose/.test(fa[0]) && !/evRestartStoppedNote/.test(fa[0])
+          && fp.length === 1 && /evRestartStoppedNote/.test(fp[0]), J([fc, fa, fp])); }
       ok("§1.4 N 照連著的交易所算;0 筆整行不出(事件也空時只剩 label + 空態句)",
         !!paintEv({ orders: [{ ...CAP, ts: now - 8 * 86400 }] }).some((n) => n.className === "pf-acts ev-fills")
         && !paintEv({ orders: [{ ...CAP, exchange: "paper" }], venues: { president: { credentials: true, pair: true, order: true, account: true } } }).some((n) => n.className === "pf-acts ev-fills")

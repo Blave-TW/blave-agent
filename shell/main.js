@@ -775,6 +775,16 @@ function errReport() {
   });
   return _er;
 }
+/* 畫面在某條回合結束後問(帶 sid)= 只問那一輪記的;沒帶 = 剛開 app。sid 沒跑過 → since 無限大,什麼都不問。
+   running 兩種都帶:還在跑的那幾輪記的留給它們自己 */
+function errScope(sid) {
+  const running = new Map();
+  for (const [k, r] of turns) if (r.startedAt) running.set(k, r.startedAt);
+  // 剛收尾、還沒輪到它自己問的那條(畫面晚 1.5 秒才問):它這一輪之後記的先留著,不被先問的那條當過期丟掉(稽核 0.1.59 B-6)
+  for (const [k, at] of turnStartAt) if (!running.has(k)) running.set(k, at);
+  if (typeof sid !== "string" || !sid) return { running };
+  return { sid, since: turnStartAt.has(sid) ? turnStartAt.get(sid) : Infinity, running };
+}
 /* Blave 餘額(balance.js):電腦版自己的端點,帶帳號 token + app_secret;只回數字給自家畫面,憑證不出主行程。 */
 let _balance = null;
 function balanceHost() {
@@ -1635,12 +1645,14 @@ function stratAnnReturn(st) {
   const tr = num(st["Total Return [%]"]);
   if (tr === null) return null;
   const day = (s) => { const m = typeof s === "string" && /^(\d{4})-(\d{2})-(\d{2})/.exec(s); return m ? Date.UTC(+m[1], +m[2] - 1, +m[3]) : null; };
-  const s = day(st.start), e = day(st.end);
+  // 起點與 365.25 同回測頁 annualReturn(QA 0158 P2-2:START 早於第一根 K 時年化偏低)
+  const d0 = Array.isArray(st.daily_dates) && st.daily_dates.length ? day(st.daily_dates[0]) : null;
+  const s = d0 !== null ? d0 : day(st.start), e = day(st.end);
   let days = s !== null && e !== null ? Math.round((e - s) / 86400000) : null;
   if (!(days > 0)) days = Array.isArray(st.daily_dates) ? st.daily_dates.length : 0;
   const base = 1 + tr / 100;
   if (!(days > 0) || !(base > 0)) return null;
-  const ann = (Math.pow(base, 365 / days) - 1) * 100;
+  const ann = (Math.pow(base, 365.25 / days) - 1) * 100;
   return isFinite(ann) ? ann : null;
 }
 /* 策略名稱規則(canon notifications §3.1):同 api openclaw/strategy_names.clean 與 renderer trStratLabel 一字不差,
@@ -3200,7 +3212,27 @@ async function libraryDownload(strategyId) {
     libWriteWs(dir, name, b.code);
     if (b.security && typeof b.security === "object") libWriteWs(dir, sec, JSON.stringify(b.security));
   } catch (_) { return { ok: false, kind: "fail" }; }
+  libPickRecord(b.code, strategyId);
   return { ok: true };
+}
+/* 裝好那支的 source.json 不靠 agent 記得寫(0.1.59 實測漏寫 → 自動迭代把策略庫那支當新策略調參):記下 sha256(碼) → 策略庫 id,
+   lib/runner.py _claim_library_pick 在那份碼第一次回測時補寫。記不下來照舊靠 agent 寫,下載本身不算失敗 */
+const LIB_PICKS_FILE = "library_picks.json", LIB_PICK_TTL_MS = 24 * 3600 * 1000, LIB_PICKS_MAX = 20;
+function libPickRecord(code, strategyId) {
+  try {
+    const dir = path.join(WS, "state");
+    fs.mkdirSync(dir, { recursive: true });
+    if (fs.realpathSync(dir) !== path.join(fs.realpathSync(WS), "state")) return;   // 同 tmp:被換成往外的 symlink 就不寫
+    const file = path.join(dir, LIB_PICKS_FILE), t = Date.now();
+    let m = {};
+    try { const buf = wsfile.read(file, 64 * 1024); m = buf ? JSON.parse(buf.toString("utf8")) : {}; } catch (_) { m = {}; }   // 策略碼寫得到 state/:FIFO、/dev/zero 不能卡住主行程(稽核 0.1.59 S-1)
+    const keep = Object.entries(m && typeof m === "object" && !Array.isArray(m) ? m : {})
+      .filter(([k, v]) => /^[0-9a-f]{64}$/.test(k) && v && Number.isInteger(v.id) && Number.isFinite(v.at) && t - v.at < LIB_PICK_TTL_MS)
+      .slice(-(LIB_PICKS_MAX - 1));
+    const out = Object.fromEntries(keep);
+    out[crypto.createHash("sha256").update(code, "utf8").digest("hex")] = { id: strategyId, at: t };
+    wsfile.replace(file, JSON.stringify(out));
+  } catch (_) { /* 記不下來:agent 照 marketplace.md 自己寫 */ }
 }
 /* 「已安裝」對照表(規格 §1.2):{ marketplace id → 本機策略資料夾名 },只有這台電腦視角在用。存 userData、不進 workspace
    (agent 讀得到 workspace;這張表是外殼自己的記憶)。patch = { id, name } 記一筆、{ id, name: null } 拿掉一筆、不給只讀。 */
@@ -3422,6 +3454,7 @@ const safeId = (v) => (typeof v === "string" && SAFE_ID.test(v) ? v : null);
    rec.phase:queued(只有超過雲端名額的才有;只放記憶體,關 app 就不送)| starting(送出到 spawn 之間,也擋同一條連按)| running。
    「有沒有回合」一律問 anyTurn()(機器層級的鎖)或 turns.has(sid)(那一條自己);tests/check_shell_turn_table.js 列舉每一處 */
 const turns = new Map();
+const turnStartAt = new Map();   // sid → 最近收尾那一輪的開跑時間(turnFinish 記):錯誤回報只問那一輪之後記的(errScope)
 const turnQueue = [];   // 排隊中的 sid,FIFO
 let turnSeqN = 0;
 const liveTurnCount = () => { let n = 0; for (const r of turns.values()) if (r.phase !== "queued") n++; return n; };
@@ -4003,6 +4036,9 @@ async function runTurn(rec, { sessionId, message, model: rawModel, effort: rawEf
   const useBlave = conn.kind === "blave";
   if (plan.proxyToken) await acctRelay().start();   // 轉送口起不來就整輪失敗(不退回把帳號 token 放進環境)
   const dataAccess = syncDataAccess(plan.dataKey, signedIn);
+  // 自動迭代額度(spec agent-auto-iterate §3.2、11-18 裁定):Blave AI 照 account_status.iterate_tier(api 判,只靠綁卡前額度＝basic);
+  // 讀不到、太舊、舊 api 沒這欄 → basic(fail-closed);自己的引擎(Claude Code、Codex、自帶金鑰)→ full。回合開始定一次
+  const iterTier = !useBlave ? "full" : lastAcct && Date.now() - lastAcct.at <= ACCT_FRESH_MS && lastAcct.body.iterate_tier === "full" ? "full" : "basic";
   // `blave` MCP:拿得到碼才掛;拿不到(沒主機、端點還沒上線、被限速、連不上)= 這一輪不掛,回合照常。
   // 兩條引擎都寫同一份單次設定檔(0600、workspace 以外、回合結束就刪),runtime 用 --mcp-config 判「這一輪有沒有掛」。
   // Claude 經那份檔吃 MCP;Codex 不吃檔——吃 `-c mcp_servers.blave.*`(runtime/codex_engine.py 組)+ 只給 codex 子行程的
@@ -4061,6 +4097,8 @@ async function runTurn(rec, { sessionId, message, model: rawModel, effort: rawEf
     BLAVE_AGENT_STATE: path.join(BASE, "state"),
     BLAVE_AGENT_DB: path.join(BASE, "state", "session.db"),
     BLAVE_TURN_INTERRUPT_FILE: rec.stopFile,
+    // 錯誤回報:lib/error_report.py 記下是哪條對話,卡只出在那條(shell/errreport.js pending 的 scope);只在本機,不送
+    BLAVE_CHAT_SID: sessionId,
     // 回合來源(spec §2.8):外殼內部叫 mobile,對 runtime 與 api 一律 app;runtime 只寫進回合 log
     ...(rec.origin === "mobile" ? { BLAVE_TURN_ORIGIN: "app" } : {}),
     // K 線走 Binance 公開 API(桌面版沒有 Blave 資料訂閱)。獨立、明確 opt-in 的
@@ -4097,6 +4135,9 @@ async function runTurn(rec, { sessionId, message, model: rawModel, effort: rawEf
     // 澄清表單(renderer/form.js):電腦版 spawn 的永遠是包裡那份 runtime,沒有版本錯配(tests/check_shell_viewing.js 釘著 runtime 認得)。
     // 手機來的回合不帶:手機畫不出表單,模型寫了 <form> 用戶只會等不到問題
     ...(rec.origin === "mobile" ? [] : ["--clarify-form"]),
+    // 答案鈕(renderer/answers.js):同表單,手機那輪不帶,模型照 AGENTS.md 在正文列條列選項
+    ...(rec.origin === "mobile" ? [] : ["--answer-buttons"]),
+    "--iter-tier", iterTier,
     // 搬策略動作卡(renderer/handoff.js):同表單卡,手機畫不出;旗標關著時畫面沒有搬的路,也不叫 agent 出卡
     ...(rec.origin === "mobile" || !cloudHandoffOn() ? [] : ["--handoff-card"]),
     // argv 上只有設定檔的**路徑**(碼在檔案裡,0600、workspace 以外、這一輪結束就刪);runtime 只在電腦版(LocalSink)認這個旗標
@@ -4122,6 +4163,8 @@ async function runTurn(rec, { sessionId, message, model: rawModel, effort: rawEf
       if (line.startsWith("@@BLAVE@@")) {
         try {
           const c = JSON.parse(line.slice(9)); if (c && c.type === "done") { rec.finalized = true; turnAwaiting = c.awaiting === true; sessWaitingSave(sessionId, turnAwaiting); }   // awaiting 只存;kinds 不存不畫
+          // 自動迭代收場(runtime iterate_turn_end;值已在 runtime 列舉過,telemetry 白名單再擋一次):只記埋點,不進畫面
+          if (c && c.type === "auto_iter") { tm().track("auto_iter_done", { r: c.done }); tm().track("auto_iter_rounds", { n: c.rounds }); continue; }
           if (c && c.type === "export") { const rec = noteExport(c, sessionId); if (rec) { c.id = rec.id; turnXp.push(rec); } }   // 卡重開要畫回來:快照先落地,id 給卡的「下載…」
           if (c && c.type === "card") {
             if (dataAccess === "own") continue;   // 用戶自己的 API 方案 key:出路在網站 API 頁,不出資料卡(runtime 本來就不送,這裡再擋一次)
@@ -4158,6 +4201,7 @@ function turnNice(child) {
 function turnFinish(rec, end, awaiting) {
   if (turns.get(rec.sid) !== rec) return false;
   turns.delete(rec.sid);
+  if (rec.startedAt) turnStartAt.set(rec.sid, rec.startedAt);
   try { fs.rmSync(rec.stopFile, { force: true }); } catch (_) { /* 留著也無害:下一輪是新檔名 */ }
   replyPending.set(rec.sid, { sid: rec.sid, awaiting: awaiting === true });   // 畫面判完 stopped／faulted 才送 reply-cue
   sendTurn(rec.sid, "turn-end", end);
@@ -4206,6 +4250,7 @@ async function startTurn(payload, origin) {
 /* 已經在表上的那一筆真的開跑。runTurn resolve = spawn 與 stdin 都成功、話交到 agent 手上;reject = 沒開跑,當一輪失敗收尾 */
 function turnLaunch(rec, payload) {
   rec.phase = "starting";
+  rec.startedAt = Date.now();
   turnParTrack();
   // 「上雲端運行」(cloud_started)0.1.47 起由 transfer-up 的 ack 成功送,不再看回合
   runTurn(rec, payload).catch((err) => {
@@ -4756,7 +4801,7 @@ app.whenReady().then(() => {
   handle("theme", () => themeGet(), "system");
   handle("theme-set", (_e, v) => themeSet(v), null);
   // 錯誤回報(shell/errreport.js):畫面只拿得到要顯示的那份文字與批次 id,送出的內容由主行程凍結,畫面只回決定
-  handle("err-report-pending", () => errReport().pending(), null);
+  handle("err-report-pending", (_e, sid) => errReport().pending(errScope(sid)), null);
   handle("err-report-decide", (_e, id, action, always) => errReport().decide(String(id || ""), action, always === true), false);
   handle("err-report-mode", () => errReport().mode(), "ask");
   handle("err-report-mode-set", (_e, m) => errReport().setMode(m), null);

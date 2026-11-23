@@ -88,6 +88,23 @@ const EVENTS = {
   addon_res: { step: ["ok_full", "ok_prorated", "ok_free", "ok_convert", "bind_page", "repriced", "src_changed", "capped", "cap_down", "paid_no_srv", "charge_fail", "wallet_short", "net"] },
   addon_pick: { tier: ["linux_starter", "linux_premium", "linux_max", "windows_starter", "windows_premium", "windows_max"] },
   auto_resume: { r: ["sent", "skip_new", "skip_state"] },
+  // 0.1.59 海外(spec overseas-english-content §4;api desktop_telemetry 同一份、要先上):lib_mkt = 策略庫切到哪個市場分頁、lib_use_mkt = 從策略庫
+  // 裝的策略是哪個市場(分不出來 unk)、wd_mkt = 「可以回測的資料」切到哪個市場分段(清單內部 tw／us 送出前換成 twstock／usstock)。
+  // feature_used 的 lib_mkt_pick／library_use 照送;只有一格 prop,市場另開事件(同 lib_sort)。不送策略 id 或名稱
+  lib_mkt: { v: ["all", "crypto", "txf", "twstock", "usstock"] },
+  lib_use_mkt: { mkt: ["crypto", "txf", "twstock", "usstock", "unk"] },
+  wd_mkt: { mk: ["crypto", "usstock", "twstock", "txf"] },
+  // 0.1.59 聊天欄答案鈕(renderer/answers.js;spec chat-answer-buttons §9,api desktop_telemetry 同一份、要先上):畫出來(幾顆)、按鈕送出且回合
+  // started／queued(第幾顆;一格 prop 放不下 n,分布看 answer_shown)、畫過但自己打字送出、按鈕送出那輪沒回覆沒收據就被停。不帶選項文字與問句
+  answer_shown: { n: ["2", "3", "4"] },
+  answer_sent: { pos: ["1", "2", "3", "4"] },
+  answer_missed: { n: ["2", "3", "4"] },
+  answer_undo: { n: ["2", "3", "4"] },
+  // 0.1.59 自動迭代(spec agent-auto-iterate §8 與 11-18 裁定;主行程收 runtime 的 auto_iter chunk 後送,api 白名單同一份、要先上):
+  // 一場跑完或中止記一則:auto_iter_done = 額度條.停止原因(good 夠好、cap 到輪數上限、time 30 分或牆鐘、steps 撞 100 步、credit 額度、
+  // user 按停止、fault 故障、done 照流程收場);auto_iter_rounds = 改邏輯的輪數分桶。一格 prop 放不下兩維,拆兩個事件。不送績效數字
+  auto_iter_done: { r: ["basic.good", "basic.cap", "basic.time", "basic.steps", "basic.credit", "basic.user", "basic.fault", "basic.done", "full.good", "full.cap", "full.time", "full.steps", "full.credit", "full.user", "full.fault", "full.done"] },
+  auto_iter_rounds: { n: ["0", "1", "2_3", "4_6", "7_10"] },
   // 0.1.15 偵測失敗(renderer 送,只在連結畫面偵測完時):本機那個 CLI 為什麼不能用。值由主行程 detectWhy 判,語意見 canon 登記表
   detect_fail: { why: ["claude_none", "claude_timeout", "claude_nonzero", "claude_badjson", "codex_none", "codex_shim", "codex_timeout", "codex_nonzero"] },
   // 本機策略的三步(0.1.18;主行程送,strategySteps):新建、第一次有回測、第一次配了錢(同雲端的 deployed;按下啟動下單另有 trade_started)。
@@ -392,7 +409,11 @@ const EVENTS = {
     "start_catch_chg",
     // 0.1.58 隨附、旗標關著(之後的小版翻閘)的永豐期貨連接框(renderer/sinopac.js;spec sinopac-connect-2026-11-17 §12,api 先上,順序同 api):本機打開憑證過了進清單、
     // 按〔到永豐簽署〕、模擬單送出、讀到已簽(審核通過或一開始就簽了)、下單程式起來、〔重新登入〕後確認登入過了。按〔到永豐建金鑰〕沿用 cx_key_page
-    "sinf_form_saved", "sinf_sign_open", "sinf_sim_sent", "sinf_signed", "sinf_ready", "sinf_relogin"] },
+    "sinf_form_saved", "sinf_sign_open", "sinf_sim_sent", "sinf_signed", "sinf_ready", "sinf_relogin",
+    // 0.1.59 澄清表單主鈕直接送出(renderer/form.js;spec chat-answer-buttons §9,同 api 順序,api 先上):clarify_click = 主鈕送出且回合 started／queued
+    // (canon 的 clarify_sent method:click;一格 prop 放不下 method,fill 那條照舊是 clarify_sent／clarify_sent_ed);clarify_undo = 那輪沒回覆沒收據就被停。
+    // clarify_self 起無送出點(「我自己打」拿掉),api 照收舊版送的
+    "clarify_click", "clarify_undo"] },
 };
 // `claude auth status` 的 authMethod 原值 → cli_auth 的 how(隨包 CLI 2.1.281 的 auth status 只會給這六個)。唯一的一份:
 // 主行程 detectAgents 算好放進 out.claude.how,畫面與主行程都讀那一欄。null／缺 = none,表外 = other
@@ -404,7 +425,7 @@ const ONCE = ["app_first_open", "first_backtest_done", "first_reply_done"];   //
 const DAILY = ["feature_used", "acct_card_shown", "acct_card_click", "acct_card_back", "turn_failed", "connect_failed",
   "plan_start_res", "update_failed", "lib_blocked", "heartbeat", "engine_setup", "engine_opt_fail", "lib_pick", "idea_sent", "detect_fail",
   "device_type", "reply_notif", "auth_fail", "cli_auth", "key_verify", "lib_sort", "lib_bindbuy", "lib_bindplan", "lib_cardplan", "lib_login_go",
-  "data_card_shown", "app_quit", "app_crash", "engine_fail", "turn_fail_why", "lib_buy_result", "mkt_q", "mkt_set", "acct_card_alt", "acct_card_alt_click", "free_low_shown", "ai_credit_line", "plan_box", "plan_box_res", "plan_bind_res", "addon_res", "addon_pick", "auto_resume"];
+  "data_card_shown", "app_quit", "app_crash", "engine_fail", "turn_fail_why", "lib_buy_result", "mkt_q", "mkt_set", "acct_card_alt", "acct_card_alt_click", "free_low_shown", "ai_credit_line", "plan_box", "plan_box_res", "plan_bind_res", "addon_res", "addon_pick", "auto_resume", "auto_iter_done", "auto_iter_rounds", "answer_shown", "answer_sent", "answer_missed", "answer_undo", "lib_mkt", "lib_use_mkt", "wd_mkt"];
 // 每日一則、不分屬性值:心跳一天只要一列(live 記當天第一次送出那一刻的),下單中途開關不多送
 const DAILY_ONE = ["heartbeat"];
 const HEARTBEAT_MS = 10 * 60 * 1000;   // 啟動後 10 分鐘起每 10 分鐘看一次;當天送過就不出門(啟動當天另有 app_open)
@@ -422,7 +443,7 @@ const SID_ON = ["strat_created", "strat_backtested", "strat_deployed"];
 const SID_RE = /^[0-9a-f]{16}$/;
 const SID_KEY_RE = /^[0-9a-f]{64}$/;
 // 畫面(track-event)只准送這幾個;里程碑(app_first_open、login_done…)與主行程自己判的(plan_start_res、update_failed)不收
-const FROM_RENDERER = ["acct_card_shown", "acct_card_click", "acct_card_back", "turn_failed", "connect_failed", "first_reply_done", "lib_blocked", "lib_pick", "idea_sent", "detect_fail", "auth_fail", "cli_auth", "key_verify", "lib_sort", "lib_bindbuy", "lib_bindplan", "lib_cardplan", "lib_login_go", "data_card_shown", "turn_fail_why", "lib_buy_result", "mkt_q", "mkt_set", "acct_card_alt", "acct_card_alt_click", "free_low_shown", "ai_credit_line", "plan_box", "plan_box_res", "plan_bind_res", "addon_res", "addon_pick", "auto_resume"];
+const FROM_RENDERER = ["acct_card_shown", "acct_card_click", "acct_card_back", "turn_failed", "connect_failed", "first_reply_done", "lib_blocked", "lib_pick", "idea_sent", "detect_fail", "auth_fail", "cli_auth", "key_verify", "lib_sort", "lib_bindbuy", "lib_bindplan", "lib_cardplan", "lib_login_go", "data_card_shown", "turn_fail_why", "lib_buy_result", "mkt_q", "mkt_set", "acct_card_alt", "acct_card_alt_click", "free_low_shown", "ai_credit_line", "plan_box", "plan_box_res", "plan_bind_res", "addon_res", "addon_pick", "auto_resume", "answer_shown", "answer_sent", "answer_missed", "answer_undo", "lib_mkt", "lib_use_mkt", "wd_mkt"];
 const DAY_RE = /^[0-9]{8}$/;
 const DEFAULT_ON = true;   // Wei 2026-09-21:預設開、照實告知、可關
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;

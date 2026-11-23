@@ -1,24 +1,31 @@
 /* 錯誤回報的詢問卡與設定(spec agent-error-report-2026-11-16 §5;主行程那半在 shell/errreport.js)。
    卡由外殼畫在對話串裡,不是 AI 的回覆:只活在畫面上,不存進對話紀錄、不經手機同步。內容一律 textContent。
-   出卡時機:剛開 app、或一輪結束而且沒有任何回合在跑;每個本地日最多一張(主行程判)。
+   出卡時機:一輪結束時畫在那一輪的對話裡、只問那一輪記的(0.1.59);剛開 app 而且沒有任何回合在跑時問不屬於對話的那些;
+   每個本地日最多一張(主行程判)。
    〔看會送出的內容〕顯示的那份文字由主行程給,送出的就是那一份;畫面只回「送／不送／以後自動送」。
    不加使用事件(Wei 裁定,spec §8)。 */
 var ERR_MODE = "ask";
 let errAsking = false, errLive = null;   // errLive = 還沒按的那張卡;新卡出來時收掉(它的記錄已併進新卡,主行程也只認新那批)
-async function errAsk() {
+async function errAsk(sid) {
+  // sid = 剛結束那一輪的對話:卡只畫在那條。那條關掉了、或已經開跑下一輪:不問(那一輪的記錄主行程之後丟掉,不會跑到別條)
+  const T = sid ? CS.tabs.get(sid) : null;
+  if (sid && (!T || T.dead || tabRun(T))) return;
   const sc = chatEl();
   // 自動送與不送也走這一支(主行程在裡面送掉或清檔、回 null);還在連結畫面:這次不問,下一輪再問
   if (errAsking || !sc || !sc.isConnected || !sc.getClientRects().length) return;
-  if (typeof csAnyTurn === "function" && csAnyTurn()) return;   // 不打斷進行中的回合
+  if (!sid && typeof csAnyTurn === "function" && csAnyTurn()) return;   // 剛開 app:不打斷進行中的回合
   errAsking = true;
   let p = null;
-  try { p = await window.blave.errReportPending(); } catch (_) { p = null; } finally { errAsking = false; }
-  if (p && p.id) errCard(p);
+  try { p = await window.blave.errReportPending(sid || undefined); } catch (_) { p = null; } finally { errAsking = false; }
+  if (!p || !p.id) return;
+  if (!T) errCard(p);
+  else if (!T.dead) withTab(T, () => errCard(p));
 }
 function errCard(p) {
   const mk = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
   if (errLive) errLive.el.remove();
   const card = faultCard();
+  card.T = typeof CS !== "undefined" ? CS.loaded : null;   // 卡屬於畫上去的那條對話(errReattach 只接回那條)
   errLive = card;
   // 版面(設計稽核 M2):說明句 → 帳號句 → 〔看會送出的內容〕 → JSON → 〔送出〕〔不送〕☐ 以後自動送 → 勾選說明。先讀到同意的事實,才看到鈕
   const sub = mk("div", "err-sub"), acct = mk("p", "err-acct");
@@ -65,12 +72,15 @@ function errCard(p) {
   act.after(note);
 }
 /* 卡所在的那條重畫(csPaintHistory → csClearChat)會把卡清掉,主行程今天已經問過、不會再給(設計稽核 0.1.56 第二批 S2)。
-   csDraw 畫完、換回眼前分頁之後叫:同一個節點接到眼前那條最底下;還掛在別條的不動,按過的(errLive 已收)不補 */
+   csDraw 畫完之後叫:同一個節點接回它那條對話的最底下,不搬到別條(0.1.59);那條關掉了卡就跟著收掉。按過的(errLive 已收)不補 */
 function errReattach() {
-  if (!errLive || errLive.el.isConnected || !CS.cur || CS.cur.dead) return;
-  CS.cur.el.appendChild(errLive.el); busyPin(); scrollChat();
+  if (!errLive || errLive.el.isConnected) return;
+  const T = errLive.T || CS.cur;
+  if (!T || T.dead) { errLive = null; return; }
+  T.el.appendChild(errLive.el);
+  if (T === CS.cur) { busyPin(); scrollChat(); }
 }
-window.blave.onTurnEnd(() => setTimeout(errAsk, 1500));
+window.blave.onTurnEnd((r) => setTimeout(() => errAsk(r && typeof r.sid === "string" ? r.sid : null), 1500));
 setTimeout(errAsk, 4000);
 
 /* 設定 › 隱私「錯誤回報」:每次問我／自動送／不送。跟「傳送使用資料」開關互不影響,不放進那張「會收」清單 */

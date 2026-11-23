@@ -98,10 +98,10 @@ t("agent 回合的 spawn 用 childEnv(env)、windowsHide", /\], \{ env: childEnv
   const dataAccessEnv = new Function("dataAccessWhy", src.slice(src.indexOf("function dataAccessEnv("), src.indexOf("\n}\n", src.indexOf("function dataAccessEnv(")) + 2) + "\n return dataAccessEnv;")(() => "unknown");
   const turn = new Function("path", "os", "process", "BASE", "WS", "VENV_PY", "VENV_BIN", "PY_ENV", "envPath", "acct", "useCodex", "mcpFile", "mcpMount", "dataAccess", "dataAccessEnv", "signedIn", "imgPort", "imgToken", "sessionId", "rec", "brMount", "brState", "TURN_NOTES", "note", "llmEnv", "relay",
     src.slice(a, b + 4) + "\n return env;")(path, os, { env: { USER: "u", LOGNAME: "u", TMPDIR: "/t", LANG: "zh_TW.UTF-8" } }, "/Users/u/Blave", "/Users/u/Blave/workspace", "/Users/u/Blave/venv/bin/python", "bin", {}, "/opt/homebrew/bin:/usr/bin", null, false, null, null, "ours", dataAccessEnv, true, 0, "", "s1", { stopFile: "/Users/u/Blave/state/turn_stop/ab" }, null, "off", ["report_once"], null, llmEnv, null);
-  t("agent 回合(darwin)的白名單 key 逐一相同:PATH HOME BLAVE_PYTHON USER LOGNAME TMPDIR BLAVE_AGENT_BASE BLAVE_AGENT_WORKSPACE BLAVE_AGENT_HOME BLAVE_AGENT_STATE BLAVE_AGENT_DB BLAVE_TURN_INTERRUPT_FILE BLAVE_KLINE_SOURCE BLAVE_DATA_ACCESS BLAVE_BROWSER LANG",
-    Object.keys(turn).join() === "PATH,HOME,BLAVE_PYTHON,USER,LOGNAME,TMPDIR,BLAVE_AGENT_BASE,BLAVE_AGENT_WORKSPACE,BLAVE_AGENT_HOME,BLAVE_AGENT_STATE,BLAVE_AGENT_DB,BLAVE_TURN_INTERRUPT_FILE,BLAVE_KLINE_SOURCE,BLAVE_DATA_ACCESS,BLAVE_BROWSER,LANG"
+  t("agent 回合(darwin)的白名單 key 逐一相同:PATH HOME BLAVE_PYTHON USER LOGNAME TMPDIR BLAVE_AGENT_BASE BLAVE_AGENT_WORKSPACE BLAVE_AGENT_HOME BLAVE_AGENT_STATE BLAVE_AGENT_DB BLAVE_TURN_INTERRUPT_FILE BLAVE_CHAT_SID BLAVE_KLINE_SOURCE BLAVE_DATA_ACCESS BLAVE_BROWSER LANG",
+    Object.keys(turn).join() === "PATH,HOME,BLAVE_PYTHON,USER,LOGNAME,TMPDIR,BLAVE_AGENT_BASE,BLAVE_AGENT_WORKSPACE,BLAVE_AGENT_HOME,BLAVE_AGENT_STATE,BLAVE_AGENT_DB,BLAVE_TURN_INTERRUPT_FILE,BLAVE_CHAT_SID,BLAVE_KLINE_SOURCE,BLAVE_DATA_ACCESS,BLAVE_BROWSER,LANG"
     && turn.BLAVE_BROWSER === "off" && /const brState = brMount && mcpFile \? "on" : brWanted \? "unavailable" : "off";/.test(src)
-    && turn.PATH === "/Users/u/Blave/venv/bin:/opt/homebrew/bin:/usr/bin" && turn.BLAVE_DATA_ACCESS === "1");
+    && turn.PATH === "/Users/u/Blave/venv/bin:/opt/homebrew/bin:/usr/bin" && turn.BLAVE_DATA_ACCESS === "1" && turn.BLAVE_CHAT_SID === "s1");
   t("agent 回合的物件本身沒有 ...process.env(白名單的本意)", !/\.\.\.process\.env/.test(src.slice(a, b)));
 }
 // ── 捲軸(0.1.3 真機):Windows 的捲軸不是浮動式——側欄多一條橫向捲軸(.cs-del 熱區伸出列外 4px)、報告區是系統粗捲軸。

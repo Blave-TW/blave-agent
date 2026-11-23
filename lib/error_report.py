@@ -34,6 +34,10 @@ _OURS = ("lib", "manager")
 _EXC_TYPE_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_.]{0,79}\Z")
 _FILE_RE = re.compile(r"^(lib|runtime|manager)/[A-Za-z0-9_./-]{1,80}\Z")
 _FUNC_RE = re.compile(r"^[A-Za-z_<>$.][A-Za-z0-9_<>$.]{0,59}\Z")
+# The desktop conversation this process runs for (shell/main.js spawnTurn); the shell offers a record only
+# in that conversation, right after its turn. Local only: never part of what is sent.
+SID_ENV = "BLAVE_CHAT_SID"
+_SID_RE = re.compile(r"^desktop-[a-z0-9]{4,16}\Z")
 
 # Raised on purpose for the user or the agent to read, or flow control: not bugs. Matched by class
 # name anywhere in the MRO so this module never imports lib.data & co. Starting list from spec §3.2,
@@ -43,6 +47,7 @@ EXPECTED = frozenset({
     "UsStockUnavailable", "UsStockNotHere", "UsStockNotFound", "TwPublicUnavailable", "TwCdnUnavailable",
     "DataAccessError", "FeedNotPublished", "Halted", "PaperMarketClosed", "EntryDeferred", "SessionClosed",
     "RateLimited", "QueryInProgress", "TurnMoneyBusy",
+    "ReportRefused",   # lib/report.py: publish()'s "fix every one, then re-send" — the agent recovers in the turn
 })
 # Network blips (requests / urllib3 connection and timeout classes, and the builtins they wrap).
 # HTTPError is not here: a 4xx from our own code path is worth seeing.
@@ -140,6 +145,9 @@ def record(exc, tb):
     rec = {"v": 1, "ts": int(time.time() * 1000), "source": "py_lib", "exc_type": exc_type,
            "message": message[:MESSAGE_MAX], "frames": frames[:FRAMES_MAX],
            "py_version": "%d.%d" % sys.version_info[:2]}
+    sid = os.environ.get(SID_ENV) or ""
+    if _SID_RE.match(sid):
+        rec["sid"] = sid
     line = json.dumps(rec, ensure_ascii=False, separators=(",", ":")) + "\n"
     while len(line.encode("utf-8")) > MAX_LINE_BYTES and rec["message"]:
         rec["message"] = rec["message"][:len(rec["message"]) // 2]
