@@ -565,7 +565,7 @@ function createBrowser(o) {
 
   /* 人在不在:視窗在畫面上(沒縮到 Dock、沒藏起來),而且這一輪不是從雲端視角送出的。不在就不問,直接走退路 */
   function present() {
-    if (!cur || cur.noUser) return false;
+    if (!cur || cur.noUser || cur.noVerify) return false;
     if (o.userPresent) return !!o.userPresent();
     const w = o.getWin && o.getWin();
     try { return !!w && !w.isDestroyed() && w.isVisible() && !w.isMinimized(); } catch (_) { return false; }
@@ -1082,7 +1082,8 @@ function createBrowser(o) {
     pend.delete(p.turnKey);
     // seen / readText:外送檢查用(policy.exfilRisk)——這一輪開過的網域、讀過的字
     // noUser:這一輪是從雲端視角送出的(畫面上不是這台電腦的對話)→ 遇到驗證頁不問,直接走退路
-    const c = cur = { sessionId: p.sessionId, turnKey: p.turnKey, used: false, captchas: 0, skipGoogle: false, verifyEnd: null, noUser: p.noUser, sources: [], seen: new Set(), readText: "" };
+    // noVerify:新增報告框送出的回合——人在,但看的是報告頁,不是瀏覽器(QA 0.1.59 R3-14:等驗證等了 3.5 分鐘、報告頁卡在寫作中)→ 遇到驗證頁同樣不問
+    const c = cur = { sessionId: p.sessionId, turnKey: p.turnKey, used: false, captchas: 0, skipGoogle: false, verifyEnd: null, noUser: p.noUser, noVerify: p.noVerify, sources: [], seen: new Set(), readText: "" };
     tabs.newTurn(p.sessionId);
     for (const v of views.values()) v.pace.newTurn();   // 跨回合重置:每回合第一動作完整效果(canon 第 9 條)
     watchReports(c);
@@ -1296,7 +1297,7 @@ function createBrowser(o) {
       // turnKey 也是這一輪的開始時間(logTurn 的 ts 退路):兩輪同一毫秒開跑時往後推一毫秒,不撞號
       const turnKey = lastKey = Math.max(Date.now(), lastKey + 1);
       // 租約不在這裡拿(見 acquire):這裡只記下這一輪,第一次呼叫瀏覽器工具時才變成 cur
-      pend.set(turnKey, { sessionId, turnKey, noUser: !!(opts && opts.noUser), userSent: !!(opts && opts.userSent === true), waitSaid: false,
+      pend.set(turnKey, { sessionId, turnKey, noUser: !!(opts && opts.noUser), noVerify: !!(opts && opts.noVerify), userSent: !!(opts && opts.userSent === true), waitSaid: false,
         inputs: new Map([...views].map(([id, v]) => [id, v.userInputs || 0])) });   // 送出當下的輸入計數(autoHandback 比對)
       return { url: mcp.url(), token: mcp.beginTurn(turnKey), key: turnKey };
     },

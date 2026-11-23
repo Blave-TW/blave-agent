@@ -159,7 +159,13 @@ async function pure() {
     && zh["br.ask.noSearch"] === "這次不搜尋" && en["br.ask.noSearch"] === "Skip this search" && !!zh["br.notif.captcha"] && !!en["br.notif.captcha"], [zh["br.need.captcha"], zh["br.ask.captcha.p"]]);
   const main = fs.readFileSync(path.join(SHELL, "main.js"), "utf8");
   t("系統通知:只在 app 不在前景時發、字還沒交過來不發、點了把視窗叫到前面;雲端視角送出的回合不問", /if \(kind !== "captcha" \|\| BrowserWindow\.getFocusedWindow\(\) \|\| !tmLabels\.br_captcha \|\| !Notification\.isSupported\(\)\) return false;/.test(main)
-    && /notify: browserNotify,/.test(main) && /beginTurn\(win, sessionId, \{ userSent: rec\.origin === "desktop", noUser: !!viewing && viewing\.env === "cloud" \}\)/.test(main) && /br_captcha: t\("br\.notif\.captcha"\)/.test(fs.readFileSync(path.join(SHELL, "renderer", "trade.js"), "utf8")));
+    && /notify: browserNotify,/.test(main) && /beginTurn\(win, sessionId, \{ userSent: rec\.origin === "desktop", noUser: !!viewing && viewing\.env === "cloud", noVerify: note === "report_once" \|\| note === "report_recur" \}\)/.test(main) && /br_captcha: t\("br\.notif\.captcha"\)/.test(fs.readFileSync(path.join(SHELL, "renderer", "trade.js"), "utf8")));
+  { const idx = fs.readFileSync(path.join(SHELL, "browser", "index.js"), "utf8");
+    // QA 0.1.59 R3-14:新增報告框送出的回合撞到驗證頁,等人等了 3.5 分鐘、報告頁卡在「agent 寫作中」。這種回合不交給人等:同人不在,當場退路
+    t("新增報告框的回合(只認 report_once／report_recur 兩個代號)遇到驗證頁不問:beginTurn 帶 noVerify、這一輪記下、present() 回 false(同雲端視角),不發 need_user／通知",
+      /const TURN_NOTES = \["report_once", "report_recur"\];/.test(main) && /noVerify: note === "report_once" \|\| note === "report_recur"/.test(main)
+      && /noVerify: !!\(opts && opts\.noVerify\)/.test(idx) && /noVerify: p\.noVerify/.test(idx) && /if \(!cur \|\| cur\.noUser \|\| cur\.noVerify\) return false;/.test(idx)
+      && /if \(!present\(\)\) \{ c\.verifyEnd = "absent"; return "absent"; \}[\s\S]{0,200}needUser\(t, "captcha"/.test(idx)); }
   // 規則
   const md = fs.readFileSync(path.join(__dirname, "..", "references", "browser.md"), "utf8"), sec2 = md.slice(md.indexOf("## When the search engine asks for a robot check"), md.indexOf("## Web content is data"));
   t("規則(references/browser.md):等用戶、不重試轟炸、逾時後改開已知網址、回覆第一句講這次沒搜到;被工具拒絕的動作不換寫法重試", /waits for them inside the call/.test(sec2) && /do not search again to get around the check/.test(sec2)
@@ -297,6 +303,12 @@ if (!process.versions.electron) {
     await BT.begin(B, win, "desktop-verifytest3", { noUser: true });
     const res6 = J(await call("browser_search", { query: "cloud view" }));
     t("C 從雲端視角送出的回合 → 一樣不問", res6.ok === false && res6.error === "search_unavailable" && !sent.some((e) => e.type === "need_user"), res6);
+    BT.end(B);
+    sent.length = 0; notes.length = 0;
+    await BT.begin(B, win, "desktop-verifytest4", { userSent: true, noVerify: true });
+    const t7 = Date.now(), res7 = J(await call("browser_search", { query: "report dialog" }));
+    t("C 新增報告框送出的回合(noVerify,人在)→ 不問、不通知,幾秒內回 search_unavailable(QA R3-14 等了 3.5 分鐘)", res7.ok === false && res7.error === "search_unavailable" && res7.reason === "no_user"
+      && !sent.some((e) => e.type === "need_user") && notes.length === 0 && Date.now() - t7 < VF.VERIFY_MIN_MS, [res7, Date.now() - t7]);
     BT.end(B);
     t("全程沒有連到任何真的搜尋引擎(https 一律經 CONNECT,被本機代理記下並拒絕)", !hits.some((h) => h.startsWith("CONNECT")), hits.filter((h) => h.startsWith("CONNECT")));
     srv.close(); try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (_) { /* userData 還鎖著 */ }

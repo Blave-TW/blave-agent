@@ -8,6 +8,10 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+## 1.1.170 — 2026-11-23(desktop 0.1.60 第 B 批:報告框搜尋驗證不等人)
+
+- **新增報告框的回合撞到搜尋驗證不等人(`agent_turn.TURN_NOTES` 兩條都接 `_REPORT_NO_VERIFY`;QA 0.1.59 R3-14)**:電腦版外殼同批讓這種回合的 `browser_search` 遇到驗證頁不交給用戶(`shell/main.js` `noVerify`、`shell/browser/index.js` `present()`),當場退到 DuckDuckGo、再不行回 `search_unavailable`(`no_user`)。指示告訴 agent:不等、不重搜,用 lib 資料、`describe()` 候選與已知列表頁,報告裡一句(`few_sources` 或註腳)講這次沒搜到。之前回合停在「等你操作」最多 4.5 分鐘,報告頁一直是「agent 寫作中…」。`references/reports.md`(電腦版那一列)、`references/browser.md`(驗證那一節)同批。測試 `tests/check_local_mcp_config.py`、`tests/check_shell_browser_verify.js`。
+
 ## 1.1.169 — 2026-11-22(desktop 0.1.59:自動迭代、答案鈕)
 
 - **(0.1.59 發版稽核)停止時的自動迭代收場不再讓外殼殺掉 runtime(`iterate_turn_end`,稽核 M1)**:按了停止的回合,`lib.iterate close-turn` 照原樣關場、不放回、不靜默重跑(lib 那半);收場在 thread 裡跑,主執行緒照 `turn_stop` 的節奏每秒送 `ping`,Python 冷啟動慢的機器也不會沉默滿 5 秒(`STOP_KILL_MS`)。只有基線那一次、沒掃參數的場(採用穩健參數、策略庫原樣安裝、用戶只說回測)收場時直接丟掉,不重跑、不送 `auto_iter`。答案鈕選項另擋 Unicode 格式字元(`ANS_BAD_CATS = ("Cc", "Cf")`,U+202E 這類),電腦版與網頁的 `ANS_BAD_CHAR` 同一組(稽核 S-2)。測試 `tests/check_iterate_runtime.py`、`tests/check_iterate.py`、`tests/check_answer_buttons.py`。

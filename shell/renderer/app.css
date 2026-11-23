@@ -710,6 +710,13 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
 .rp-ic:focus-visible:not([data-tip-off]) + .tip { visibility: visible; opacity: 1; transition-delay: 0s; }
 @media (hover: none) { .rp-icw .tip { display: none; } }
 .rp-head .act[hidden] { display: none; }
+/* 中欄窄(1024 寬、聊天欄開著時中欄只剩約 340):動作槽換到說明下一列,說明拿整列寬——並排時說明會被主鈕擠成 75px 的窄欄(QA 0.1.59 R3-5)。
+   展開策略邏輯(說明換行)時「策略邏輯」放不下就落到說明下一行,不再把說明擠窄。560 以上(1280 預設中欄 592)照舊並排 */
+@container rp (max-width: 559px) {
+  .rp-head .txt { flex-basis: 100%; }
+  .rp-head .act { margin-top: var(--space-8); }
+  .rp.is-logic-open .rp-sub { flex-wrap: wrap; }
+}
 /* icon + 字的描邊鈕(報告清單〔新增報告〕#rpt-ask):左 8、右 12——icon 自帶留白,視覺才對稱 */
 .btn-out.has-ic { display: inline-flex; align-items: center; gap: var(--space-6); padding-left: var(--space-8); }
 #rp-ho[aria-disabled="true"] { color: var(--ink-3); cursor: not-allowed; }
