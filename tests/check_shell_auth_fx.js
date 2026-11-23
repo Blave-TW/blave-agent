@@ -102,7 +102,7 @@ ok("每一處同一句:conn.expired(帳號頁、公開連結、分享)= 「登�
 // Windows e2e 10-14 的 P3:模擬交易的淨值倍數算進台指期;成交過的標的不再掛舊失敗;錯誤不給英文路徑;優化分頁剔除幽靈成員、零策略霧化、錯誤翻成句子
 { const pure = trade.slice(trade.indexOf("/* ── 純邏輯("), trade.indexOf("/* ── 純邏輯到此"));
   const ctx = vm.createContext({ t: (k) => k, JSON, Object, Array, String, Number, Math, Date, isFinite, Set, Map, console, TR: { list: [] } });
-  vm.runInContext(pure.replace(/^const /gm, "var "), ctx);
+  vm.runInContext(pure.replace(/^const /gm, "var ") + "\n" + /\nfunction trTwBroker\(id\) \{[^\n]*\}/.exec(trade)[0].replace(/SINOPAC_LOCAL_ON/g, "false"), ctx);
   const fx = { USD: 1, USDT: 1, TWD: 32 }, zoneOf = (n) => (n === "txf" ? "lots" : "USDT"), money = (n, a) => (n === "txf" ? a * 200 * 20000 : a);
   ctx.__a = [fx]; ctx.__z = zoneOf; ctx.__m = money;
   const m = vm.runInContext("trEquityMult({ sol: 60000, txf: 1 }, __z, __m, 'paper', 'USDT', 100000, __a[0])", ctx);

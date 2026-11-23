@@ -12012,6 +12012,17 @@ msgstr "Turn on automatic time in system settings."
 msgid "sp.err.unknown"
 msgstr "SinoPac refused the sign-in without a reason."
 
+# 設定 › 帳戶 永豐那一列讀帳失敗(不是登入停了、不是重試中)的那一行,取代 lib 的工程英文。下單程式沒寫快照(lib [sinopac_worker_down])用 down,其他用 readFail
+msgid "sp.acct.down"
+msgstr "SinoPac’s order engine isn’t responding. Try reopening Blave."
+
+# 同 sp.acct.down,雲端視角:重開電腦版救不了主機上的程式;卡住或 timer 沒開時不會自己好,所以不承諾自動重啟,出口是聊天請 agent 查
+msgid "sp.acct.downCloud"
+msgstr "SinoPac’s order engine on the host isn’t responding. If it stays this way, ask the agent in chat."
+
+msgid "sp.acct.readFail"
+msgstr "Couldn’t read the SinoPac account. Retrying shortly."
+
 msgid "sp.err.notSigned"
 msgstr "SinoPac says the account isn’t signed yet or is in review."
 

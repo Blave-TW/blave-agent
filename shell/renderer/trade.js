@@ -157,6 +157,16 @@ function trSpWip(r, id) { return id === "sinopac" && SINOPAC_LOCAL_ON && typeof 
 function trSpLoginHeld(r, id) { return id === "sinopac" && SINOPAC_LOCAL_ON && typeof spLoginStopped === "function" && spLoginStopped(r); }
 function trSpRetryAt(r, id) { return id === "sinopac" && SINOPAC_LOCAL_ON && typeof spRetryAt === "function" ? spRetryAt(r) : null; }
 function trSpHeldRun(state, r) { return state === "running" && trVenueIds(r).indexOf("sinopac") >= 0 && (typeof trSpLoginHeld === "function" && trSpLoginHeld(r, "sinopac")); }
+/* 永豐下單程式剛起來(重開 app、worker 的第一份快照還沒寫出來):帳戶讀到的是上次留下的舊快照,不是串接失敗
+   (Wei 11-23 截圖:重開那幾秒寫「串接失敗」＋工程英文)。起點 = 這支 worker 起來的時間(runtime sinopac_local.local_info
+   worker_started_at),還沒起就從畫面載入算;超過 TR_SP_BOOT_MS(登入＋合約清單最多約 60 秒)照舊講失敗。只有這台電腦的回報帶 sinopac_local */
+const TR_SP_BOOT_MS = 120000, TR_SP_T0 = Date.now();
+function trSpBooting(r, id, nowMs) {
+  const sl = id === "sinopac" && SINOPAC_LOCAL_ON && r ? r.sinopac_local : null, e = sl && typeof sl === "object" ? trLiveEntry(r, id) : null;
+  if (!e || e.ok || trSpWip(r, id) || trSpLoginHeld(r, id) || trSpRetryAt(r, id) !== null) return false;
+  const since = sl.worker_running === true && typeof sl.worker_started_at === "number" ? sl.worker_started_at * 1000 : TR_SP_T0;
+  return nowMs - since < TR_SP_BOOT_MS;
+}
 function trPresHeldRun(state, r) { return state === "running" && trVenueIds(r).indexOf("president") >= 0 && trPresLoginHeld(r, "president"); }
 /* 統一下單程式剛起來(worker ok、或 wanted 著還在 running)、帳戶讀取器還沒讀到它之後的那一輪(account.read_at 早於那一刻、或還沒有 account):
    這時掛著的是上一輪的舊失敗,不是串接失敗(10-13 乾淨機模擬 發現 2:開通成功回到頁面頭幾秒紅字「串接失敗」)。
@@ -199,7 +209,7 @@ function trAcctErr(err) {
   const m = /^([a-z_]+):\s*(.*)$/i.exec(String(err || ""));
   return m ? { stage: m[1], msg: m[2] } : { stage: "—", msg: String(err || "") };
 }
-function trFailedIds(r) { return trVenueIds(r).filter((id) => { const e = trLiveEntry(r, id); return !!e && !e.ok && !trCapWip(r, id) && !trPresWip(r, id) && !(typeof trSpWip === "function" && trSpWip(r, id)) && !(typeof trSpRetryAt === "function" && trSpRetryAt(r, id) !== null) && !(id === "president" && trPresBooting(r, Date.now())); }); }
+function trFailedIds(r) { return trVenueIds(r).filter((id) => { const e = trLiveEntry(r, id); return !!e && !e.ok && !trCapWip(r, id) && !trPresWip(r, id) && !(typeof trSpWip === "function" && trSpWip(r, id)) && !(typeof trSpRetryAt === "function" && trSpRetryAt(r, id) !== null) && !(id === "president" && trPresBooting(r, Date.now())) && !(typeof trSpBooting === "function" && trSpBooting(r, id, Date.now())); }); }
 /* 綁著的只有開通中的統一、對帳器也沒在跑 = 開通還沒做完(0.1.18 Wei 實測:存了帳密、憑證 ok、probe 還在跑,頁面就講
    「串接失敗 · 已暫停 · Blave 重開過」)。對帳器在跑的不算:開通過、之後 worker 才失敗的那種照一般狀態機走,暫停鈕要在。
    機器重開相關的兩態(停著 / 沒停住)一律優先於 setup:那是真錢警示,開通中也不能藏。
@@ -915,7 +925,7 @@ function trZoneTotals(amounts, zoneOf, money, fx, base) {
    沒綁、帳戶幣未知、加密帳戶讀成 TWD、沒有淨值、一列都沒算進去 = null(不寫 0.00×) */
 function trEquityMult(amounts, zoneOf, money, venueId, acct, equity, fx, paperTw) {
   if (!venueId || !acct || !(typeof equity === "number" && isFinite(equity) && equity > 0)) return null;
-  const tw = venueId === "capital" || venueId === "president";
+  const tw = trTwBroker(venueId);
   if (tw !== (acct === TR_TXF_CCY)) return null;
   const rA = trFxRate(fx, acct);
   let v = 0, any = false;
@@ -5197,7 +5207,8 @@ function trPaintHist() {
 function trPaintSet() {
   const box = $("tr-set"), r = trReport(), id = trVenueId(), ro = TR.env === "cloud";
   // 統一下單程式剛起來那幾秒:上一輪的舊失敗當「還沒讀過」畫(圓環 + 串接中…),同標題下那一行不講失敗
-  const e = id && !(!ro && id === "president" && trPresBooting(r, Date.now())) ? trLiveEntry(r, id) : null;
+  // 永豐同理(trSpBooting):重開後 worker 還沒寫出新快照
+  const e = id && !(!ro && id === "president" && trPresBooting(r, Date.now())) && !(!ro && trSpBooting(r, id, Date.now())) ? trLiveEntry(r, id) : null;
   const bn = !ro && id === BINANCE ? CXF.bn : null;   // Binance 金鑰重查的結果(主行程 binance_link 的 state;只有這台電腦)
   // 雲端:按過重新測試 / 解除之後,那一列灰字「已送出,等回報」直到報告跟上(帳戶讀取時間比送出新 / 這一家消失)
   const pend = ro && TR.cxPend ? TR.cxPend : null;
@@ -5288,6 +5299,8 @@ function trPaintSet() {
     if (trErrToken(ae.msg) === "bitget_uta_unsupported") box.appendChild(errLine(t("cx.err.bitgetUtaBound")));
     else if (trErrToken(ae.msg) === "bitget_copy_trading_key") box.appendChild(errLine(t("cx.err.bitgetCopyKeyBound")));
     else if (trErrToken(ae.msg) === "okx_account_mode") box.appendChild(errLine(t("cx.err.okxMode")));
+    // 永豐:原文是 lib 的工程英文(快照過舊、get_equity 這類),換成白話一句
+    else if (id === "sinopac") box.appendChild(errLine(t(spAcctErrKey(ae.msg, ro))));
     // 列上已有「串接失敗」記號與交易所名:這一行只留原因,有階段代碼才帶括號(設計稽核 desktop-10-08 #5)
     else box.appendChild(errLine(ae.stage === "—" ? ae.msg.slice(0, 200) : t("cx.fail", { stage: ae.stage, msg: ae.msg.slice(0, 200) })));
   }

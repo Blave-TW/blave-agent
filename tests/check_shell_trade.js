@@ -10,6 +10,8 @@ if (a < 0 || b < 0) throw new Error("找不到純邏輯區塊的標記");
 const block = src.slice(a, b);
 if (/\bdocument\b|\$\(|window\./.test(block.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, ""))) throw new Error("純邏輯區塊碰了 DOM");
 eval(block.replace(/^const /gm, "var "));
+// trEquityMult 認台灣期貨券商走 trTwBroker(純邏輯區外、看 SINOPAC_LOCAL_ON):照原文取來,永豐旗標當開著測
+eval(/\nfunction trTwBroker\(id\) \{[^\n]*\}/.exec(src)[0].replace(/SINOPAC_LOCAL_ON/g, "true"));
 let red = 0; const ok = (name, c) => { console.log((c ? "PASS  " : "FAIL  ") + name); if (!c) red++; };
 const J = JSON.stringify;
 
@@ -278,6 +280,8 @@ ok("§9.3 USD 區不當帳戶區:OKX USD 帳戶、表上 USD＋USDT → USDT 區
   ok("台灣券商:只算口數列名目 TWD ÷ TWD 淨值(USDT 列不算);缺報價 = null;帳戶幣不是 TWD = null",
     near(trEquityMult({ lot: 2, u1: 500 }, zone, ref, "capital", "TWD", 1000, FX), 0.2) && near(trEquityMult({ lot: 3 }, zone, ref, "president", "TWD", 100, FX), 3)
     && trEquityMult({ lot: 2 }, zone, () => null, "capital", "TWD", 1000, FX) === null && trEquityMult({ lot: 2 }, zone, ref, "capital", "USDT", 1000, FX) === null);
+  ok("永豐期貨(旗標開)同台灣券商:口數列名目 TWD ÷ TWD 淨值(11-23 實測沒有倍數);判斷走 trTwBroker 不寫死",
+    near(trEquityMult({ lot: 3, u1: 500 }, zone, ref, "sinopac", "TWD", 100, FX), 3) && /const tw = trTwBroker\(venueId\);/.test(src.slice(src.indexOf("function trEquityMult("), src.indexOf("function trEquityMult(") + 400)));
   ok("沒綁 / 帳戶幣未知 / 加密帳戶讀成 TWD = null", trEquityMult({ u1: 500 }, zone, ref, null, "USDT", 1000, FX) === null && trEquityMult({ u1: 500 }, zone, ref, "binance", null, 1000, FX) === null
     && trEquityMult({ u1: 500 }, zone, ref, "binance", "TWD", 1000, FX) === null);
   // 實機 integ2 10-18:模擬交易 100,000 USDT、台股 Type C 1,000,000 TWD 寫成「淨值 0.00×」——TWD 列整列被跳過、0 ÷ 淨值
@@ -439,7 +443,7 @@ ok("lib 的錯誤 token:[okx_account_mode] / [gateio_price_deviated] 認得出�
 { const f = src.slice(src.indexOf("function trOrderErrText("), src.indexOf("\n}\n", src.indexOf("function trOrderErrText(")));
   ok("拒單那一句:兩個 token 各有在地化的句子(表底紅字、灰字「上次」、總覽事件列都走 trOrderErrText)",
     /p\.kind === "okx_account_mode"\) return t\("tr\.err\.okxMode", \{ sym \}\)/.test(f) && /p\.kind === "gateio_price_deviated"\) return t\("tr\.err\.gateDeviated", \{ sym \}\)/.test(f));
-  ok("帳戶讀取失敗(設定分頁)帶 [okx_account_mode]:講怎麼改,不出 cx.fail 的原文", /else if \(trErrToken\(ae\.msg\) === "okx_account_mode"\) box\.appendChild\(errLine\(t\("cx\.err\.okxMode"\)\)\);\n\s*\/\/[^\n]*\n\s*else box\.appendChild\(errLine\(ae\.stage === "—" \? ae\.msg\.slice\(0, 200\) : t\("cx\.fail"/.test(src)); }
+  ok("帳戶讀取失敗(設定分頁)帶 [okx_account_mode]:講怎麼改,不出 cx.fail 的原文", /else if \(trErrToken\(ae\.msg\) === "okx_account_mode"\) box\.appendChild\(errLine\(t\("cx\.err\.okxMode"\)\)\);\n\s*\/\/[^\n]*\n\s*else if \(id === "sinopac"\) box\.appendChild\(errLine\(t\(spAcctErrKey\(ae\.msg, ro\)\)\)\);\n\s*\/\/[^\n]*\n\s*else box\.appendChild\(errLine\(ae\.stage === "—" \? ae\.msg\.slice\(0, 200\) : t\("cx\.fail"/.test(src)); }
 ok("dead 分兩種:監督者被叫去跑(wanted:true)= 異常;沒有 wanted / 舊狀態檔 / 雲端沒有 daemon 區塊 = 你還沒按啟動", trDeadKind({ daemon: { reconciler: { wanted: true, running: false } } }) === "died" && trDeadKind({ daemon: { reconciler: { wanted: false } } }) === "off"
   && trDeadKind({ daemon: { reconciler: {} } }) === "off" && trDeadKind({ daemon: {} }) === "off" && trDeadKind({}) === "off" && trDeadKind(null) === "off" && trDeadKind({ daemon: { reconciler: { wanted: "true" } } }) === "off");
 { const S = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8"), html = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "index.html"), "utf8"), appSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "app.js"), "utf8");
@@ -1200,7 +1204,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
         ok("異常停止那一句的加重段:zh / en 的 tr.died、tr.diedZ 都以 tr.diedLead 開頭,trDiedCut 切出的就是它;頁首用 trDiedCut、不再找「 · 」",
           cuts.every(([k, n, head]) => n > 0 && head === S2[k.split(":")[0]]["tr.diedLead"]) && trDiedCut("下單程式在跑 · x", S2.zh["tr.diedLead"]) === -1
           && /const cutAt = [^\n]*\? trDiedCut\(full, t\("tr\.diedLead"\)\) : -1;/.test(src) && !/cutAt = [^\n]*indexOf\(" · "\)/.test(src), J(cuts)); }
-      ok("設定 › 帳戶那一列:啟動中那幾秒把舊失敗當還沒讀過(e = null → 圓環 + 串接中…)", /const e = id && !\(!ro && id === "president" && trPresBooting\(r, Date\.now\(\)\)\) \? trLiveEntry\(r, id\) : null;/.test(src));
+      ok("設定 › 帳戶那一列:啟動中那幾秒把舊失敗當還沒讀過(e = null → 圓環 + 串接中…)", /const e = id && !\(!ro && id === "president" && trPresBooting\(r, Date\.now\(\)\)\) && !\(!ro && trSpBooting\(r, id, Date\.now\(\)\)\) \? trLiveEntry\(r, id\) : null;/.test(src));
       TR.env = "cloud"; TR.st = C0({ gated: false }); }
     ok("狀態行:可能仍在下單 + 紅字原因行;頂列短詞同一個詞;已按暫停後是「已暫停 · A」",
       trStateText("unconfirmed") === "tr.cloud.mayTrade · tr.cloud.restartUnconfirmed" && trShortState("unconfirmed") === "tr.cloud.mayTrade"
@@ -2244,7 +2248,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     const flat = (n, out = []) => { if (n && n.tag) { out.push(n); n.kids.forEach((k) => flat(k, out)); } return out; };
     const ctx = vm.createContext({ document: { createElement: node, createElementNS: (_ns, tag) => node(tag), createDocumentFragment: () => node("#frag") }, Date, Math, JSON, Array, Object, Number, String, Set, isFinite, console, $: () => null, t: (k) => k, LANG: "zh", envHeadState: () => "running", trKeyBad: () => false });
     const pure = src.slice(src.indexOf("/* ── 純邏輯("), src.indexOf("/* ── 純邏輯到此"));
-    vm.runInContext(pure.replace(/^const /gm, "var ") + "\nvar trTipSeq = 0;\n" + ["trEl", "trSec", "trTipLabel", "poHelpGroup", "poCfgSec", "trReport", "trContracts", "trStored", "trBase", "trNamesOf", "trNames", "trListNames", "trDisplay", "trPickOff", "trPickBtn", "trStratName", "trTwNamesWant", "trTwName", "trTwNameEl", "trTxfWant", "trRowTxf", "trRowTxfNew", "trCtPend", "trCtStored", "trCt", "trCtGate", "trCtDirty", "trCtRollTag", "trRowMoneyStored", "trCtPayload", "trRowIsLot", "trRowMoney", "trLotsFmt", "trLotsTgtFmt", "trQuoteMap", "trNoSignalYet", "trZoneOf", "trUnknownWhyKey", "trUnknownWhy", "trZoneLabel", "trZoneUnit", "trFxView", "trZoneSum", "trTotalText", "trPaintPosCell", "trAmountTable", "trPaperTwOk", "trPaperTw", "trStratHeld", "trGoStartKey", "trTradableFunded", "trPaperCapOf", "trPaperAvailEl", "cxMonoNums"].map(cutF).join("\n"), ctx);
+    vm.runInContext(pure.replace(/^const /gm, "var ") + "\nvar trTipSeq = 0;\n" + ["trEl", "trSec", "trTipLabel", "poHelpGroup", "poCfgSec", "trReport", "trContracts", "trStored", "trBase", "trNamesOf", "trNames", "trListNames", "trDisplay", "trPickOff", "trPickBtn", "trStratName", "trTwNamesWant", "trTwName", "trTwNameEl", "trTxfWant", "trRowTxf", "trRowTxfNew", "trCtPend", "trCtStored", "trCt", "trCtGate", "trCtDirty", "trCtRollTag", "trRowMoneyStored", "trCtPayload", "trRowIsLot", "trRowMoney", "trLotsFmt", "trLotsTgtFmt", "trQuoteMap", "trNoSignalYet", "trZoneOf", "trUnknownWhyKey", "trUnknownWhy", "trZoneLabel", "trZoneUnit", "trFxView", "trTwBroker", "trZoneSum", "trTotalText", "trPaintPosCell", "trAmountTable", "trPaperTwOk", "trPaperTw", "trStratHeld", "trGoStartKey", "trTradableFunded", "trPaperCapOf", "trPaperAvailEl", "cxMonoNums"].map(cutF).join("\n"), ctx);
     const bag = (env, o) => ({ env, list: L, listLoaded: true, picked: null, sent: null, save: null, edits: {}, bad: {}, st: { alive: true, report: { config: { amounts: { a_old: 100, gone: 50, z0: 0 } } } }, ...o });
     const names = (b) => { ctx.TR = b; return vm.runInContext("TR = this.TR; trNames()", ctx); };
     ok("trNames(這台電腦):picked null = 已存的 key(含清單找不到的 gone,不含只回測過的 b_new);勾了就是勾的那一份", J(names(bag("local"))) === J(["a_old", "gone", "z0"])
@@ -2410,7 +2414,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
         t: (k, o) => k + (o ? " " + JSON.stringify(o) : ""), LANG: "zh", PAPER: "paper", CX_VENUES: { okx: { label: "OKX" }, binance: { label: "Binance" } }, srSay() {}, trIsPaper: () => false, trUnit: () => "USDT", trEquity: () => null, trMoneyInto() {}, envHeadState: () => "running", trKeyBad: () => false });
       const pure = src.slice(src.indexOf("/* ── 純邏輯("), src.indexOf("/* ── 純邏輯到此"));
       vm.runInContext(pure.replace(/^const /gm, "var ") + "\nvar trTipSeq = 0;\n"
-        + ["trEl", "trSec", "trTipLabel", "poHelpGroup", "poCfgSec", "trHead", "trFmt", "trReport", "trContracts", "trStored", "trBase", "trNamesOf", "trNames", "trListNames", "trDisplay", "trPickOff", "trPickBtn", "trVenueId", "trVenueLabel", "trStratName", "trTwNamesWant", "trTwName", "trTwNameEl", "trTxfWant", "trRowTxf", "trRowTxfNew", "trCtPend", "trCtStored", "trCt", "trCtGate", "trCtDirty", "trCtRollTag", "trRowMoneyStored", "trCtPayload", "trRowIsLot", "trRowMoney", "trLotsFmt", "trLotsTgtFmt", "trQuoteMap", "trNoSignalYet", "trZoneOf", "trUnknownWhyKey", "trUnknownWhy", "trZoneLabel", "trZoneUnit", "trFxView", "trZoneSum", "trTotalText", "trPaintPosCell", "trAmountTable", "trPaperTwOk", "trPaperTw", "trStratHeld", "trGoStartKey", "trTradableFunded", "trPaperCapOf", "trPaperAvailEl", "cxMonoNums"].map(cutF).join("\n"), ctx);
+        + ["trEl", "trSec", "trTipLabel", "poHelpGroup", "poCfgSec", "trHead", "trFmt", "trReport", "trContracts", "trStored", "trBase", "trNamesOf", "trNames", "trListNames", "trDisplay", "trPickOff", "trPickBtn", "trVenueId", "trVenueLabel", "trStratName", "trTwNamesWant", "trTwName", "trTwNameEl", "trTxfWant", "trRowTxf", "trRowTxfNew", "trCtPend", "trCtStored", "trCt", "trCtGate", "trCtDirty", "trCtRollTag", "trRowMoneyStored", "trCtPayload", "trRowIsLot", "trRowMoney", "trLotsFmt", "trLotsTgtFmt", "trQuoteMap", "trNoSignalYet", "trZoneOf", "trUnknownWhyKey", "trUnknownWhy", "trZoneLabel", "trZoneUnit", "trFxView", "trTwBroker", "trZoneSum", "trTotalText", "trPaintPosCell", "trAmountTable", "trPaperTwOk", "trPaperTw", "trStratHeld", "trGoStartKey", "trTradableFunded", "trPaperCapOf", "trPaperAvailEl", "cxMonoNums"].map(cutF).join("\n"), ctx);
       const venuesOf = (id) => ({ [id]: { credentials: true, pair: true, order: true, account: true } });
       const bag = (venue, amounts, o) => ({ env: "local", list: L, listLoaded: true, picked: null, sent: null, save: null, edits: {}, bad: {}, st: { alive: true, report: Object.assign({ venues: venuesOf(venue), config: { amounts } }, STALE) }, ...o });
       const paint = (b, states) => { ctx.TR = b; const all = flat(vm.runInContext("TR = this.TR; trAmountTable(trNames(), trBase(), this.STATES)", Object.assign(ctx, { STATES: states || {} })));

@@ -12051,6 +12051,17 @@ msgstr "打開系統的自動設定時間。"
 msgid "sp.err.unknown"
 msgstr "永豐拒絕了登入，沒有說原因。"
 
+# 設定 › 帳戶 永豐那一列讀帳失敗(不是登入停了、不是重試中)的那一行,取代 lib 的工程英文。下單程式沒寫快照(lib [sinopac_worker_down])用 down,其他用 readFail
+msgid "sp.acct.down"
+msgstr "永豐下單程式沒有回應。重開 Blave 試試。"
+
+# 同 sp.acct.down,雲端視角:重開電腦版救不了主機上的程式;卡住或 timer 沒開時不會自己好,所以不承諾自動重啟,出口是聊天請 agent 查
+msgid "sp.acct.downCloud"
+msgstr "主機上的永豐下單程式沒有回應。一直這樣就在聊天請 agent 查。"
+
+msgid "sp.acct.readFail"
+msgstr "讀不到永豐帳戶，稍後會自動再讀。"
+
 msgid "sp.err.notSigned"
 msgstr "永豐說帳戶還沒簽署或在審核中。"
 

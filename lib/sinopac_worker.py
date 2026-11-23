@@ -146,6 +146,21 @@ CONFIRM_POLL_S = 1.0
 CONTRACTS_WAIT_S = 60.0
 CONTRACTS_POLL_S = 1.0
 SEND_MARGIN_S = 5.0  # a request waits out the settle window only when this much is left to confirm
+# One update_status call's cap. The SDK default is 30 s = lib/order_sinopac.WORKER_STALE_S, and _confirm
+# beats only between calls: one call hanging that long reads as a dead worker to the next requester.
+# 5 s keeps the heartbeat under ~6 s old and lets the confirm loop see its own deadline.
+UPDATE_STATUS_TIMEOUT_S = 5.0
+# After an entry's fill the position is read every LAG_PROBE_S, only to time when it shows, counted
+# from the send as ORDER_SETTLE_S is (state/sinopac_settle_lag.json, for
+# sinopac_vault.ORDER_SETTLE_MEASURED_S): those reads never replace the snapshot, so nothing trades
+# on them. They go on past the window up to LAG_PROBE_MAX_S = 3 × ORDER_SETTLE_S: the 11-23 bound
+# was ~21 s, so a lag just past 20 s is timed rather than recorded as "not seen", and a measured
+# value can still be checked against M3's "window ≥ twice the lag" (≤ 30 reads per fill).
+# Closes are not timed: an empty read is what M0-b's lag looked like, so "flat" would be seen early.
+LAG_PROBE_S = 2.0
+LAG_PROBE_MAX_S = 60.0
+LAG_PATH = os.path.join(STATE, "sinopac_settle_lag.json")
+LAG_KEEP = 20
 LOGIN_STOPPED_EXIT = 3
 UNVERIFIED_EXIT = 4
 STATE_EXIT = 5  # the futures-enabled marker or the login record not written: no login, try again later
@@ -161,10 +176,37 @@ FAILED = {"Failed", "Inactive"}
 # 身分證 (A123456789), 居留證 old (AB12345678) and new (A812345678); any case — a hand-typed
 # .env value can be lowercase and the SDK echoes it as given
 _ID_RE = re.compile(r"(?<![A-Za-z0-9])[A-Z][A-D1289]\d{8}(?![0-9])", re.IGNORECASE)
+# A value printed under its field name: the SDK's account repr and order events carry the futures
+# account (broker_id / account_id — the 11-23 live run's worker log had both in full), the owner's
+# name, and the credentials by name. Python repr, dict and `name: value` forms alike.
+_FIELD_RE = re.compile(
+    r"""(['"]?\b(?:account_id|broker_id|person_id|username|api_key|secret_key|ca_passwd|ca_path)\b['"]?\s*[:=]\s*)"""
+    r"""(['"]?)[^'",\s)}\]]+""", re.IGNORECASE)
+# 1.7.11 echoes the API key on a bad signature: "Detail: key: <API Key> not match signature."
+_KEY_RE = re.compile(r"(\bkey\s*:\s*)[^\s'\",]+", re.IGNORECASE)
+# Anything shaped like a key or secret: 24+ characters of a token alphabet with a letter and a digit
+_TOKEN_RE = re.compile(r"(?<![A-Za-z0-9+=_-])(?=[A-Za-z0-9+_-]*\d)(?=[A-Za-z0-9+_-]*[A-Za-z])"
+                       r"[A-Za-z0-9+_-]{24,}={0,2}(?![A-Za-z0-9+=_-])")
+# This login's own values (remember_secrets), masked wherever they turn up whatever their shape
+_SECRETS = set()
+SECRET_MIN_LEN = 6
+
+
+def remember_secrets(*values):
+    for v in values:
+        v = str(v or "").strip()
+        if len(v) >= SECRET_MIN_LEN:
+            _SECRETS.add(v)
 
 
 def redact(text):
-    return _ID_RE.sub("<id>", str(text))
+    """The national ID, the futures account and the credentials out of anything the worker writes."""
+    text = _ID_RE.sub("<id>", str(text))
+    for v in sorted(tuple(_SECRETS), key=len, reverse=True):
+        text = text.replace(v, "<redacted>")
+    text = _FIELD_RE.sub(lambda m: f"{m.group(1)}{m.group(2)}<redacted>", text)
+    text = _KEY_RE.sub(lambda m: f"{m.group(1)}<redacted>", text)
+    return _TOKEN_RE.sub("<redacted>", text)
 
 
 class quiet_sdk:
@@ -353,10 +395,15 @@ def login(c, require_signed=True):
     if version != SDK_VERSION:
         raise LoginError(f"shioaji {version or '(unknown version)'} installed — the 永豐 futures "
                          f"worker runs on {SDK_VERSION} only; nothing logged in", "VERSION")
+    remember_secrets(c["sinopac_api_key"], c["sinopac_secret_key"], c.get("sinopac_ca_passwd"),
+                     c.get("sinopac_person_id"))
     api = sj.Shioaji(simulation=not c["live"])
     try:
         accounts = api.login(api_key=c["sinopac_api_key"], secret_key=c["sinopac_secret_key"],
                              subscribe_trade=True)
+        for a in list(accounts or []) + [getattr(api, "futopt_account", None)]:
+            remember_secrets(getattr(a, "account_id", None), getattr(a, "broker_id", None),
+                             getattr(a, "username", None))
         if c["live"]:
             try:
                 ok = api.activate_ca(ca_path=c["sinopac_ca_path"], ca_passwd=c["sinopac_ca_passwd"],
@@ -391,7 +438,7 @@ def _sanitize(e):
 
 def _sdk_classes(e):
     # shioaji is imported only inside login(): its classes are matched by name. The hierarchy is
-    # 1.7.11's type stubs (_core.pyi, read 11-17); which one each failure raises is not measured
+    # 1.7.11's type stubs (_core.pyi, read 11-17); measured so far: a wrong secret (BadRequestError)
     return {k.__name__ for k in type(e).__mro__}
 
 
@@ -446,10 +493,11 @@ def _clock_off():
 
 def _login_reason(e):
     """The venue_login_blocked class (api notify._LOGIN_BLOCK_REASON; the connect screen reads it
-    from the probe and STOP files). TOO_MANY and TIMEOUT are retried, never a stop. KEY and CLOCK
-    are unmeasured: which exception 1.7.11 raises for a wrong key or a skewed clock was never seen —
-    KEY is the stubs' AuthError family (HTTP 401), CLOCK a refusal while this machine's clock is
-    measured off past RECEIVE_WINDOW_S (checked first: such a refusal may also come back as a 401)."""
+    from the probe and STOP files). TOO_MANY and TIMEOUT are retried, never a stop. KEY: a mistyped
+    secret raised BadRequestError "StatusCode: 400, Detail: key: <API Key> not match signature."
+    (11-23 live run, 1.7.11); the stubs' AuthError family (HTTP 401) is read as KEY too. CLOCK is
+    unmeasured: a refusal while this machine's clock is measured off past RECEIVE_WINDOW_S (checked
+    first: a skewed request may come back as the same bad signature)."""
     if isinstance(e, LoginError):
         return e.reason
     names = _sdk_classes(e)
@@ -465,7 +513,7 @@ def _login_reason(e):
         return "VERSION"  # shioaji missing or broken: the connect step reinstalls it
     if "ShioajiError" in names and _clock_off():  # the broker refused, not one of our own checks
         return "CLOCK"
-    if "AuthError" in names:
+    if "AuthError" in names or ("BadRequestError" in names and "not match signature" in str(e).lower()):
         return "KEY"
     return "UNKNOWN"
 
@@ -662,8 +710,11 @@ def _fills(trade):
     return max(qty, reported), avg
 
 
-def _refresh(api, acct, trade):
-    api.update_status(acct, trade=trade)
+def _refresh(api, trade, deadline=None):
+    # 1.7.11 takes the account or one trade, never both ("Cannot specify both account and trade",
+    # every fill of the 11-23 live run)
+    left = UPDATE_STATUS_TIMEOUT_S if deadline is None else deadline - time.time()
+    api.update_status(trade=trade, timeout=int(max(1.0, min(UPDATE_STATUS_TIMEOUT_S, left)) * 1000))
     oid = str(getattr(trade.order, "id", "") or "")
     for t in api.list_trades() or []:
         if oid and str(getattr(t.order, "id", "")) == oid:
@@ -805,6 +856,10 @@ def execute(api, acct, req, simulation, timeout=None):
     if qty:
         guard.audit("order_filled", contract=code, fill_qty=qty, avg_fill_price=avg,
                     price_type=price_type, **fields)
+        before = sum(int(r["net"]) for r in snap["positions"] if r["productid"] == code)
+        want = before + (qty if fields["action"] == "buy" else -qty)
+        if fields["intent"] == "entry" and want:
+            _arm_lag_probe(code, want, sinopac_vault.last_order_at() or time.time(), simulation)
     return dict(base, status="filled" if qty else "sent", fill_qty=float(qty), avg_fill_price=avg)
 
 
@@ -813,7 +868,7 @@ def _confirm(api, acct, trade, deadline):
     while True:
         _beat()  # a confirm can outlast WORKER_STALE_S: the next caller must not read the worker as down
         try:
-            trade = _refresh(api, acct, trade)
+            trade = _refresh(api, trade, deadline)
         except Exception as e:
             _log(f"update_status failed: {_sanitize(e)}")
         status = _enum(trade.status.status)
@@ -833,6 +888,64 @@ def _check_entry_hold(fields):
     if hold["why"] == "clock":
         raise ValueError(f"entry held: this machine's clock is {hold['skew']:+.0f} s off the api's")
     raise ValueError("entry held: outside the TAIFEX regular session (it would queue to the open)")
+
+
+_LAG_PROBE = {}
+
+
+def _arm_lag_probe(code, want_net, sent_at, simulation, now=None):
+    """Time the next reads against this entry, from its send (a later one replaces an unfinished one)."""
+    now = time.time() if now is None else now
+    _LAG_PROBE.clear()
+    _LAG_PROBE.update(contract=code, want_net=int(want_net), sent_at=float(sent_at),
+                      simulation=bool(simulation), next_at=now + LAG_PROBE_S)
+
+
+def _record_lag(lag_s, p, now):
+    try:
+        book = load_json(LAG_PATH, encoding="utf-8")
+        samples = book.get("samples") if isinstance(book, dict) else None
+    except (OSError, ValueError):
+        samples = None
+    samples = (samples if isinstance(samples, list) else [])[-(LAG_KEEP - 1):]
+    samples.append({"at": now, "lag_s": lag_s, "from": "send", "contract": p["contract"],
+                    "want_net": p["want_net"], "simulation": p["simulation"],
+                    "window_s": sinopac_vault.ORDER_SETTLE_S, "probe_every_s": LAG_PROBE_S,
+                    "probe_max_s": LAG_PROBE_MAX_S})
+    try:
+        _atomic_write(LAG_PATH, {"samples": samples})
+    except OSError as e:
+        _log(f"settle lag not written ({type(e).__name__})")
+    _log(f"position lag after an entry: {p['contract']} "
+         + (f"seen {lag_s:.1f}s after the send" if lag_s is not None
+            else f"not seen within {LAG_PROBE_MAX_S:.0f}s of the send"))
+
+
+def _probe_lag(api, acct):
+    """One due read of the armed entry's position: records the lag from the send the first time it
+    shows, or that it did not show inside LAG_PROBE_MAX_S. A failed read is skipped, never retried in
+    a loop."""
+    if not _LAG_PROBE:
+        return
+    now = time.time()
+    if now < _LAG_PROBE["next_at"]:
+        return
+    p = dict(_LAG_PROBE)
+    if now - p["sent_at"] > LAG_PROBE_MAX_S:
+        _LAG_PROBE.clear()
+        _record_lag(None, p, now)
+        return
+    _LAG_PROBE["next_at"] = now + LAG_PROBE_S
+    try:
+        # capped like update_status: these reads run between requests, a hang must not age the heartbeat
+        rows = [position_row(api, x) for x in
+                api.list_positions(acct, timeout=int(UPDATE_STATUS_TIMEOUT_S * 1000)) or []]
+    except Exception as e:
+        _log(f"lag read failed: {_sanitize(e)}")
+        return
+    if sum(int(r["net"]) for r in rows if r and r["productid"] == p["contract"]) == p["want_net"]:
+        _LAG_PROBE.clear()
+        _record_lag(round(now - p["sent_at"], 1), p, now)
 
 
 def serve_requests(api, acct, simulation):
@@ -1346,6 +1459,11 @@ def _serve(c=None):
                 _beat()
                 if serve_requests(api, acct, simulation):
                     next_read = _settled_read_at()  # the next caller sees the fill, not M0-b's []
+                try:
+                    _probe_lag(api, acct)
+                except Exception as e:  # measurement only: never the session's end
+                    _LAG_PROBE.clear()
+                    _log(f"lag probe dropped: {_sanitize(e)}")
                 if os.path.exists(REFRESH_FLAG):
                     try:
                         os.remove(REFRESH_FLAG)

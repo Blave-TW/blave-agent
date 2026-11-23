@@ -12,7 +12,7 @@ if (a < 0 || b < 0) { console.log("FAIL  sinopac.js 找不到純邏輯段的記�
 const head = src.slice(0, src.indexOf("let SP = spBlank();"));
 const ctx = {}; vm.createContext(ctx);
 vm.runInContext(head + "\n" + src.slice(a, b) + "\nthis.spView = spView; this.spBlank = spBlank; this.spRunning = spRunning; this.spSimOpen = spSimOpen; this.spSimNext = spSimNext;"
-  + " this.spMsgPlace = spMsgPlace; this.spFormReady = spFormReady; this.spHm = spHm; this.spSimRow = spSimRow; this.SP_PROBE_VIEW = SP_PROBE_VIEW; this.SP_STOP_VIEW = SP_STOP_VIEW; this.SP_ERR_KEY = SP_ERR_KEY;", ctx);
+  + " this.spMsgPlace = spMsgPlace; this.spFormReady = spFormReady; this.spHm = spHm; this.spSimRow = spSimRow; this.SP_PROBE_VIEW = SP_PROBE_VIEW; this.SP_STOP_VIEW = SP_STOP_VIEW; this.SP_ERR_KEY = SP_ERR_KEY; this.spAcctErrKey = spAcctErrKey;", ctx);
 const { spView, spRunning, spSimOpen, spSimNext, spMsgPlace, spFormReady, spHm, spSimRow } = ctx;
 
 // 2026-11-18(週三)台北 10:00 = UTC 02:00
@@ -104,4 +104,36 @@ const apiPy = path.join(process.env.BLAVE_API_DIR || path.join(__dirname, "..", 
 if (!fs.existsSync(apiPy)) console.log("SKIP  api level_for 比對(需要 monorepo 版面:../api/openclaw/agent_events.py)");
 else { const py = fs.readFileSync(apiPy, "utf8"), m = /_TW_UNREADABLE_VENUES = frozenset\(\(([^)]*)\)\)/.exec(py), n = /CAPITAL_UNREADABLE_P1_MIN = (\d+)/.exec(py);
   ok("api level_for 的 venue 與門檻 = 外殼這份(api 先上)", !!m && !!n && JSON.stringify([...m[1].matchAll(/"([a-z]+)"/g)].map((x) => x[1]).sort()) === JSON.stringify(["capital", "sinopac"]) && n[1] === "150"); }
+
+// 11-23 實測:重開 app、worker 還沒寫新快照那幾秒,帳戶列寫「串接失敗」＋「sinopac snapshot stale (3182s old) — 永豐 worker down?(get_equity)」
+const libAcct = fs.readFileSync(path.join(__dirname, "..", "lib", "sinopac_futures_account.py"), "utf8");
+const downTok = (/^WORKER_DOWN = "([^"]+)"$/m.exec(libAcct) || [])[1];
+ok("讀帳失敗那一行:lib 標 worker 沒在跑(WORKER_DOWN)→ sp.acct.down,其他一律 sp.acct.readFail,不出原文",
+  !!downTok && ctx.spAcctErrKey(downTok + " sinopac snapshot stale (3182s old) — 永豐 worker down?") === "sp.acct.down"
+  && ctx.spAcctErrKey("sinopac worker error: RuntimeError: x") === "sp.acct.readFail" && ctx.spAcctErrKey(null) === "sp.acct.readFail"
+  && /else if \(id === "sinopac"\) box\.appendChild\(errLine\(t\(spAcctErrKey\(ae\.msg, ro\)\)\)\);/.test(trade), downTok);
+{ const S = fs.readFileSync(path.join(R, "strings.js"), "utf8"), dc = [...S.matchAll(/"sp\.acct\.downCloud": "([^"]*)"/g)].map((m) => m[1]);
+  ok("複稽 P3:雲端那句不承諾自動重啟(卡住或 timer 沒開時不成立),也不叫人重開 Blave;出口是聊天請 agent 查",
+    dc.length === 2 && dc.every((x) => !/自動重新啟動|restarts automatically|重開 Blave|reopening Blave/i.test(x)) && dc.some((x) => x.includes("agent")), dc); }
+ok("稽核 C1:雲端視角不叫人重開 Blave,講主機那一句;讀不到帳戶那句兩邊同一句",
+  ctx.spAcctErrKey(downTok + " stale", true) === "sp.acct.downCloud" && ctx.spAcctErrKey(downTok + " stale", false) === "sp.acct.down"
+  && ctx.spAcctErrKey("x", true) === "sp.acct.readFail");
+{ const pure = trade.slice(trade.indexOf("/* ── 純邏輯("), trade.indexOf("/* ── 純邏輯到此"));
+  const bc = { SINOPAC_LOCAL_ON: true, spWip: () => false, spLoginStopped: () => false, spRetryAt: () => null, Date, Object, Array, String, Number, Math, JSON, isFinite, Set, Map };
+  vm.createContext(bc); vm.runInContext(pure.replace(/^const /gm, "var "), bc);
+  const T0 = bc.TR_SP_T0, stale = { ok: false, error: { stage: "get_equity", msg: "[sinopac_worker_down] stale" } };
+  const rep = (sl, e) => ({ venues: { sinopac: { credentials: true, pair: true, order: true, account: true } }, account: { venues: { sinopac: e === undefined ? stale : e } }, sinopac_local: sl });
+  const boot = (r, now) => bc.trSpBooting(r, "sinopac", now);
+  ok("重開後 worker 還沒起(畫面剛載入)→ 連接中,不列串接失敗;過了 TR_SP_BOOT_MS 照講失敗",
+    boot(rep({ worker_running: false, needs_secrets: true }), T0 + 5000) && !boot(rep({ worker_running: false }), T0 + bc.TR_SP_BOOT_MS + 1)
+    && bc.trFailedIds(rep({ worker_running: false })).length === 0);
+  const st = (T0 + 600000) / 1000;
+  ok("worker 剛起(worker_started_at)那 TR_SP_BOOT_MS 內 = 連接中;之後、讀到了、或沒有 sinopac_local(雲端)都不算",
+    boot(rep({ worker_running: true, worker_started_at: st }), st * 1000 + 30000) && !boot(rep({ worker_running: true, worker_started_at: st }), st * 1000 + bc.TR_SP_BOOT_MS + 1)
+    && !boot(rep({ worker_running: true, worker_started_at: st }, { ok: true, equity: 1 }), st * 1000 + 1000) && !boot(rep(undefined), T0 + 1000)
+    && !bc.trSpBooting(rep({ worker_running: false }), "president", T0 + 1000));
+  bc.spLoginStopped = () => true;
+  ok("登入停了不算啟動中(那一態有自己的句子與〔重新登入〕)", !boot(rep({ worker_running: false }), T0 + 1000));
+  ok("設定 › 帳戶那一列與標頭的失敗清單都看 trSpBooting", /&& !\(!ro && trSpBooting\(r, id, Date\.now\(\)\)\) \? trLiveEntry\(r, id\) : null;/.test(trade)
+    && /!\(typeof trSpBooting === "function" && trSpBooting\(r, id, Date\.now\(\)\)\); \}\); \}/.test(trade)); }
 console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0);

@@ -131,6 +131,10 @@ class FuturesOrder:
 sj.FuturesOrder = FuturesOrder
 
 
+class _ShioajiValueError(ValueError):
+    pass
+
+
 class ShioajiTimeoutError(Exception):
     pass
 
@@ -199,6 +203,9 @@ class FakeApi:
                  login_raises=None, futopt=True, ca_ok=True, extra=(), infos=None, not_ready=0,
                  lag_s=0.0):
         self.calls = []
+        self.status_calls = []
+        self.status_timeouts = []
+        self.position_timeouts = []
         self.positions = list(positions)
         self.fill = fill
         self.place_raises = place_raises
@@ -241,7 +248,9 @@ class FakeApi:
                                      initial_margin=80000.0, maintenance_margin=60000.0,
                                      deposit_withdrawal=0.0)
 
-    def list_positions(self, acct):
+    def list_positions(self, acct, unit=None, timeout=None):
+        # None = not passed (the SDK's own default then applies): the lag probe must pass its cap
+        self.position_timeouts.append(timeout)
         rows = self.positions
         if self.before_fill is not None and time.time() - self.filled_at < self.lag_s:
             rows = self.before_fill
@@ -269,8 +278,12 @@ class FakeApi:
         self.trades = [t]
         return t
 
-    def update_status(self, acct, trade=None):
-        self.calls.append("update_status")
+    def update_status(self, account=None, *, trade=None, timeout=30000, cb=None):
+        # 1.7.11's signature (_core.pyi); one or the other — the 11-23 live run's error on both
+        if account is not None and trade is not None:
+            raise _ShioajiValueError("Cannot specify both account and trade")
+        self.status_calls.append((account is not None, trade is not None))
+        self.status_timeouts.append(timeout)
 
     def list_trades(self):
         return self.trades
@@ -496,8 +509,20 @@ def req(intent="entry", action="buy", qty=1, tag=None, symbol="TXF", ttl=5):
 
 acct = types.SimpleNamespace(account_id="F0001")
 api = FakeApi(fill=("Filled", [(1, 23000.0), (1, 23010.0)]))
+_real_log, _logged = w._log, []
+w._log = _logged.append
 res = w.execute(api, acct, req(qty=2), simulation=True)
+w._log = _real_log
 po = [c for c in api.calls if isinstance(c, tuple)]
+_us = api.status_calls
+check(_us and all(c == (False, True) for c in _us)
+      and not any("update_status failed" in m for m in _logged),
+      "the confirm refreshes the one trade (update_status(trade=…), no account: 1.7.11 refuses both)",
+      (_us, _logged))
+check(api.status_timeouts and all(isinstance(x, int) and 1000 <= x <= w.UPDATE_STATUS_TIMEOUT_S * 1000 for x in api.status_timeouts)
+      and w.UPDATE_STATUS_TIMEOUT_S * 1000 < __import__("lib.order_sinopac").order_sinopac.WORKER_STALE_S * 1000,
+      "each update_status is capped (not the SDK's 30 s = WORKER_STALE_S): a hung call cannot age the heartbeat "
+      "into 'worker down'", api.status_timeouts)
 o = po[0][2] if po else None
 check(res["status"] == "filled" and res["fill_qty"] == 2.0 and abs(res["avg_fill_price"] - 23005.0) < 1e-9,
       "filled: qty and VWAP from deals", res)
@@ -703,6 +728,70 @@ check(raises(account_sinopac.SnapshotLag, lambda: account_sinopac.bot_position_r
       "every position read refuses the unsettled snapshot")
 check(w._settled_read_at() >= vault.last_order_at() + vault.ORDER_SETTLE_S - 1e-6,
       "the daemon's re-read after a send starts ORDER_SETTLE_S after it")
+
+# Wei 11-23 + audit B2: time the real lag — after an entry's fill the worker reads every LAG_PROBE_S,
+# counted from the send (as ORDER_SETTLE_S is), past the window up to LAG_PROBE_MAX_S; closes not timed
+w.LAG_PATH = os.path.join(TMP, "state", "sinopac_settle_lag.json")
+api = FakeApi(lag_s=6.0)
+res = w.execute(api, acct, req(ttl=30), simulation=True)
+armed = dict(w._LAG_PROBE)
+check(res["status"] == "filled" and armed.get("contract") == res["symbol"] and armed.get("want_net") == 1
+      and abs(armed.get("sent_at", 0) - vault.last_order_at()) < 1e-6 and armed.get("simulation") is True,
+      "an entry's fill arms the lag probe: its contract, the net it should read, the send time, simulation", armed)
+
+
+def _run_probe(api, sent_at, appear_at, steps):
+    """Fake clock: the broker shows the fill at appear_at; returns (read times rel. to send, samples, log)."""
+    reads, logged, real_lp, real_time, real_log = [], [], api.list_positions, time.time, w._log
+    api.position_timeouts.clear()  # only this probe's reads
+    api.list_positions = lambda a, **kw: reads.append(time.time()) or real_lp(a, **kw)
+    api.filled_at, api.lag_s = appear_at - 0.5, 0.5  # shown from appear_at on
+    api.before_fill = [] if api.before_fill is None else api.before_fill
+    clock = [sent_at]
+    time.time = lambda: clock[0]
+    w._log = logged.append
+    try:
+        w._arm_lag_probe(armed["contract"], armed["want_net"], sent_at, False, now=sent_at)
+        for dt in steps:
+            clock[0] = sent_at + dt
+            w._probe_lag(api, acct)
+    finally:
+        time.time, w._log = real_time, real_log
+        api.list_positions = real_lp
+    return [round(x - sent_at, 1) for x in reads], json.load(open(w.LAG_PATH))["samples"], logged
+
+
+# the broker shows it 6 s after the send: read at 2, 4, 6 → 6 s, nothing after
+_r, _lag, _lg = _run_probe(api, 1000.0, 1006.0, (0.5, 1.9, 2.0, 3.0, 4.0, 5.9, 6.0, 8.0, 10.0))
+check(_r == [2.0, 4.0, 6.0] and _lag[-1]["lag_s"] == 6.0 and _lag[-1]["from"] == "send"
+      and _lag[-1]["want_net"] == 1 and not w._LAG_PROBE,
+      "6 s after the send is recorded as 6 s at the 6 s read — every 2 s, no wait for the window", (_r, _lag[-1]))
+check(api.position_timeouts and all(x == int(w.UPDATE_STATUS_TIMEOUT_S * 1000) for x in api.position_timeouts),
+      "the lag reads are capped like update_status (a hang must not age the heartbeat)", api.position_timeouts)
+check(len(_lg) == 1 and "6.0s" in _lg[0] and "F000" not in _lg[0] + json.dumps(_lag),
+      "one log line, no account in it or in the state file", _lg)
+# measured from the send, not from the confirm: a fill confirmed 3 s after the send that shows 6 s later = 9 s
+api = FakeApi(lag_s=6.0)
+w.execute(api, acct, req(ttl=30), simulation=True)
+_r, _lag, _ = _run_probe(api, 2000.0, 2009.0, [x * 0.5 for x in range(1, 30)])
+check(_lag[-1]["lag_s"] == 10.0 and _r[-1] == 10.0,
+      "the lag counts from the send (9 s after it, seen at the 10 s read), not from the confirm", (_r, _lag[-1]))
+# past the 20 s window it keeps reading: a 25 s lag is timed, not "not seen"
+_r, _lag, _ = _run_probe(api, 3000.0, 3025.0, [float(x) for x in range(1, 40)])
+check(_lag[-1]["lag_s"] == 26.0 and max(_r) == 26.0 and w.LAG_PROBE_MAX_S >= 2 * vault.ORDER_SETTLE_S,
+      "a lag past ORDER_SETTLE_S (25 s) is still timed; the probe reads up to LAG_PROBE_MAX_S", (_r[-3:], _lag[-1]))
+api = FakeApi(lag_s=3600)
+w._arm_lag_probe(computed_near("TXF"), 1, _real_t := time.time() - w.LAG_PROBE_MAX_S - 1, False)
+w._LAG_PROBE["next_at"] = 0
+w._probe_lag(api, acct)
+check(json.load(open(w.LAG_PATH))["samples"][-1]["lag_s"] is None and not w._LAG_PROBE,
+      "not seen inside LAG_PROBE_MAX_S: recorded as not seen (lag_s null), the probe stops")
+# closes are not timed (an early [] would read as an instant flat)
+api = FakeApi(positions=[(computed_near("TXF"), 1)])
+fresh_marker()
+w.execute(api, acct, req("reduce", "sell", ttl=30), simulation=True)
+check(not w._LAG_PROBE, "a close's fill arms no lag probe", dict(w._LAG_PROBE))
+fresh_marker()
 
 # the wait path, scaled: settle 0.4 s, broker lag 0.25 s, a request with time to spare
 saved_settle = vault.ORDER_SETTLE_S
@@ -1115,6 +1204,22 @@ probe = json.load(open(w.PROBE_PATH))
 check(rc == 2 and probe.get("reason") == "NOT_SIGNED" and not probe["ok"],
       "--once: the probe file carries the class too, so the connect page can tell 'wait for review' (audit N-B)",
       probe)
+# 11-23 live run: the bad-signature error carried the whole API key into sinopac_probe.json
+_K, _S = "TESTKEYTESTKEYTESTKEYTESTKEY000000", "TESTSECRETTESTSECRETTESTSECRET00"
+_bind_store(api_key=_K, secret=_S)
+holder["api"] = FakeApi(login_raises=type("BadRequestError", (Exception,), {})(
+    f"StatusCode: 400, Detail: key: {_K} not match signature. secret {_S}"))
+w.WORKSPACE = TMP
+rc = w.run_once()
+w.WORKSPACE = real_ws
+probe = json.load(open(w.PROBE_PATH))
+check(rc == 2 and probe.get("reason") == "KEY" and _K not in json.dumps(probe) and _S not in json.dumps(probe)
+      and "not match signature" in probe.get("error", ""),
+      "--once on a wrong secret: the probe file says KEY and carries neither the API key nor the secret "
+      "(the error class and the broker's words stay)", probe)
+if os.path.exists(w.STOP_PATH):
+    os.remove(w.STOP_PATH)
+_bind_store()
 # --sim-test (the signing review's test): an unsigned account still logs in — in SIMULATION, never
 # production, no certificate — and one TMF order goes out; the bot's last-order marker is not touched
 _sim_api = FakeApi()
@@ -1196,6 +1301,12 @@ check(_reasons == {"KEY": "KEY", "NO_FUTURES": "NO_FUTURES", "TOO_MANY": "TOO_MA
                    "KEY (clock fine)": "KEY"},
       "reason codes: KEY (AuthError family), NO_FUTURES, TOO_MANY (451, still retried), VERSION (pin / missing), "
       "CLOCK (a broker refusal while the clock is measured off > receive_window, ahead of KEY)", _reasons)
+# 11-23 live run (1.7.11, a mistyped secret): BadRequestError with the key echoed — KEY, not UNKNOWN
+BadRequestError = type("BadRequestError", (ShioajiError,), {})
+_bad_sig = BadRequestError("StatusCode: 400, Detail: key: FAKEAPIKEYFAKEAPIKEYFAKEAPIKEY00 not match signature.")
+check(w._login_reason(_bad_sig) == "KEY" and not w.retryable(_bad_sig)
+      and w._login_reason(BadRequestError("StatusCode: 400, Detail: contract not found")) == "UNKNOWN",
+      "a wrong secret (BadRequestError … not match signature, measured 11-23) → KEY, a stop; another 400 stays UNKNOWN")
 check(w.retryable(RuntimeError("451 Too Many Connections")) and not w.retryable(_sdk_err("TokenError", AuthError)),
       "…TOO_MANY stays a retry, KEY a stop")
 _retry_cases = {"TimeoutError": TimeoutError("t"), "ShioajiConnectionError": _sdk_err("ShioajiConnectionError",
@@ -1612,6 +1723,31 @@ check(w.redact("order 2330 qty 1000000000 TXFK6") == "order 2330 qty 1000000000 
       "redact leaves codes and long numbers alone")
 check(w.redact("CA not activated for: a123456789 / Ab12345678") == "CA not activated for: <id> / <id>",
       "redact masks a lowercase id too (a hand-typed .env value, echoed as given; audit S1)")
+# 11-23 live run: the worker log carried the futures account in full (broker_id / account_id)
+_acct_repr = ("FutureAccount(person_id='A123456789', broker_id='F002000', account_id='1234567', signed=True, "
+              "username='王小明') {'account': {'broker_id': 'F002000', 'account_id': '1234567'}} account_id: 1234567")
+_red = w.redact(_acct_repr)
+check(not any(x in _red for x in ("F002000", "1234567", "王小明", "A123456789")) and "signed=True" in _red,
+      "redact masks the futures account (broker_id / account_id), the owner's name and the id by field name", _red)
+check(w.redact("BadRequestError: StatusCode: 400, Detail: key: FAKEAPIKEYFAKEAPIKEYFAKEAPIKEY00 not match "
+               "signature.") == "BadRequestError: StatusCode: 400, Detail: key: <redacted> not match signature."
+      and "abcDEF123456ghiJKL789012" not in w.redact("token abcDEF123456ghiJKL789012mnoPQR== x")
+      and w.redact("TXFK6 order 2330 seq 000123 /opt/blave-agent/workspace/state/sinopac_account.json")
+      == "TXFK6 order 2330 seq 000123 /opt/blave-agent/workspace/state/sinopac_account.json",
+      "redact masks an echoed API key and any secret-shaped token; codes, numbers and paths stay")
+_saved_secrets = set(w._SECRETS)
+w.remember_secrets("F002000", "9876543", "abc")
+check(w._sanitize(RuntimeError("account F0020009876543 / 9876543 abc")) == "RuntimeError: account <redacted><redacted> / <redacted> abc",
+      "this login's own values (account, keys) are masked wherever they turn up; under 6 characters they are not")
+_la = FakeApi()
+_la.accounts[1].account_id, _la.accounts[1].broker_id = "7654321", "F009000"
+holder["api"] = _la
+w.login({"sinopac_api_key": "k" * 8, "sinopac_secret_key": "s" * 8, "sinopac_ca_path": "", "sinopac_ca_passwd": "",
+         "sinopac_person_id": "", "live": False})
+check(w._sanitize(RuntimeError("acct 7654321 at F009000 key kkkkkkkk")) == "RuntimeError: acct <redacted> at <redacted> key <redacted>",
+      "login remembers the key, the secret and every returned account's number: masked in any later error")
+w._SECRETS.clear()
+w._SECRETS.update(_saved_secrets)
 
 # ── 6. sinopac_futures_account ───────────────────────────────────────────────────────
 if os.path.exists(w.OUT_PATH):

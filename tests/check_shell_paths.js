@@ -32,12 +32,13 @@ check("dev", false, undefined);
 
 /* 路徑常數依平台(假造 process.platform;沒有 Windows 機器):venv 的 python 在 Windows 是 venv\Scripts\python.exe、
    隨包 Python 是 python-x64\python.exe(python-build-standalone 的 Windows 版沒有 bin/);darwin 一字不變。 */
-function consts(platform, arch, resourcesPath, packaged = true, exists = () => true, __dirname = "/src/shell") {
+function consts(platform, arch, resourcesPath, packaged = true, exists = () => true, __dirname = "/src/shell", logged = []) {
   const app = { isPackaged: packaged }, os = { homedir: () => (platform === "win32" ? "C:\\Users\\u" : "/Users/u") };
   const path = require("path")[platform === "win32" ? "win32" : "posix"];
   const process = { platform, arch, resourcesPath, env: {} }, fs = { existsSync: exists };
+  const console = { error: (m) => logged.push(String(m)), log() {}, warn() {} };
   eval(cut("const BASE = ", "// 打包版的 runtime/ 與隨包 Python 都在 .app 裡"));
-  return { BASE, WS, VENV_BIN, VENV_PY, BUNDLED_PY, base: basePython() };
+  return { BASE, WS, VENV_BIN, VENV_PY, BUNDLED_PY, base: basePython(), again: basePython(), logged };
 }
 {
   const w = consts("win32", "x64", "C:\\Users\\u\\AppData\\Local\\Programs\\Blave\\resources");
@@ -54,6 +55,12 @@ function consts(platform, arch, resourcesPath, packaged = true, exists = () => t
     consts("darwin", "arm64", "/R", false, (f) => f === "/src/shell/vendor/python-arm64/bin/python3").base === "/src/shell/vendor/python-arm64/bin/python3"
     && consts("win32", "x64", "C:\\R", false, (f) => f === "C:\\src\\vendor\\python-win-x64\\python.exe", "C:\\src").base === "C:\\src\\vendor\\python-win-x64\\python.exe"
     && consts("darwin", "arm64", "/R", false, () => false).base === "python3" && consts("win32", "x64", "C:\\R", false, () => false, "C:\\src").base === "python");
+  // 11-23 永豐量測樹缺 shell/vendor,開發版靜默退到系統 Python 3.15:退的那一刻在主行程 log 講一次(打包版與 vendor 在時不講)
+  { const miss = consts("darwin", "arm64", "/R", false, () => false), has = consts("darwin", "arm64", "/R", false, (f) => f === "/src/shell/vendor/python-arm64/bin/python3"),
+      pk = consts("darwin", "arm64", "/R", true, () => false);
+    t("開發版缺 shell/vendor 的 Python:log 一行(帶路徑與 fetch-python.sh),重叫不重講;vendor 在、打包版都不講",
+      miss.logged.length === 1 && miss.logged[0].includes("/src/shell/vendor/python-arm64/bin/python3") && miss.logged[0].includes("fetch-python.sh") && miss.again === "python3"
+      && has.logged.length === 0 && pk.logged.length === 0); }
   // 0.1.12 起 venv 與 pip 在 shell/enginesetup.js(spawn 逐行讀進度);main.js 傳 BASE / VENV_BIN / WIN 進去
   const eng = fs.readFileSync(path.join(SHELL, "enginesetup.js"), "utf8");
   t("venv 建立與 pip 都走 spawn 陣列,沒有 /bin/sh -c 字串", /await run\(my, o\.basePython\(\), \["-m", "venv", venvDir\], envPath, o\.venvMs\)/.test(eng) && /const venvDir = path\.join\(o\.base, "venv"\);/.test(eng) && !/shell: true/.test(eng) && !/"\/bin\/sh"/.test(src + eng));

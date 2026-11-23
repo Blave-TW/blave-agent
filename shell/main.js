@@ -1242,7 +1242,15 @@ const BUNDLED_PY = WIN ? path.join(process.resourcesPath || "", `python-${proces
 // 用戶自己那顆被解除安裝,venv 就跟著死)。開發版:tools/fetch-python.sh 抓到 shell/vendor/ 的那顆在就用它,版本才跟打包版一樣,
 // 沒有才退系統的(Homebrew 3.15 事件)。vendor 的目錄名照 electron-builder.config.js:Windows 是 python-win-x64
 const DEV_PY = path.join(__dirname, "vendor", WIN ? `python-win-${process.arch}` : `python-${process.arch}`, ...(WIN ? ["python.exe"] : ["bin", "python3"]));
-const basePython = () => (app.isPackaged ? BUNDLED_PY : fs.existsSync(DEV_PY) ? DEV_PY : WIN ? "python" : "python3");
+// 開發版找不到 vendor 那顆時講一次(主行程 log):11-23 永豐量測樹缺 shell/vendor,靜默跑在系統 Python 3.15 上
+let devPyWarned = false;
+const basePython = () => {
+  if (app.isPackaged) return BUNDLED_PY;
+  if (fs.existsSync(DEV_PY)) return DEV_PY;
+  const sys = WIN ? "python" : "python3";
+  if (!devPyWarned) { devPyWarned = true; console.error(`[python] dev build: ${DEV_PY} missing — falling back to the system ${sys}, not the bundled version; run shell/tools/fetch-python.sh`); }
+  return sys;
+};
 // 隨包 pip wheel(tools/fetch-python.sh 的 PIP_WHL,兩邊要一樣):打包版在 resources/pip-wheel/,開發版在 shell/vendor/pip-wheel/(gitignored,沒抓就不升級)。
 // enginesetup 用它離線升級 venv 的 pip,拿到 --resume-retries(斷線從斷點接續)
 const PIP_WHEEL_NAME = "pip-26.2.2-py3-none-any.whl";

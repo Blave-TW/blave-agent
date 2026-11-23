@@ -79,6 +79,7 @@ class _Worker:
         self.respawn_at = 0.0
         self.stop_by = None   # kill deadline of a stop asked for
         self.check_at = 0.0
+        self.started_at = None  # when the running worker was spawned (the app's 「連接中…」 grace)
         self.lock = threading.Lock()
 
     def running(self):
@@ -131,6 +132,7 @@ class _Worker:
             # the credentials are the first line; then the pipe stays open: closing it is the stop request
             self.proc = subprocess.Popen([sys.executable, p["worker"]], cwd=WORKSPACE, env=env,
                                          stdout=logf, stderr=logf, **cl._child_kw(stdin=subprocess.PIPE))
+        self.started_at = time.time()
         try:
             self.proc.stdin.write((line + "\n").encode("utf-8"))
             self.proc.stdin.flush()
@@ -449,13 +451,16 @@ def _drop_wanted():
 
 def local_info():
     """The daemon status doc's `sinopac_local`: `needs_secrets` true = .env is bound through the
-    connect flow but this daemon holds no bundle for it (a restart) — the app re-sends `secrets`."""
+    connect flow but this daemon holds no bundle for it (a restart) — the app re-sends `secrets`.
+    `worker_started_at`: the running worker's spawn (epoch s), None when none runs."""
     try:
         bound = sinopac_service.bound(WORKSPACE) is True
     except Exception:
         bound = False
     have = _SEAL["secrets"] is not None and _env_bound_to(_SEAL["secrets"])
-    return {"secrets": have, "needs_secrets": bound and not have, "worker_running": _W.running()}
+    running = _W.running()
+    return {"secrets": have, "needs_secrets": bound and not have, "worker_running": running,
+            "worker_started_at": _W.started_at if running else None}
 
 
 def drop_local(names):

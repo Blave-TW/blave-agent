@@ -8,6 +8,11 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+## 1.1.170 — 2026-11-23(永豐期貨翻開關前的實測修正,閘門仍關著)
+
+- **永豐本機 worker 的啟動時間進狀態檔(`sinopac_local.local_info` 的 `worker_started_at`)**:重開電腦版、worker 第一份快照還沒寫出來那段,帳戶讀到的是上次留下的舊快照,設定 › 帳戶那一列寫「串接失敗」＋lib 的工程英文(11-23 實測截圖)。外殼拿它當起點(worker 還沒起就從畫面載入算),120 秒內那一列畫「連接中…」、不列串接失敗;過了照講。worker 沒在跑時是 `null`。測試 `tests/check_sinopac_local.py` §3、`tests/check_shell_sinopac_view.js`。
+- **(workspace,隨根 VERSION)永豐實測修正(`lib/sinopac_worker`、`lib/sinopac_vault`、`lib/sinopac_futures_account`)**:`ORDER_SETTLE_S` 維持 20,開倉成交後從送單算起每 2 秒讀一次部位、最多讀到 60 秒,部位一出現就把真延遲寫進 `state/sinopac_settle_lag.json` 並 log 一行(只記合約代號與是否模擬,平倉不量,不碰快照;`update_status` 每次最多等 5 秒;11-23 一買一平都在 20 秒內看到,但那含 worker 自己的等待,真延遲未量,`ORDER_SETTLE_MEASURED_S` 仍是 None);成交確認改 `update_status(trade=…)`(1.7.11 帶帳戶又帶單會丟 `Cannot specify both account and trade`,每筆成交都記一次失敗);`redact`／`_sanitize` 另遮期貨帳號(`broker_id`／`account_id`／`username` 欄位、這次登入拿到的帳號)、API key 與 secret(這次登入的值、`key: …` 回顯、24 字以上的金鑰樣字串);Secret 打錯丟的 `BadRequestError … not match signature` 判 `KEY`(原本落 `UNKNOWN`);帳戶 lib 在 worker 沒寫快照時的錯誤帶 `[sinopac_worker_down]`,外殼換成白話一句。`runtime/venue_traits.py` 只改註解(與 lib 同步)。測試 `tests/check_sinopac_futures.py`。
+
 ## 1.1.169 — 2026-11-22(desktop 0.1.59:自動迭代、答案鈕)
 
 - **(0.1.59 發版稽核)停止時的自動迭代收場不再讓外殼殺掉 runtime(`iterate_turn_end`,稽核 M1)**:按了停止的回合,`lib.iterate close-turn` 照原樣關場、不放回、不靜默重跑(lib 那半);收場在 thread 裡跑,主執行緒照 `turn_stop` 的節奏每秒送 `ping`,Python 冷啟動慢的機器也不會沉默滿 5 秒(`STOP_KILL_MS`)。只有基線那一次、沒掃參數的場(採用穩健參數、策略庫原樣安裝、用戶只說回測)收場時直接丟掉,不重跑、不送 `auto_iter`。答案鈕選項另擋 Unicode 格式字元(`ANS_BAD_CATS = ("Cc", "Cf")`,U+202E 這類),電腦版與網頁的 `ANS_BAD_CHAR` 同一組(稽核 S-2)。測試 `tests/check_iterate_runtime.py`、`tests/check_iterate.py`、`tests/check_answer_buttons.py`。
