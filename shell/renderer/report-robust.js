@@ -447,8 +447,8 @@
     if (!sc.single) tbl.style.minWidth = Math.max(340, 84 + sc.cols.length * 52 + (sc.cols.length + 2) * 4) + "px";
     const thead = el("thead"), hr = el("tr");
     const corner = el("th", "corner");
-    corner.appendChild(el("span", "r mono", sc.rowParam + " ↓"));
-    if (!sc.single) corner.appendChild(el("span", "mono", sc.colParam + " →"));
+    corner.appendChild(el("span", "r mono", sc.rowParam + " ↓")).title = sc.rowParam;   // 84px 會截尾,全名放 title(QA 0159 R3-2)
+    if (!sc.single) corner.appendChild(el("span", "mono", sc.colParam + " →")).title = sc.colParam;
     hr.appendChild(corner);
     sc.cols.forEach((c) => { const th = el("th", null, sc.single ? "" : pv(c, sc.cd)); th.scope = "col"; hr.appendChild(th); });
     thead.appendChild(hr);

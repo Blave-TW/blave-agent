@@ -947,6 +947,7 @@ tr:nth-child(2n) .mg-sk.amt { width: 44px; }
 .mg-fld { display: flex; flex-direction: column; gap: var(--space-6); margin-top: var(--space-12); }
 .mg-fld-l { font-size: 12px; color: var(--ink-3); }
 .mg-sel { height: 32px; padding: 0 var(--space-8); border: 1px solid var(--border-frame); border-radius: var(--radius-xs); background: var(--bg-body); color: var(--ink); font: 13px var(--font-sans); }
+.mg-sel:focus { border-color: var(--ink); outline: none; }   /* 欄位的焦點是墨／白邊框,不是 UA 的橘色 outline(canon › Focus;同 .amt-in;QA 0158 P3-11) */
 .mg-params { margin-top: var(--space-12); border-top: 1px solid var(--border-hairline); padding-top: var(--space-12); }
 .mg-params[hidden] { display: none; }
 .mg-ph { font: 600 11px var(--font-sans); color: var(--ink-3); margin-bottom: var(--space-8); }

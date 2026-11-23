@@ -915,7 +915,7 @@ function libPaintList() {
   const g2 = grp("lib-grp-later", t(trialGate ? "lib.grp.data" : LIB_GRP_KEYS[g][0]), sp.later.length), gate = libEl("div", "lib-gate");
   if (trialGate) {
     const act = libEl("div", "act"), more = libEl("button", "btn-quiet", t("data.seePlan")); more.type = "button";
-    more.addEventListener("click", () => { libTrack("plan_lib"); planOpen(); });
+    more.addEventListener("click", (e) => libSeePlan(e.currentTarget));
     act.append(libGateBtn(g), more); gate.appendChild(act);
   } else gate.append(libEl("p", "", t(LIB_GRP_KEYS[g][1])), libGateBtn(g));
   g2.append(gate, listOf(sp.later));
@@ -927,12 +927,14 @@ const LIB_GRP_KEYS = { no_card: ["lib.grp.card", "lib.grp.gate.noCard"], no_bala
   no_plan: ["lib.grp.plan", "lib.grp.gate.noPlan"], plan_failed: ["lib.grp.repay", "lib.grp.gate.planFailed"],
   unknown: ["lib.grp.check", "lib.grp.gate.unknown"] };
 const libPlanMo = () => typeof planMo === "function" && planMo();
+// 〔看方案〕:改價 v3 開方案框(試用到期也是),跟資料卡、側欄同一個入口;舊制才開 設定 › 帳號與方案
+function libSeePlan(opener) { libTrack("plan_lib"); if (typeof p3Live === "function" && p3Live()) p3OpenAgent(opener, null, "lib"); else planOpen(); }
 /* 付不出資料費的出口(§3.2):no_card 有試用 → 「綁卡,送 {t} 天資料」/ 沒試用或 t 空 → 「前往綁卡」/ no_balance → 「儲值」/ unknown → 描邊「帳號與方案」
    (查不到狀態時不擺一顆要錢的主鈕;鈕字用 pv.e.btn——「開這一頁的鈕」的字,跟資料卡那顆共用)。這幾顆開 設定 › 帳號與方案。
    方案制的 no_card(有試用資格又沒卡)→「綁卡免費試用 {t} 天」直接開瀏覽器綁卡頁(bindGo),收費講在那一頁。試用天數來自 planVars().t(api 的 trial.days),不寫死 */
 function libGateBtn(why) {
-  // 方案制:沒有方案 →「看方案」開設定 › 帳號與方案(那一頁有開通鈕與 API 方案);扣款失敗 →「重新付款」外開網站方案頁
-  if (why === "no_plan") { const b = libEl("button", "btn-fill", t("data.seePlan")); b.type = "button"; b.addEventListener("click", () => { libTrack("plan_lib"); planOpen(); }); return b; }
+  // 方案制:沒有方案 →「看方案」開方案框(libSeePlan);扣款失敗 →「重新付款」外開網站方案頁
+  if (why === "no_plan") { const b = libEl("button", "btn-fill", t("data.seePlan")); b.type = "button"; b.addEventListener("click", (e) => libSeePlan(e.currentTarget)); return b; }
   if (why === "plan_failed") { const b = libEl("button", "btn-fill", t("plan.repay")); b.type = "button"; b.addEventListener("click", () => planRepay()); return b; }
   const trial = typeof acct !== "undefined" && acct && acct.trial_eligible === false ? false : true;
   const tDays = typeof planVars === "function" ? planVars().t : "";

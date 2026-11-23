@@ -58,7 +58,7 @@ const MOD_GLOBAL = {
 const FIELDS = {
   LIB: { pending: "SID", seq: "GLOBAL 清單請求流水號(丟掉晚到的舊回應)", noNew: "GLOBAL 灰字掛在那一支卡上", cloudWait: "GLOBAL 一次只等一支(換一支就放掉)",
     bbWait: "GLOBAL 綁卡即購買的付款頁(api 每帳號一次一張),跟對話分頁無關" },
-  RPT: { pending: "SID", seq: "GLOBAL 清單請求流水號", readSeq: "GLOBAL 閱讀頁請求流水號", turnAt: "TAB", cloudTurn: "TAB", cloudRes: "GLOBAL 每筆帶 rt(那一輪)", noNew: "GLOBAL 灰字掛在框上", poll: "GLOBAL 一次一個輪詢" },
+  RPT: { pending: "SID", seq: "GLOBAL 清單請求流水號", readSeq: "GLOBAL 閱讀頁請求流水號", turnAt: "TAB", cloudTurn: "TAB", cloudRes: "GLOBAL 每筆帶 rt(那一輪)", noNew: "GLOBAL 灰字掛在框上", noNewSid: "GLOBAL 跟 noNew 一組:框送出的是哪一條(〔查看〕切回去)", poll: "GLOBAL 一次一個輪詢" },
   XP: { pending: "TAB" }, RES: { turn: "TAB", cw: "GLOBAL 一次等一輪,帶 rt" }, BR: { blocks: "TAB", cur: "TAB" },
   UPD: { cloudSid: "SID", turnCloud: "TAB", session: "GLOBAL 更新期間,只由 cloudSid 那一條的結束收", lagCv: "GLOBAL", done: "GLOBAL" },
 };

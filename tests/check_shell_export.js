@@ -46,10 +46,18 @@ ok("三個平台都轉不了:觸發器 aria-disabled、按了講原因不開選�
       && S.S[L]["xp.why.tm"].endsWith(L === "zh" ? "。" : ".") && !S.S[L]["xp.why.busy"])); }
 // e2e 0.1.8 #67:Type B 的程式碼分頁不叫人去跑回測
 ok("沒有回測那一句:Type B 換成 rp.noBtB,key 放在 data-i18n 上(切語言照它重譯)", /nb\.dataset\.i18n = typeof xpIsTypeB === "function" && xpIsTypeB\(B\.data\) \? "rp\.noBtB" : "rp\.noBt"; nb\.textContent = t\(nb\.dataset\.i18n\);/.test(app));
-const tpl = { xq: "把策略 {id} 轉成 XQ XS 版。", mc: "mc {id}", pine: "pine {id}" };
-ok("固定句只代入資料夾名", X.xpMsg("xq", "btc_sma-1", tpl) === "把策略 btc_sma-1 轉成 XQ XS 版。");
-ok("資料夾名不合規(空白、引號、換行、>64)→ 不送", [" x", "a\"b", "a\nb", "x".repeat(65), ""].every((id) => X.xpMsg("pine", id, tpl) === null));
-ok("未知 target / 範本沒有恰好一個 {id} → 不送", X.xpMsg("ninja", "a", tpl) === null && X.xpMsg("xq", "a", { xq: "{id}{id}" }) === null && X.xpMsg("xq", "a", { xq: "no id" }) === null);
+const tpl = { xq: "把策略「{display_name}」（{name}）轉成 XQ XS 版。", mc: "mc {display_name} {name}", pine: "pine {display_name} {name}" };
+ok("固定句代入名稱與資料夾代號(agent 靠代號找資料夾,同 web);沒有名稱用代號", X.xpMsg("xq", "btc_sma-1", tpl, "BTC 突破獵手") === "把策略「BTC 突破獵手」（btc_sma-1）轉成 XQ XS 版。" && X.xpMsg("xq", "btc_sma-1", tpl) === "把策略「btc_sma-1」（btc_sma-1）轉成 XQ XS 版。");
+ok("資料夾名不合規(空白、引號、換行、>64)→ 不送", [" x", "a\"b", "a\nb", "x".repeat(65), ""].every((id) => X.xpMsg("pine", id, tpl, "名") === null));
+ok("未知 target / 範本沒有恰好一個 {name} 與 {display_name} → 不送", X.xpMsg("ninja", "a", tpl) === null && X.xpMsg("xq", "a", { xq: "{display_name}{name}{name}" }) === null && X.xpMsg("xq", "a", { xq: "{name}" }) === null);
+{ const S = {}; require("vm").runInNewContext(fs.readFileSync(path.join(SHELL, "renderer", "strings.js"), "utf8") + "\nthis.S = STRINGS;", S);
+  const fp = /^const FIXED_PROMPTS = .*$/m.exec(app)[0].replace(/^const /, "var "), cut = (n) => { const i = app.indexOf("function " + n + "("); let d = 0; for (let k = app.indexOf("{", i); ; k++) { if (app[k] === "{") d++; else if (app[k] === "}" && --d === 0) return app.slice(i, k + 1); } };
+  const C = { STRINGS: S.S, LANG: "zh", RP: { list: [{ name: "btc_breakout_hunter", displayName: "BTC 突破獵手" }] }, t: (k, v) => S.S.zh[k].replace(/\{(\w+)\}/g, (_, n) => v[n]) };
+  require("vm").runInNewContext(fp + "\n" + ["fixedMatch", "fixedName", "fixedLabel"].map(cut).join("\n"), C);
+  const ok3 = ["zh", "en"].every((L) => ["xq", "mc", "pine"].every((k) => { const sent = X.xpMsg(k, "btc_breakout_hunter", { [k]: S.S[L]["xp.msg." + k] }, "BTC 突破獵手");
+    const lab = require("vm").runInNewContext("fixedLabel(" + JSON.stringify(sent) + ", 'label')", C); return sent.includes("btc_breakout_hunter") && typeof lab === "string" && lab.includes("BTC 突破獵手") && !lab.includes("btc_breakout_hunter"); }));
+  ok("QA 0159 R5-3 送出的句子帶代號(agent 用);對話裡經 FIXED_PROMPTS 顯示成不帶代號的一行(三個平台、兩語)", ok3
+    && /xpMsg\(target, id, xpTpl\(\), typeof fixedName === "function" \? fixedName\(id\) : id\)/.test(xp)); }
 const chunk = { type: "export", target: "pine", strategy: "btc_sma", filename: "btc_sma_pine.pine", content: "//@version=6\n" };
 ok("runtime 的 chunk 形狀收", X.xpChunkOk(chunk));
 ok("壞 chunk 不收(target、strategy、空內容)", !X.xpChunkOk({ ...chunk, target: "ea" }) && !X.xpChunkOk({ ...chunk, strategy: "../x" }) && !X.xpChunkOk({ ...chunk, content: "" }) && !X.xpChunkOk(null));

@@ -989,7 +989,7 @@ html.ws-sc .side-rail { flex: 1 1 auto; }
 .ic-btn.av:hover, .ic-btn.av[aria-expanded="true"], #rail-set[aria-expanded="true"] { background: var(--surface-muted); color: var(--ink); }
 .av .ic { width: 16px; height: 16px; stroke-width: 1.75; }
 .am-dot { position: absolute; top: -1px; right: -1px; width: 6px; height: 6px; border-radius: var(--radius-pill); background: var(--ink-2); box-shadow: 0 0 0 2px var(--bg-body); pointer-events: none; }
-.side-menu { position: fixed; z-index: 40; width: 208px; padding: var(--space-6); background: var(--surface-card); border-radius: var(--radius-lg); box-shadow: var(--shadow-md); }
+.side-menu { position: fixed; z-index: 40; width: 240px; padding: var(--space-6); background: var(--surface-card); border-radius: var(--radius-lg); box-shadow: var(--shadow-md); }
 .side-menu[hidden] { display: none; }
 .am-who { margin: 0; padding: var(--space-6) calc(var(--space-4) + var(--space-6)); font-size: 12px; color: var(--ink-3); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .am-i { display: flex; align-items: center; gap: var(--space-8); width: 100%; min-height: 44px; padding: var(--space-6) calc(var(--space-4) + var(--space-6)); border: 0; border-radius: var(--radius-xs); background: none; font-size: 13px; color: var(--ink-2); text-align: left;
@@ -1940,7 +1940,7 @@ html[data-platform="win32"] .flag-pop.sg-pick { width: calc(224px + var(--scroll
 /* 回合進行中「點了才講」的鈕(策略庫主鈕、報告「新增報告」;aria-disabled:鍵盤停得上去、點了才把原因寫在鈕下)長相同 :disabled、hover 不給回饋。
    只點名這兩處:datasrc / 下單啟動過場 / 群益開通的 aria-disabled 實心鈕各有自己的長相,不跟著變灰 */
 .btn-fill:disabled, .lib-cta .btn-fill[aria-disabled="true"], .btn-fill.is-lock { background: var(--surface-muted); color: var(--ink-3); border: 1px solid var(--color-greyMedium); cursor: not-allowed; opacity: 1; }
-.btn-out:disabled, #rpt-ask[aria-disabled="true"] { color: var(--ink-3); background: transparent; cursor: not-allowed; }
+.btn-out:disabled, .btn-out:disabled:hover, #rpt-ask[aria-disabled="true"] { color: var(--ink-disabled); background: transparent; border-color: var(--border-hairline); cursor: not-allowed; }   /* 同 .pf-act:disabled:框退一階、hover 不灰填,不然停用的描邊鈕看起來還能按(QA 0159 #1) */
 /* 被鎖的主鈕:長相同上,游標照 canon › Disabled ① */
 .lib-cta .btn-fill[aria-disabled="true"], .btn-fill.is-lock { cursor: not-allowed; }
 .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; border: 0; }

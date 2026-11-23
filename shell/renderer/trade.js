@@ -1433,8 +1433,9 @@ function trErrLoud(e, headState, startAt, lastRec) {
 function trErrStamp(ts, nowMs) {
   const ms = trMs(ts);
   if (ms == null) return null;
+  // 跨日就帶日期(看日曆日,不是 24 小時):昨晚 21:40 在今早看只寫「21:40」會讀成今天(QA 0159 #2)
   const d = new Date(ms), p = (n) => String(n).padStart(2, "0"), hm = p(d.getHours()) + ":" + p(d.getMinutes());
-  return nowMs - ms > 86400000 ? p(d.getMonth() + 1) + "/" + p(d.getDate()) + " " + hm : hm;
+  return d.toDateString() !== new Date(nowMs).toDateString() ? p(d.getMonth() + 1) + "/" + p(d.getDate()) + " " + hm : hm;
 }
 /* 機器拒絕的格式 `CODE: 「資料夾名」中文句`(runtime command_listener 的 TYPE_B;同綁定錯誤的代碼慣例)→ { code, name }。
    \u300c / \u300d = 「 」。認不得回 null */
@@ -5042,7 +5043,9 @@ function trPaintAssets() {
     const tag = [h.venue ? trVenueLabel(h.venue, true) : "", h.wallet ? trAcctLabel(h.wallet) : ""].filter(Boolean).join(" ");
     if (tag) c.appendChild(trEl("span", "mkt-tag", tag));
     // 數量不再接幣名:第一欄就是那個幣(價值欄的 USDT 是換算單位,留著)
-    const n = Number(h.amount), qc = trEl("td", "n", isFinite(n) ? n.toLocaleString("en-US", { maximumFractionDigits: 8 }) : "—");
+    // 計價幣(USDT 這類)與台幣照金額寫 2 位;幣量才到 8 位(QA 0159 #4:模擬帳戶 99,999.34551057)
+    const n = Number(h.amount), cashLike = TR_QUOTE_SUFFIX.indexOf(String(h.asset).toUpperCase()) >= 0 || /^(USD|TWD)$/i.test(String(h.asset));
+    const qc = trEl("td", "n", isFinite(n) ? n.toLocaleString("en-US", { maximumFractionDigits: cashLike ? 2 : 8 }) : "—");
     const val = trFmt2(h.usdt_value), vc = trEl("td", "n", val == null ? "—" : val);
     if (val != null) vc.appendChild(trEl("span", "ccy", "USDT"));   // usdt_value 本身就是 USDT 計價
     tr.append(c, qc, vc); tb.appendChild(tr);
@@ -5054,7 +5057,7 @@ function trAcctLabel(k) {
   const L = {
     trading: t("tr.acct.trading"), unified: t("tr.acct.trading"), swap: t("tr.acct.swap"), futures: t("tr.acct.swap"),
     std_futures: t("tr.acct.stdFut"), coinm_perp: t("tr.acct.coinm"), copy_trading: t("tr.acct.copy"),
-    spot: t("tr.acct.spot"), fund: t("tr.acct.fund"), funding: t("tr.acct.fund"),
+    spot: t("tr.acct.spot"), fund: t("tr.acct.fund"), funding: t("tr.acct.fund"), cash: t("tr.acct.cash"),
     cross_margin: t("tr.acct.crossMargin"), isolated_margin: t("tr.acct.isoMargin"),
     earn: t("tr.acct.earn"), options: t("tr.acct.options"), trading_bots: t("tr.acct.bots"),
   };
@@ -5649,7 +5652,8 @@ async function trLoadCurve() {
     S.ov.perf = pf && pf.code === "OK" ? pf : null; S.ov.perfErr = !!pf && pf.code !== "OK"; }
   catch (_) { if (S.ov.days !== days) return; S.ov.perf = null; S.ov.perfErr = true; }
   // uiErr = 這一輪讀不到(不是「沒有事件」):畫面要說得出是哪一種
-  try { const ev = await S.api.tradeEvents({ days }); if (S.ov.days !== days) return; S.ov.ui = ev && Array.isArray(ev.events) ? ev.events : []; S.ov.uiErr = !ev || ev.code !== "OK"; }
+  // 事件一律拿最長那一段:「恢復／啟動」看前一筆暫停,只拿圖表範圍的話同一筆在 1D、1M 會叫不同名字(QA 0159 R4-3);畫面照樣只列範圍內的
+  try { const ev = await S.api.tradeEvents({ days: TR_RANGES[TR_RANGES.length - 1][1] }); if (S.ov.days !== days) return; S.ov.ui = ev && Array.isArray(ev.events) ? ev.events : []; S.ov.uiErr = !ev || ev.code !== "OK"; }
   catch (_) { if (S.ov.days !== days) return; S.ov.ui = []; S.ov.uiErr = true; }
   S.sig.over = null; if (TR === S && S.open && S.tab === "over") trPaintOver();
 }
@@ -7544,7 +7548,7 @@ function envPaintEmpty(kind, pid) {
   } else {
     const c = envOpenCard(view, pv, v, planMo(), err), page = trEl("div", "cv-ce"), card = trEl("div", "cv-card"); box.appendChild(page);
     page.appendChild(trEl("h3", "", t(c.head)));
-    if (pid) page.appendChild(trEl("p", "cv-pend", t("env.open.pend", { id: pid })));
+    if (pid) page.appendChild(trEl("p", "cv-pend", t("env.open.pend", { id: typeof hoLabel === "function" ? hoLabel(pid, RP.list) : pid })));   // 寫策略名稱,同上面 ho.ready.body(QA 0159 R5-5)
     if (spec || c.tag || c.price || c.more) {
       const top = trEl("div", "cv-top"), right = trEl("div", "cv-prw");
       // 階名用對外那組(「Linux 基本」,pricing §2.2),不印 api 的 label(Starter);認不得的 tier 才退 label。規格另起一段小字

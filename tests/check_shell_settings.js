@@ -380,7 +380,7 @@ ok("分類順序(0.1.32 方案 B):一般 → 模型接入 → Agent → 資料�
   && !/set-acct-pane|acct-to-plan|acct-list|acct-a1|id="set-acct-btn"|id="acct-hint"/.test(html) && !/acct-to-plan|acct-list|acct-a1|acct\.in\.|acct\.toPlan/.test(src));
 // 舊的分類 id(acct、shares)都還開得到合併後的頁:真的跑 setCat
 { const mk = (k) => { const n = el(); n.dataset.setCat = k; return n; }, ids = ["display", "model", "rules", "src", "connect", "plan", "priv"], cats = ids.map(mk), panes = ids.map(mk); let painted = 0; const tracked = [], did = [];
-  const env = { $: (id) => (id === "set-cats" ? { querySelectorAll: () => cats } : id === "set-modal" ? { querySelectorAll: () => panes } : $(id)),
+  const env = { $: (id) => (id === "set-cats" ? { querySelectorAll: () => cats } : id === "set-modal" ? { querySelectorAll: () => panes, querySelector: () => null } : $(id)),
     mdlPaint() {}, srcLoad() {}, srcClear() {}, rulesOpen() {}, rulesClear() {}, privLoad() {}, aboutIdLoad() {}, shlOpen() { did.push("shlOpen"); }, planPaint() { painted++; }, trackFeature: (n) => tracked.push(n),
     acctCheck() {}, balLoad() {}, pubLoad: () => Promise.resolve(), pub: {}, hasToken: true, connectPaint() { did.push("connectPaint"); }, mvLoad: () => Promise.resolve(null), phLoad: () => Promise.resolve(null), connectCatSync() {}, shlReveal() { did.push("reveal"); }, SHL_SCROLL: false };
   const run = new Function("env", "with (env) { " + fnSrc("setCat") + "; return setCat; }")(env);

@@ -413,7 +413,9 @@ const EVENTS = {
     // 0.1.59 澄清表單主鈕直接送出(renderer/form.js;spec chat-answer-buttons §9,同 api 順序,api 先上):clarify_click = 主鈕送出且回合 started／queued
     // (canon 的 clarify_sent method:click;一格 prop 放不下 method,fill 那條照舊是 clarify_sent／clarify_sent_ed);clarify_undo = 那輪沒回覆沒收據就被停。
     // clarify_self 起無送出點(「我自己打」拿掉),api 照收舊版送的
-    "clarify_click", "clarify_undo"] },
+    "clarify_click", "clarify_undo",
+    // 0.1.60 報告頁「這一輪沒有產出新報告。」後面的〔查看〕:切回框送出的那一條對話(renderer/reports.js;api 白名單要先上)
+    "rpt_nonew_view"] },
 };
 // `claude auth status` 的 authMethod 原值 → cli_auth 的 how(隨包 CLI 2.1.281 的 auth status 只會給這六個)。唯一的一份:
 // 主行程 detectAgents 算好放進 out.claude.how,畫面與主行程都讀那一欄。null／缺 = none,表外 = other

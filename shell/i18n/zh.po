@@ -2439,6 +2439,10 @@ msgstr "跟單"
 msgid "tr.acct.spot"
 msgstr "現貨"
 
+# 資產頁錢包名:模擬帳戶等回報的 cash 錢包(沒翻譯會原樣印英文小寫 cash,QA 0159 #4)
+msgid "tr.acct.cash"
+msgstr "現金"
+
 msgid "tr.acct.fund"
 msgstr "資金"
 
@@ -3161,7 +3165,7 @@ msgid "env.open.tagPlan"
 msgstr "方案有效到 {u}"
 
 msgid "env.open.pend"
-msgstr "{id} 等著上雲端。"
+msgstr "「{id}」等著上雲端。"
 
 msgid "env.open.trialOffer"
 msgstr "首次綁卡試用 {t} 天，期間取消不扣。"
@@ -6026,6 +6030,10 @@ msgstr "讀不到這份報告。"
 msgid "rpt.note.pending"
 msgstr "進度在右邊的對話。"
 
+# 報告頁訊息槽:框送出的那一輪沒寫出報告、知道是哪一條對話時,後面接〔查看〕(busy.fix.view)切回那一條,不寫位置詞
+msgid "rpt.err.noNewView"
+msgstr "這一輪沒有產出新報告。"
+
 msgid "rpt.err.noNew"
 msgstr "這一輪沒有產出新報告，原因在右邊的對話。"
 
@@ -6589,7 +6597,7 @@ msgid "idea.cost"
 msgstr "這一輪按 Blave AI 的用量從餘額扣，讀的網頁越多用量越大。"
 
 msgid "idea.msg"
-msgstr "上網幫我找 3 個{mkt}可以回測的策略點子{topic}。每個用一兩句講邏輯，標出會影響我挑選的提醒，並附來源網址；所有點子共通的事開頭講一次就好。進出場細節等我挑了再給。最後推薦一個，告訴我回數字就開始回測。先不要寫程式，也不要給今天的多空判斷。"
+msgstr "上網幫我找 3 個{mkt}可以回測的策略點子{topic}。每個用一兩句講邏輯，標出會影響我挑選的提醒，並附來源網址；所有點子共通的事開頭講一次就好。進出場細節等我挑了再給。最後推薦一個，讓我挑一個開始回測。先不要寫程式，也不要給今天的多空判斷。"
 
 # en 的 {mkt} 尾端帶一個空白、{topic} 前面帶一個空白(句子本身不留空白)
 msgid "idea.mkt.crypto"
@@ -7242,14 +7250,26 @@ msgstr "轉出的程式碼請先在 {platform} 編譯並回測，確認無誤再
 msgid "xp.cf.ok"
 msgstr "轉出"
 
+# 轉出句在對話泡泡與對話名的顯示(FIXED_PROMPTS):{name} 換成策略名稱,不顯示資料夾代號
+msgid "xp.msgLabel.xq"
+msgstr "把「{name}」轉成 XQ XS 版"
+
 msgid "xp.msg.xq"
-msgstr "把策略 {id} 轉成 XQ XS 版，存成 workspace 檔案。"
+msgstr "把策略「{display_name}」（{name}）轉成 XQ XS 版，存成 workspace 檔案。"
+
+# 轉出句在對話泡泡與對話名的顯示(FIXED_PROMPTS):{name} 換成策略名稱,不顯示資料夾代號
+msgid "xp.msgLabel.mc"
+msgstr "把「{name}」轉成 MultiCharts PowerLanguage 版"
 
 msgid "xp.msg.mc"
-msgstr "把策略 {id} 轉成 MultiCharts PowerLanguage 版，存成 workspace 檔案。"
+msgstr "把策略「{display_name}」（{name}）轉成 MultiCharts PowerLanguage 版，存成 workspace 檔案。"
+
+# 轉出句在對話泡泡與對話名的顯示(FIXED_PROMPTS):{name} 換成策略名稱,不顯示資料夾代號
+msgid "xp.msgLabel.pine"
+msgstr "把「{name}」轉成 TradingView Pine Script 版"
 
 msgid "xp.msg.pine"
-msgstr "把策略 {id} 轉成 TradingView Pine Script 版，存成 workspace 檔案。"
+msgstr "把策略「{display_name}」（{name}）轉成 TradingView Pine Script 版，存成 workspace 檔案。"
 
 msgid "xp.dl"
 msgstr "下載"
@@ -8890,6 +8910,10 @@ msgstr "這一步要到網站做：你的方案是別的階，或主機要在網
 
 msgid "cf.m.okTrial"
 msgstr "開通，{d}起扣 {x} TWD"
+
+# 帳號選單「帳號與方案」列尾:試用已取消的短字(spec sidebar-row-0160 §2.1);完整那句 pv.st.trialCancelled 進 title
+msgid "am.st.ends"
+msgstr "{d}結束"
 
 msgid "pv.st.trialCancelled"
 msgstr "已取消試用 · {d}結束"

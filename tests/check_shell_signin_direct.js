@@ -18,7 +18,7 @@ const NOT_SIGNIN = {   // 檔 → 所在函式:登出之後切到這一類、查
   // sideCvClick:左下角帳號那一格的「升級」「已停機」開帳號與方案(spec sidebar-conversion §3.1);「登入」那一種走 planSignIn
   // amPaint:左下第一格選單的「帳號與方案」(spec first-strategy-sidebar §A4,只對已登入的人出);沒登入的選單沒有這一項,登入走膠囊
   "app.js": ["acctSignOut", "setCat", "dataCardState", "dataGateAction", "planOpen", "mvBlock", "phBlock", "sideCvClick", "amPaint"],
-  "library.js": ["libGateBtn", "libBuyBox", "libPaintList", "libBindBuyBox", "libPlanBox"],   // libPaintList:方案制試用閘門旁的「看方案」(paywall-redesign-2026-10-21);
+  "library.js": ["libGateBtn", "libBuyBox", "libSeePlan", "libBindBuyBox", "libPlanBox"],   // libSeePlan:閘門「看方案」(v3 開方案框,舊制才開這一頁);
   // libBindBuyBox:框 3「開通方案」(spec library-buy-with-bind §3 決定 2);libPlanBox:框 ③ 讀不到自動儲值的數字時退回方案頁(0.1.50 一步開通)
   "welcome.js": ["wdNote"],
   // 0.1.57 改價 v3:p3OpenAgent 在報價說「方案或試用已有效」(agent_offer.kind active)時改看方案頁,不再賣一次;登入走 planSignIn

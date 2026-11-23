@@ -68,7 +68,7 @@ function rptStoredSince(sinceMs, list) { const s = Math.floor(sinceMs / 1000) - 
 /* ── 純邏輯到此 ── */
 
 const RPT = { bags: { local: rptNewBag(), cloud: rptNewBag() }, data: { local: null, cloud: null }, failed: { local: false, cloud: false }, skel: { local: false, cloud: false },
-  seq: { local: 0, cloud: 0 }, readSeq: 0, docs: new Map(), pending: { local: null, cloud: null }, turnAt: null, cloudTurn: null, cloudRes: [], noNew: null, poll: null, sending: false, fail: false, opener: null, paintedEnv: null,
+  seq: { local: 0, cloud: 0 }, readSeq: 0, docs: new Map(), pending: { local: null, cloud: null }, turnAt: null, cloudTurn: null, cloudRes: [], noNew: null, noNewSid: null, poll: null, sending: false, fail: false, opener: null, paintedEnv: null,
   busyTold: false, mark: false };   // 回合中點過停用的「新增報告」:那句「上一輪還在跑。」留到回合結束(rptSync 清)   // pending 每袋一份(雲端輪詢中送本機的不互蓋);fail = 上一次送出失敗:腳那一句留到下次送出 / 關框
 const RPT_DOCS_MAX = 8;   // 讀過的本體留幾份(回清單再進同一份不重抓;換語言整組清掉——渲染出來的字是 i18n 過的)
 function rptNewBag() { return { open: false, reading: null, scroll: 0, row: null, shown: RPT_PAGE }; }
@@ -216,7 +216,7 @@ function rptTurnEnd(rt) {
   return rptLoad("local", true).then((applied) => {
     if (!applied) return [];   // 被更新的一趟蓋過:那一趟自己會畫,這裡不拿舊資料下結論
     const fresh = p ? rptNewEntries(p.before, RPT.data.local) : rptWrittenSince(since, RPT.data.local);
-    if (!fresh.length) { if (p) { RPT.noNew = "local"; rptSync(); } return []; }   // 「沒多出報告」的灰字只回應框送出的那一輪;一般對話沒寫報告是常態
+    if (!fresh.length) { if (p) { RPT.noNew = "local"; RPT.noNewSid = p.sid || null; rptSync(); } return []; }   // 「沒多出報告」的灰字只回應框送出的那一輪;一般對話沒寫報告是常態
     RPT.noNew = null;
     if (!rptListShown("local")) rptMarkSet(true);
     rptSync();
@@ -313,17 +313,20 @@ function rptPaintTools() {
   $("rpt-ask-t").textContent = t(st === "pending" ? "rpt.asking" : "rpt.ask");
   $("rpt-ask").querySelector("svg").hidden = st === "pending";   // 「agent 寫作中…」不是動作,＋ icon 收掉
   const msg = $("rpt-msg");
+  // 送出的那一條知道是哪一條(這台電腦):右邊可能已換到別的分頁,給〔查看〕切回那一條,句子不再講「右邊的對話」(QA 0159 R5-7)
+  const noNewSid = env === "local" && typeof busyView === "function" ? RPT.noNewSid || null : null;
   let text = null, err = false;
   if (st === "pending") text = t("rpt.note.pending");
   else if (st === "busy") text = RPT.busyTold ? t("turn.busy") : null;
   else if (st === "stopped" || st === "stale") text = t(st === "stopped" ? "ho.gate.stopped" : "ho.gate.stale");
-  else if (RPT.noNew === env) { text = t("rpt.err.noNew"); err = true; }
+  else if (RPT.noNew === env) { text = t(noNewSid ? "rpt.err.noNewView" : "rpt.err.noNew"); err = true; }
   msg.textContent = ""; msg.className = "rpt-msg" + (err ? " err" : ""); msg.hidden = !text && st !== "busy";
   // 忙碌態訊息槽空著也不藏、先掛好 role=status:帶著內容才出現的 live region 讀屏常常不唸
   if (st === "busy") msg.setAttribute("role", "status"); else msg.removeAttribute("role");
   if (!text) return false;
   if (err) { const m = libEl("span", "fault-mark"); m.setAttribute("aria-hidden", "true"); msg.appendChild(m); }   // 灰記號:不是錯誤,是「沒發生」
   msg.appendChild(libEl("span", "", text));
+  if (err && noNewSid) { const go = libEl("button", "btn-quiet", t("busy.fix.view")); go.type = "button"; go.addEventListener("click", () => { trackFeature("rpt_nonew_view"); busyView(noNewSid); }); msg.append(" ", go); }
   return true;
 }
 // 回合中點了「新增報告」:把那句寫進工具列下的訊息槽(role=status 唸一次),鈕 describedby 指過去

@@ -1192,9 +1192,12 @@ ok("回測卡:btWaiting 時只寫 mg.btWaitPerf + 取消(不畫進度條、不�
   const line = (o, tr) => { const keep = Object.assign({}, st), kt = ctx.TR; Object.assign(st, o || {}); if (tr) ctx.TR = Object.assign({}, kt, tr); try { return vm.runInContext("mgRerunLine({})", ctx); } finally { Object.assign(st, keep); ctx.TR = kt; } };
   const at = new Date(2026, 0, 5, 16, 29).getTime() / 1000, on = line({ prop: { computed_at: at } }), btn = (l) => l.kids[l.kids.length - 1];
   const fresh = new Date(Date.now() - 60000), hm = String(fresh.getHours()).padStart(2, "0") + ":" + String(fresh.getMinutes()).padStart(2, "0"), today = line({ prop: { computed_at: fresh.getTime() / 1000 } });
-  ok("重算權重:有這一組的權重 → 「上次計算 01/05 16:29」(trErrStamp:24 小時內只寫 HH:mm)在前、文字鈕在後(aria-describedby 指到時間);沒有這一組的權重只畫鈕",
+  ok("重算權重:有這一組的權重 → 「上次計算 01/05 16:29」(trErrStamp:同一天只寫 HH:mm)在前、文字鈕在後(aria-describedby 指到時間);沒有這一組的權重只畫鈕",
     on.className === "mg-rerun" && on.kids.length === 2 && on.kids[0].textContent === "上次計算 01/05 16:29" && today.kids[0].textContent === "上次計算 " + hm && on.kids[0].id === "mg-last-run" && btn(on).textContent === "重算權重"
     && btn(on).className === "btn-quiet" && btn(on).attrs["aria-describedby"] === "mg-last-run" && !btn(on).disabled && ((l) => l.kids.length === 1 && !("aria-describedby" in btn(l).attrs))(line()), J(on.kids.map((k) => k.textContent)));
+  { const st = (a, b) => vm.runInContext("trErrStamp(" + a.getTime() / 1000 + ", " + b.getTime() + ")", ctx);
+    const y = st(new Date(2026, 10, 21, 21, 40), new Date(2026, 10, 22, 9, 0)), same = st(new Date(2026, 10, 22, 0, 5), new Date(2026, 10, 22, 23, 50));
+    ok("QA 0159 #2 跨日看日曆日:昨晚 21:40 在今早 09:00 看寫「11/21 21:40」(不到 24 小時也帶日期);同一天只寫時間", y === "11/21 21:40" && same === "00:05", [y, same]); }
   const n0 = sent.length; btn(on).on.click();
   ok("重算權重:按了 = mgRunOptimize() 手動送(不帶 auto／retry,權重簽名沒變也照送;mgRunOptimize 本身不看簽名),焦點留在同一列的〔策略〕",
     sent.length === n0 + 1 && sent[n0].length === 0 && strat.focused === 1 && !/optTried|mgOptSig/.test(cutF(psrc, "mgRunOptimize").split("\n").slice(0, 3).join("\n")), J(sent));

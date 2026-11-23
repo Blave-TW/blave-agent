@@ -459,8 +459,8 @@
     tbl.style.minWidth = 84 + w.cols.length * 32 + (w.cols.length + 2) * 4 + "px";
     const thead = el("thead"), hr = el("tr"), corner = el("th", "corner");
     corner.scope = "col";
-    corner.appendChild(el("span", "r mono", w.rowParam + " ↓"));
-    if (!w.single) corner.appendChild(el("span", "mono", w.colParam + " →"));
+    corner.appendChild(el("span", "r mono", w.rowParam + " ↓")).title = w.rowParam;   // 84px 會截尾,全名放 title(QA 0159 R3-2)
+    if (!w.single) corner.appendChild(el("span", "mono", w.colParam + " →")).title = w.colParam;
     hr.appendChild(corner);
     w.cols.forEach((c) => { const th = el("th", null, w.single ? "" : pv(c, w.cd)); th.scope = "col"; hr.appendChild(th); });
     thead.appendChild(hr);

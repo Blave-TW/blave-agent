@@ -88,7 +88,7 @@ This reply exists so the user can pick one — the chat column is narrow and a r
 - One opening sentence for what every idea shares (whether Blave data is needed, that you read only the page or also the code). Never repeat it per idea.
 - Per idea: its logic in one plain sentence; at most two caveats that would change the pick (tested only on another market, too few trades, parameters the source leaves out); the source URL on a line of its own — the script or article page itself, never a list page or a site name. An idea found on several sites cites the original one.
 - Exact entry / exit / stop rules wait until the user picks one or asks for them.
-- End with the idea you recommend and a one-clause reason, and say that replying with its number starts the backtest.
+- End with the idea you recommend and a one-clause reason. When this turn's rule gives answer buttons, they carry the ideas (each idea's short name, the recommended one as the default) and you do not ask for a number; otherwise say that replying with its number starts the backtest.
 
 Reply in the user's language; the example below is the shape, not the wording.
 

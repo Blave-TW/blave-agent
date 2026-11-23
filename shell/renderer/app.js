@@ -737,6 +737,8 @@ function setCat(cat) {
     if (b.dataset.setCat === cat) b.setAttribute("aria-current", "true"); else b.removeAttribute("aria-current");
   });
   $("set-modal").querySelectorAll(".set-pane").forEach((p) => { p.hidden = p.dataset.setCat !== cat; });
+  // 換類或重開都從頂端看起:捲動框是共用的,不歸零會停在上一頁捲到的位置(QA 0159 #13「外觀」被捲掉)
+  const scr = $("set-modal").querySelector(".set-content"); if (scr) scr.scrollTop = 0;
   // 開到這一類就拿最新的狀態;沒登入的人要的是公開數字
   if (cat !== "model" && typeof akClear === "function") akClear();   // API 金鑰子頁:離開這一類就把沒存的金鑰從輸入框清掉
   if (cat === "model") mdlPaint();
@@ -2900,7 +2902,7 @@ function csStartNew(o) {
    比對:用模板字串本身組出前後錨定的 regex(不另抄一份模板),{name} = 最短的任意字串、{lookback}/{step} = 數字,整則吻合才算;
    zh / en 兩種模板都試(舊對話、送出後換了介面語言都認得),摘要照現在的語言。用戶自己逐字打出同一整句也會顯示摘要——
    那句要 agent 做的就是這件事,可以接受。fixedMatch 是純函式(tests/check_shell_wf.js 從原文切出來跑) */
-const FIXED_PROMPTS = [["wf.msgRun", "wf.msgRunLabel", "wf.msgRunTitle"], ["rob.msgScan", "rob.msgScanLabel", "rob.msgScanTitle"], ["rob.msgRescan", "rob.msgRescanLabel", "rob.msgScanTitle"], ["rob.msgRescan1", "rob.msgRescanLabel", "rob.msgScanTitle"], ["lib.msgLocal", "lib.msgTitle", "lib.msgTitle"], ["lib.msg", "lib.msgTitle", "lib.msgTitle"], ["lib.msgPaid", "lib.msgTitle", "lib.msgTitle"]];   // 策略庫的安裝句:對話名與泡泡走「{名稱} · 安裝並回測」
+const FIXED_PROMPTS = [["wf.msgRun", "wf.msgRunLabel", "wf.msgRunTitle"], ["rob.msgScan", "rob.msgScanLabel", "rob.msgScanTitle"], ["rob.msgRescan", "rob.msgRescanLabel", "rob.msgScanTitle"], ["rob.msgRescan1", "rob.msgRescanLabel", "rob.msgScanTitle"], ["lib.msgLocal", "lib.msgTitle", "lib.msgTitle"], ["lib.msg", "lib.msgTitle", "lib.msgTitle"], ["lib.msgPaid", "lib.msgTitle", "lib.msgTitle"], ["xp.msg.xq", "xp.msgLabel.xq", "xp.msgLabel.xq"], ["xp.msg.mc", "xp.msgLabel.mc", "xp.msgLabel.mc"], ["xp.msg.pine", "xp.msgLabel.pine", "xp.msgLabel.pine"]];   // 策略庫的安裝句:對話名與泡泡走「{名稱} · 安裝並回測」
 function fixedMatch(text, strings) {
   if (typeof text !== "string" || !text) return null;
   for (const [src, label, title] of FIXED_PROMPTS) for (const l of ["zh", "en"]) for (const legacy of [false, true]) {
@@ -4049,7 +4051,7 @@ function busyEnd(faulted, stopped) {
     b.el.hidden = false;
     b.el.classList.add("is-done");
     b.live.removeAttribute("role"); b.live.removeAttribute("aria-live");
-    b.verb.textContent = t("turn.process"); b.obj.textContent = ""; b.obj.hidden = true;
+    b.verb.dataset.i18n = "turn.process"; b.verb.textContent = t("turn.process"); b.obj.textContent = ""; b.obj.hidden = true;   // 掛 data-i18n:切語言時跟收據那顆一起重畫(QA 0159 R4-7)
     b.elapsed.textContent = fmtDur((Date.now() - b.start) / 1000);
     b.elapsed.removeAttribute("aria-hidden");   // 結束了不再每秒跳:按鈕名稱才會是「思考過程 4m 12s」
     busyHasFoldOf(b);
@@ -5151,6 +5153,15 @@ function planStateText() {
   if (view === "running") return planTrialCx(v) ? t("pv.st.trialCancelled", v) : planTrialOn(v) ? t("pv.st.trial", v) : t("pv.st.planOn");
   const s = planStateOf(view, v); return s ? s[1] : "";
 }
+// 選單列尾的短字(spec sidebar-row-0160 §2.1):選單 240 寬放得下;完整那句(planStateText)進 title
+function planStateShort() {
+  if (!sideBooted) return "";
+  const view = planView(), v = planVars();
+  if (view === "trial") return t(acct && acct.trial_cancel_at_end === true ? "am.st.ends" : "side.trial", v);
+  if (view === "running") return planTrialCx(v) ? t("am.st.ends", v) : planTrialOn(v) ? t("side.trial", v) : t("pv.st.planOn");
+  if (view === "stopped") return t("side.stopped");
+  return planStateText();
+}
 let planLoginBusy = false, planLastView = null;
 let planLoginOut = false;   // 這次 planLogin 是從設定外面開始的(planSignIn 沒帶 inSettings):關設定不取消它
 function planPaint() {
@@ -5576,8 +5587,8 @@ function amPaint() {
   if (typeof rptBag === "function" && rptBag().open && !$("rpt").hidden) rpt.setAttribute("aria-current", "page");
   kids.push(rpt, gap(), item("ws.settings", () => { trackFeature("side_menu_set"); setOpen(); }));
   if (inn) {
-    const st = planStateText(); let v = null;
-    if (st) { v = mk("span", "v", st); v.title = st; }
+    const st = planStateShort(), full = planStateText(); let v = null;
+    if (st) { v = mk("span", "v", st); if (full && full !== st) v.title = full; }
     kids.push(item("set.cat.plan", () => { trackFeature("side_menu_plan"); planOpen(); }, v),
       item("pv.usage", () => { trackFeature("side_menu_usage"); window.blave.openExternal(usageUrl()); }, libExtIcon()));
   }

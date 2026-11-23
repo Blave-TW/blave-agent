@@ -2420,6 +2420,10 @@ msgstr "Copy trading"
 msgid "tr.acct.spot"
 msgstr "Spot"
 
+# 資產頁錢包名:模擬帳戶等回報的 cash 錢包(沒翻譯會原樣印英文小寫 cash,QA 0159 #4)
+msgid "tr.acct.cash"
+msgstr "Cash"
+
 msgid "tr.acct.fund"
 msgstr "Fund"
 
@@ -3142,7 +3146,7 @@ msgid "env.open.tagPlan"
 msgstr "Plan active until {u}"
 
 msgid "env.open.pend"
-msgstr "{id} is waiting to go up."
+msgstr "“{id}” is waiting to go up."
 
 msgid "env.open.trialOffer"
 msgstr "Your first card gets a {t}‑day trial. Cancel during it and nothing is charged."
@@ -6005,6 +6009,10 @@ msgstr "Couldn't load this report."
 msgid "rpt.note.pending"
 msgstr "Progress is in the chat on the right."
 
+# 報告頁訊息槽:框送出的那一輪沒寫出報告、知道是哪一條對話時,後面接〔查看〕(busy.fix.view)切回那一條,不寫位置詞
+msgid "rpt.err.noNewView"
+msgstr "This turn didn't produce a report."
+
 msgid "rpt.err.noNew"
 msgstr "This turn didn't produce a report; the reason is in the chat on the right."
 
@@ -6567,7 +6575,7 @@ msgid "idea.cost"
 msgstr "This turn is billed by Blave AI usage from your balance; the more pages it reads, the more it uses."
 
 msgid "idea.msg"
-msgstr "Search the web for 3 backtestable {mkt}strategy ideas{topic}. For each, give the logic in a sentence or two, flag anything that would change my pick, and give the source URL. Say what all three share once, at the top. Save the exact entry and exit rules until I pick one. End by recommending one and telling me that replying with its number starts the backtest. No code yet, and no call on today's direction."
+msgstr "Search the web for 3 backtestable {mkt}strategy ideas{topic}. For each, give the logic in a sentence or two, flag anything that would change my pick, and give the source URL. Say what all three share once, at the top. Save the exact entry and exit rules until I pick one. End by recommending one and letting me pick which one to backtest. No code yet, and no call on today's direction."
 
 # en 的 {mkt} 尾端帶一個空白、{topic} 前面帶一個空白(句子本身不留空白)
 msgid "idea.mkt.crypto"
@@ -7220,14 +7228,26 @@ msgstr "Compile and backtest the exported code in {platform} before using it."
 msgid "xp.cf.ok"
 msgstr "Export"
 
+# 轉出句在對話泡泡與對話名的顯示(FIXED_PROMPTS):{name} 換成策略名稱,不顯示資料夾代號
+msgid "xp.msgLabel.xq"
+msgstr "Convert “{name}” to XQ XS"
+
 msgid "xp.msg.xq"
-msgstr "Convert strategy {id} to XQ XS and save it as a workspace file."
+msgstr "Convert strategy “{display_name}” ({name}) to XQ XS and save it as a workspace file."
+
+# 轉出句在對話泡泡與對話名的顯示(FIXED_PROMPTS):{name} 換成策略名稱,不顯示資料夾代號
+msgid "xp.msgLabel.mc"
+msgstr "Convert “{name}” to MultiCharts PowerLanguage"
 
 msgid "xp.msg.mc"
-msgstr "Convert strategy {id} to MultiCharts PowerLanguage and save it as a workspace file."
+msgstr "Convert strategy “{display_name}” ({name}) to MultiCharts PowerLanguage and save it as a workspace file."
+
+# 轉出句在對話泡泡與對話名的顯示(FIXED_PROMPTS):{name} 換成策略名稱,不顯示資料夾代號
+msgid "xp.msgLabel.pine"
+msgstr "Convert “{name}” to TradingView Pine Script"
 
 msgid "xp.msg.pine"
-msgstr "Convert strategy {id} to TradingView Pine Script and save it as a workspace file."
+msgstr "Convert strategy “{display_name}” ({name}) to TradingView Pine Script and save it as a workspace file."
 
 msgid "xp.dl"
 msgstr "Download"
@@ -8866,6 +8886,10 @@ msgstr "This one is done on the website: your plan is a different tier, or the m
 
 msgid "cf.m.okTrial"
 msgstr "Start Now, Pay {x} TWD on {d}"
+
+# 帳號選單「帳號與方案」列尾:試用已取消的短字(spec sidebar-row-0160 §2.1);完整那句 pv.st.trialCancelled 進 title
+msgid "am.st.ends"
+msgstr "Ends {d}"
 
 msgid "pv.st.trialCancelled"
 msgstr "Trial cancelled · ends {d}"
