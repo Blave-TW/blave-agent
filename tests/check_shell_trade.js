@@ -1325,6 +1325,10 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     { const en = fs.readFileSync(path.join(__dirname, "..", "shell", "i18n", "en.po"), "utf8");
       ok("停機那幾句 en 用彎撇號(同檔其他句;事件列 tr.ov.evRestartStoppedNote 0127b1 改成沒有撇號的一句)", ["tr.cloud.restartStopped", "tr.restartStoppedLocal", "tm.evRestartStoppedNote", "tr.cloud.means.4"]
         .every((k) => { const m = en.match(new RegExp('msgid "' + k.replace(/\./g, "\\.") + '"\\nmsgstr "([^\\n]*)"')); return m && !/'/.test(m[1]) && /’/.test(m[1]); })); }
+    { const en = fs.readFileSync(path.join(__dirname, "..", "shell", "i18n", "en.po"), "utf8"), g2 = (k) => (en.match(new RegExp('msgid "' + k.replace(/\./g, "\\.") + '"\\nmsgstr "([^\\n]*)"')) || [])[1];
+      ok("主機重開兩句 en 同網頁 workspace_pf_paused_restart／_noacct、這台電腦那句(tr.restartStoppedLocal)同句型:兩句拆開、不用破折號(copy.md 介面標點 #6)", g2("tr.cloud.restartStopped") === "The machine restarted, so no orders are going out. Nothing is managing your positions, and stops won’t run. Press Start Trading to resume."
+        && g2("tr.cloud.restartNoAccountZ") === "The machine restarted, so no orders are going out. Orders from your own strategy code are blocked too. Press Release Pause to allow them again."
+        && g2("tr.restartStoppedLocal") === "Blave was restarted, so no orders are going out. Nothing is managing your positions, and stops won’t run. Press Start Trading to resume."); }
     ok("「暫停下單」文字鈕:--ink-2、熱區跟主鈕等高", /\.main-head \.tr-go-stop \{ color: var\(--ink-2\); min-height: 32px;/.test(css)); }
   { // S5 雲端連接的結果句
     var CXF = { env: "cloud" }, cxCloudIp = () => "1.2.3.4", trSendError = (r) => (r.machineState === "stopped" ? "" : "send:" + r.error);

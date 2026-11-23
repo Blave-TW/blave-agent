@@ -4558,7 +4558,7 @@ msgid "cdel.absent"
 msgstr "This strategy wasn’t on the cloud machine, so nothing was deleted. The list catches up once it updates."
 
 msgid "tr.cloud.restartStopped"
-msgstr "The machine restarted, so no orders are going out — nothing is managing your positions and stops won’t run. Press Start Trading to resume."
+msgstr "The machine restarted, so no orders are going out. Nothing is managing your positions, and stops won’t run. Press Start Trading to resume."
 
 msgid "tm.quitTurnTitle"
 msgstr "The agent is still replying"
@@ -4589,7 +4589,7 @@ msgid "tr.startOffDraft"
 msgstr "Picked strategies aren’t saved yet."
 
 msgid "tr.restartStoppedLocal"
-msgstr "Blave was restarted, so no orders are going out — nothing is managing your positions and stops won’t run. Press Start Trading to resume."
+msgstr "Blave was restarted, so no orders are going out. Nothing is managing your positions, and stops won’t run. Press Start Trading to resume."
 
 msgid "tr.haltReason"
 msgstr "No new positions; exits and stops still run."
@@ -4787,7 +4787,7 @@ msgid "tr.haltReasonAllZ"
 msgstr "No orders are going out — exits and stops won’t run either. If you’re not sure what caused it, ask the agent in chat."
 
 msgid "tr.cloud.restartNoAccountZ"
-msgstr "The machine restarted, so no orders are going out — orders from your own strategy code are blocked too. Press Release Pause to allow them again."
+msgstr "The machine restarted, so no orders are going out. Orders from your own strategy code are blocked too. Press Release Pause to allow them again."
 
 msgid "tr.hostRetryZ"
 msgstr "The order engine on this computer stopped and is restarting; no orders go out meanwhile. Once it is back, check the status here."

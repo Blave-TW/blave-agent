@@ -238,6 +238,10 @@ const NONE = { text: null, n: 0, key: "", items: [] };
       ok("SnapshotLag:硬把補齊勾起來按也送不出 resume", w.sent.indexOf("resume") < 0, w.sent);
       w.env.TR.st.report.account.venues.sinopac = { ok: true, equity: 1000000, positions: {} }; w.M.trStartReadRefresh();
       ok("快照跟上:原地重畫、補齊可選並列出單、不預選", cur()[0].input.disabled === false && !!cur()[0].l && sel() === "wait" && w.okb.textContent === "tr.startWait"); }
+    { const css = fs.readFileSync(path.join(R, "app.css"), "utf8"), tcss = fs.readFileSync(path.join(R, "trade.css"), "utf8"), rule = (css.match(/\.cf-opt-d \.cf-wait \.spin16 \{[^}]*\}/) || [""])[0];
+      ok("等訊號那顆圓環照 canon loading.md 唯一配方:.spin16 本身是 currentColor＋透明缺口,這裡不另寫 --border-frame 環或弧色(設計審 web-0160 第二輪裁決 1)",
+        !!rule && !/border/.test(rule) && /\.spin16 \{[^}]*border: 2px solid currentColor; border-top-color: transparent;/.test(tcss) && /\.cf-opt\.off \.cf-opt-d \.cf-wait \{ color: var\(--ink-2\); \}/.test(css), rule);
+      ok("暗色下鎖住的選項補一條 --border-hairline 框(選中的照留 --border-frame)", /\[data-theme="dark"\] \.cf-opt\.off:not\(:has\(input:checked\)\) \{ border-color: var\(--border-hairline\); \}/.test(css)); }
     { const w = world({ money: "real", catch: null, recomputing: true });
       ok("重算中不是等訊號:照舊重算那句、不 2 秒一讀", cur()[0].d.textContent === "tr.cloud.recomputing" && w.env.polls.length === 0); }
     { const w = world({ money: "paper", catch: null, report: { can_wait_start: false } });

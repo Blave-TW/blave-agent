@@ -1426,9 +1426,11 @@ html.ws-sc .side-rail { flex: 1 1 auto; }
 .cf-opt.off, .cf-opt.off input { cursor: not-allowed; }
 .cf-opt.off, .cf-opt.off:hover, .cf-opt.off:has(input:checked) { background: var(--bg-body); }   /* 鎖住:底一律灰(選中的留框),同網頁 .is-off */
 .cf-opt.off .cf-opt-t, .cf-opt.off .cf-opt-d { color: var(--ink-3); }
+/* 暗色下鎖住那格只靠底色跟框外分開:補一條 hairline(canon Disabled:失效控件要有框,不能只靠填色;設計審 web-0160 第二輪)。選中的照留 --border-frame */
+[data-theme="dark"] .cf-opt.off:not(:has(input:checked)) { border-color: var(--border-hairline); }
 /* 補齊等第一個訊號(trAskStart sigWhy):那一句本身就是停用原因,留 --ink-2;Loader inline 階 16/2,框 --border-frame、轉動段 --ink-2 */
 .cf-opt.off .cf-opt-d .cf-wait { color: var(--ink-2); }
-.cf-opt-d .cf-wait .spin16 { border-color: var(--border-frame); border-top-color: var(--ink-2); margin-right: var(--space-6); vertical-align: -3px; }
+.cf-opt-d .cf-wait .spin16 { margin-right: var(--space-6); vertical-align: -3px; }   /* 圓環照 canon components/loading.md 唯一配方(.spin16:currentColor＋透明缺口),顏色繼承那行字的 --ink-2 */
 .cf-opt-d .cf-wait .btn-quiet { font-size: inherit; }
 .cf-opt.off input { border-color: var(--border-hairline); background: var(--surface-card); }
 /* 鎖住、已選:底退成卡面色,中間的點要換成看得到的灰(亮色下 --control-fill-text 是白點配白底;同網頁鎖住態) */
