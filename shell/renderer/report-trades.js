@@ -747,6 +747,50 @@
   const SUB_STRETCH = 2;
   const LABEL_SIZE = 11;
   const LABEL_TOP_GAP = 8;
+  const LEVEL_GAP = 14;   // 副圖門檻標籤在右軸槽裡彼此最少隔 14px(QA 0159 R4-1)
+  const LEVEL_EDGE = 8;   // 標籤半高:離 pane 上下緣至少這麼遠,不被切掉
+
+  /* 門檻標籤的 y:照價位排好,撞到(< LEVEL_GAP)就往下推,超出底緣再整串往上推回;一律夾在 pane 內。
+     ys 是 priceToCoordinate 的結果(可能是 null = 不在畫面);回同順序的 y(null 照舊 null) */
+  function spreadLevels(ys, height) {
+    const idx = ys.map(function (y, i) { return [y, i]; }).filter(function (p) { return p[0] !== null && isFinite(p[0]); });
+    idx.sort(function (a, b) { return a[0] - b[0]; });
+    const lo = LEVEL_EDGE, hi = Math.max(lo, height - LEVEL_EDGE), out = ys.map(function () { return null; });
+    const pos = idx.map(function (p) { return Math.min(hi, Math.max(lo, p[0])); });
+    for (let k = 1; k < pos.length; k++) if (pos[k] - pos[k - 1] < LEVEL_GAP) pos[k] = pos[k - 1] + LEVEL_GAP;
+    if (pos.length && pos[pos.length - 1] > hi) {
+      pos[pos.length - 1] = hi;
+      for (let k = pos.length - 2; k >= 0; k--) if (pos[k + 1] - pos[k] < LEVEL_GAP) pos[k] = pos[k + 1] - LEVEL_GAP;
+    }
+    idx.forEach(function (p, k) { out[p[1]] = pos[k]; });
+    return out;
+  }
+  /* 副圖門檻標籤:LWC 的價格線軸標不會互相讓開,改由這個 primitive 供軸標(位置自己算、撞到就推開),價格線本身不出軸標。
+     字色跟虛線同色、底是卡面色 */
+  function LevelLabels(levels, colors) {
+    this._levels = levels;
+    this._colors = colors;
+    this._series = null;
+  }
+  LevelLabels.prototype.attached = function (p) { this._series = p.series; };
+  LevelLabels.prototype.detached = function () { this._series = null; };
+  LevelLabels.prototype.priceAxisViews = function () {
+    const s = this._series, c = this._colors;
+    if (!s) return [];
+    const pane = typeof s.getPane === "function" ? s.getPane() : null, h = pane && pane.getHeight ? pane.getHeight() : 0;
+    if (!(h > 0)) return [];
+    const ys = spreadLevels(this._levels.map(function (v) { return s.priceToCoordinate(v); }), h);
+    const views = [];
+    this._levels.forEach(function (v, i) {
+      const y = ys[i];
+      if (y === null) return;
+      views.push({ coordinate: function () { return y; }, text: function () { return fmtPrice(v); }, textColor: function () { return c.text; },
+        backColor: function () { return c.back; }, visible: function () { return true; }, tickVisible: function () { return true; } });
+    });
+    return views;
+  };
+  // 十字線讀數的數值:跟右軸同一套位數,負號用 U+2212
+  function fmtRead(v) { return (v < 0 ? "\u2212" : "") + fmtPrice(Math.abs(v)); }
 
   // 連線的畫法:LWC Series Primitive 掛在 K 線 series 上,一個 canvas pass 畫完全部
   // 段(雲端版試過每段一條 LineSeries:上千段就卡、一萬段頁面掛掉)。每幀只把與
@@ -881,6 +925,44 @@
     });
   };
 
+  /* 十字線讀數(QA 0159 R4-1;spec p3-0160 §8):每個 pane 左上一行,主圖寫日期與 O／H／L／C,副圖寫該根的指標值(名稱在上一行的浮水印)。
+     放在 pane 裡、不另出浮動框;游標離開圖就收。都是 textContent */
+  function buildReadouts(host, chart, series, panes, paneLines, assign, members, dateOnly) {
+    const card = host.parentNode;
+    if (!card) return null;
+    const main = el("div", "tr-read");
+    main.hidden = true;
+    card.appendChild(main);
+    const subs = [];
+    members.forEach(function (list, paneIndex) {
+      const d = el("div", "tr-read");
+      d.hidden = true;
+      card.appendChild(d);
+      const lines = [];
+      panes.forEach(function (p, i) { if (!p.overlay && assign.index[i] === paneIndex) lines.push({ name: p.name, line: paneLines[i] }); });
+      subs.push({ el: d, pane: paneIndex, lines: lines, below: LABEL_TOP_GAP + Math.ceil(LABEL_SIZE * 1.2) * list.length + 2 });
+    });
+    function hide() { main.hidden = true; subs.forEach(function (x) { x.el.hidden = true; }); }
+    chart.subscribeCrosshairMove(function (param) {
+      if (!param || param.time === undefined || !param.point || !param.seriesData) { hide(); return; }
+      const bar = param.seriesData.get(series);
+      if (bar && typeof bar.open === "number") {
+        main.textContent = fmtTime(param.time, true, dateOnly) + "  O " + fmtPrice(bar.open) + "  H " + fmtPrice(bar.high) + "  L " + fmtPrice(bar.low) + "  C " + fmtPrice(bar.close);
+        main.hidden = false;
+      } else main.hidden = true;
+      const all = chart.panes();
+      subs.forEach(function (x) {
+        let top = 0;
+        for (let k = 0; k < x.pane && k < all.length; k++) top += all[k].getHeight() + 1;   // 1 = pane 分隔線
+        const vals = x.lines.map(function (m) { const d = param.seriesData.get(m.line); return d && typeof d.value === "number" ? (x.lines.length > 1 ? m.name + " " : "") + fmtRead(d.value) : null; })
+          .filter(function (v) { return v !== null; });
+        x.el.hidden = !vals.length;
+        if (vals.length) { x.el.textContent = vals.join("  "); x.el.style.top = top + x.below + "px"; }
+      });
+    });
+    return { hide: hide };
+  }
+
   function buildChart(host, candles, tracks, panes, dateOnly) {
     const LWC = LightweightCharts;
     const lang = document.documentElement.lang || "en";
@@ -906,6 +988,8 @@
         },
       },
       rightPriceScale: { borderVisible: false },
+      // 十字線:時間軸上也出日期標籤(QA 0159 R4-1);每個 pane 左上另有一行讀數(readouts)
+      crosshair: { vertLine: { labelVisible: true }, horzLine: { labelVisible: true } },
       localization: {
         timeFormatter: function (time) {
           return typeof time === "number" ? fmtTime(time, true, dateOnly) : String(time);
@@ -932,6 +1016,7 @@
       const watermarks = [];
       const members = new Map(); // 子面板 index → [{name, color}],畫面板標籤用
       const paneLines = [];
+      const levelLabels = [];
       panes.forEach(function (p, i) {
         const paneIndex = assign.index[i];
         const color = lineColor(i);
@@ -942,17 +1027,22 @@
         );
         line.setData(p.points);
         paneLines.push(line);
-        // 門檻水平線(如 RSI 30/70):中性虛線+右軸數值,不做進/出語意配色
+        // 門檻水平線(如 RSI 30/70):中性虛線+右軸數值,不做進/出語意配色。軸標交給 LevelLabels(會互相讓開)
         p.levels.forEach(function (value) {
           priceLines.push(line.createPriceLine({
             price: value,
             color: inkMuted,
             lineWidth: 1,
             lineStyle: LWC.LineStyle.Dashed,
-            axisLabelVisible: true,
+            axisLabelVisible: false,
             title: "",
           }));
         });
+        if (p.levels.length) {
+          const ll = new LevelLabels(p.levels.slice(), { text: inkMuted, back: token("--surface-card") });
+          line.attachPrimitive(ll);
+          levelLabels.push(ll);
+        }
         if (!p.overlay) {
           if (!members.has(paneIndex)) members.set(paneIndex, []);
           members.get(paneIndex).push({ name: p.name, color: color });
@@ -1030,6 +1120,10 @@
         priceLines.forEach(function (pl) {
           pl.applyOptions({ color: muted });
         });
+        levelLabels.forEach(function (ll) {
+          ll._colors.text = muted;
+          ll._colors.back = card;
+        });
         watermarks.forEach(function (w) {
           w.wm.applyOptions({ lines: w.linesOf(muted) });
         });
@@ -1037,8 +1131,10 @@
         segments._colors.band = token("--surface-muted");
         if (segments._requestUpdate) segments._requestUpdate();
       };
+      const readouts = buildReadouts(host, chart, series, panes, paneLines, assign, members, dateOnly);
       return {
         retheme: retheme,
+        readouts: readouts,
         chart: chart,
         series: series,
         segments: segments,

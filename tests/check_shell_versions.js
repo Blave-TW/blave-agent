@@ -258,8 +258,11 @@ const constSrc = (src, name) => { const m = new RegExp("const " + name + " = [\\
     ok("引導句的版號由 nextN 帶(counter 4 → v5,不寫死 v2);en 逐字", en1.E["ver-menu"].kids[3].textContent === "Change the code and backtest again to save v5. Then you can compare and restore." && en1.E["ver-menu"].kids[3].kids[1].textContent === "v5");
     const live1 = rig("zh", "momo", { counter: 1, current: 1, items: [it(1)], drift: false }, { momo: 100 }); live1.F.verMenuOpen(false);
     const drift1 = rig("zh", "momo", { counter: 1, current: 1, items: [it(1)], drift: true }, { momo: 100 }); drift1.F.verMenuOpen(false);
-    ok("一版且有金額 → 徽章「上線中」;再加 drift →「上線中 · 檔案已改」與原因那一行;最下面仍是引導句",
-      live1.E["ver-menu"].all((k) => /^vtag /.test(k.className)).map((k) => k.textContent).join() === "上線中" && drift1.E["ver-menu"].all((k) => /^vtag /.test(k.className)).map((k) => k.textContent).join() === "上線中 · 檔案已改"
+    // 0.1.60(spec p3-0160 §4a):用戶看得到的字改「已配置」,內部名詞「上線中」不改;徽章描邊款、不用綠
+    const vcss = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "versions.css"), "utf8"), liveRule = (/\.vtag\.live \{([^}]*)\}/.exec(vcss) || [])[1] || "";
+    ok("一版且有金額 → 徽章「已配置」;再加 drift →「已配置 · 檔案已改」與原因那一行;最下面仍是引導句;「已配置」= 描邊款(--border-frame 框、--ink 字、600),不上綠",
+      /border: 1px solid var\(--border-frame\)/.test(liveRule) && /color: var\(--ink\)/.test(liveRule) && /font-weight: 600/.test(liveRule) && !/green/.test(liveRule)
+      && live1.E["ver-menu"].all((k) => /^vtag /.test(k.className)).map((k) => k.textContent).join() === "已配置" && drift1.E["ver-menu"].all((k) => /^vtag /.test(k.className)).map((k) => k.textContent).join() === "已配置 · 檔案已改"
       && drift1.E["ver-menu"].all((k) => k.className === "vmi-warn").length === 1 && [live1, drift1].every((r) => r.E["ver-menu"].kids[3].className === "vmenu-hint"));
 
     // 回歸:兩版以上逐項不變

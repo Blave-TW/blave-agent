@@ -11,7 +11,7 @@ let red = 0; const t = (n, ok, d) => { console.log((ok ? "PASS  " : "FAIL  ") + 
 const BODY = [line("pauseLabel"), line("trayCloudLine"), line("trayQuitLabel"), line("trayGroups"), cut("function trayLocalLine("), cut("function trayMenu("), cut("function trayDockMenu("),
   cut("function traySync(")].join("\n");
 const V = { credentials: true, pair: true, order: true, account: true };
-const MENU_EN = { menuQuit: "Quit Blave" };
+const MENU_EN = { menuQuit: "Quit Blave", menuTabN: "Chat Tab {n}", menuTabLast: "Last Chat Tab" };
 // 字照 strings.js 的 zh(spec §7 的 key;換字時這裡不用跟著改)
 const S = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8");
 const zh = (k) => { const m = new RegExp('"' + k.replace(/\./g, "\\.") + '": "([^"]*)"').exec(S.slice(S.indexOf("zh:"))); if (!m) throw new Error("字串表沒有 " + k); return m[1]; };

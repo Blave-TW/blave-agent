@@ -181,7 +181,8 @@ app.whenReady().then(async () => {
   await js(`(() => { window.__platform = "darwin"; window.__over.binanceIp = async () => "198.51.100.7"; envSwitch("local"); TR_BAGS.local.st = { alive: true, report: { venues: {} } }; cxModalOpen(null, null); })()`);
   await wait(150);
   ok("③ 這台電腦是 Mac:七塊加密貨幣磚,台灣期貨那組不出磚、原位講 cx.macTw", J(await tiles()) === J(["binance", "bingx", "okx", "gateio", "bybit", "bitget", "stockcoin"])
-    && (await js(`(document.querySelector("#cx-body .cx-macnote") || {}).textContent === t("cx.macTw")`)));
+    && (await js(`(() => { const n = document.querySelector("#cx-body .cx-macnote"), b = n && n.querySelector("button"), live = typeof p3Live === "function" && p3Live();
+      return !!n && n.firstChild.nodeValue === t("cx.macTw") && (live ? !!b && b.textContent === t("cx.macTwGo") && n.textContent === t("cx.macTw") + (LANG === "zh" ? "" : " ") + t("cx.macTwGo") : !b && n.textContent === t("cx.macTw")); })()`)));
   await js(`(() => { cxModalClose(false); window.__platform = "win32"; cxModalOpen(null, null); })()`); await wait(150);
   // 這台電腦的「台灣期貨」組(Windows):群益本機受 CAPL_LOCAL_ON 管、統一受 PRES_LOCAL_ON 管(群益在前,同 mockup);兩個都關時那一組整個不出
   ok("③ 這台電腦(Windows):七塊磚" + (presOn ? " + 台灣期貨有統一" : ";PRES_LOCAL_ON 關著 → 沒有統一") + (caplOn ? "、群益本機" : "(CAPL_LOCAL_ON 關著 → 沒有群益)"),

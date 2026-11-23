@@ -132,8 +132,14 @@ if (!process.versions.electron) {
   const app = fs.readFileSync(path.join(SHELL, "renderer", "app.js"), "utf8"), html = fs.readFileSync(path.join(SHELL, "renderer", "index.html"), "utf8");
   { const hits = [];   // 「怎麼看」0.1.47 拿掉(web 同步):renderer 與 .po 不留連結、對照表、字串、src
     for (const dir of [SHELL, path.join(SHELL, "renderer"), path.join(SHELL, "i18n")])
-      for (const f of fs.readdirSync(dir)) if (/\.(js|css|html|po)$/.test(f) && fs.statSync(path.join(dir, f)).isFile() && /rp-help|rpHelpLink|RP_HELP_|desktop_learn|"rp\.help[".]|opts\.help\b/.test(fs.readFileSync(path.join(dir, f), "utf8"))) hits.push(f);
-    ok("③ 「怎麼看」已拿掉:主行程／renderer／i18n 沒有 rp-help、rpHelpLink、RP_HELP_*、desktop_learn、rp.help、opts.help", hits.length === 0, hits.join()); }
+      for (const f of fs.readdirSync(dir)) {
+        if (!/\.(js|css|html|po)$/.test(f) || !fs.statSync(path.join(dir, f)).isFile()) continue;
+        let txt = fs.readFileSync(path.join(dir, f), "utf8");
+        // desktop_learn 唯一合法的家:策略組合區段標籤旁的「說明」外連(trade.js poHelpGroup;canon strategy-report › 說明文章外連,QA 0159 R4-2)。驗證分頁照舊不准有
+        if (dir.endsWith("renderer") && f === "trade.js") { const i = txt.indexOf("function poHelpGroup("), j = txt.indexOf("\n}\n", i); if (i >= 0 && j > i) txt = txt.slice(0, i) + txt.slice(j); }
+        if (/rp-help|rpHelpLink|RP_HELP_|desktop_learn|"rp\.help[".]|opts\.help\b/.test(txt)) hits.push(f);
+      }
+    ok("③ 「怎麼看」已拿掉:主行程／renderer／i18n 沒有 rp-help、rpHelpLink、RP_HELP_*、desktop_learn(策略組合 poHelpGroup 除外)、rp.help、opts.help", hits.length === 0, hits.join()); }
   ok("③ 已送出是真 disabled:拿著焦點的鈕先交給分頁鈕,才設 disabled(順序反了焦點掉到 body)", /if \(v\.disabled && !st\.btn\.disabled && document\.activeElement === st\.btn && typeof opts\.refocus === "function"\) opts\.refocus\(\);\n\s*st\.btn\.disabled = v\.disabled;/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "report-robust.js"), "utf8")));
   ok("③ app.js:rpShowTab / rpBodyPaint 的分頁清單含 rob,rob 交給 renderRobust(t / busy / onScan / buildMeta 都從外面交進去);index.html 有分頁鈕、面板、css、js", (app.match(/\["bt", "tr", "rob", "wf", "xt", "code"\]/g) || []).length === 2
     && /R\.renderRobust\(\$\("rp-rob"\), \{ stats: B\.data\.stats, scan: B\.data\.scan \|\| null, code: B\.data\.code, name: B\.name \}, rpRobOpts\(\)\)/.test(app)

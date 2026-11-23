@@ -2222,10 +2222,10 @@ msgid "tr.typeCHost"
 msgstr "The machine needs an update"
 
 msgid "tr.typeCNext"
-msgstr "Portfolio strategies can auto-trade once Blave on this computer is updated."
+msgstr "Multi-asset strategies can auto-trade once Blave on this computer is updated."
 
 msgid "tr.typeCNextHost"
-msgstr "Portfolio strategies can auto-trade once the machine's software is updated."
+msgstr "Multi-asset strategies can auto-trade once the machine's software is updated."
 
 msgid "tr.pick.twd"
 msgstr "Paper trading can trade Taiwan stocks once the machine's software is updated"
@@ -4197,7 +4197,7 @@ msgid "sg.headAria"
 msgstr "{name}, strategies: {n}"
 
 msgid "sg.headLive"
-msgstr ", live: {m}"
+msgstr ", allocated: {m}"
 
 msgid "sg.more"
 msgstr "{name} options"
@@ -7355,10 +7355,10 @@ msgid "ver.current"
 msgstr "Current"
 
 msgid "ver.live"
-msgstr "Live"
+msgstr "Allocated"
 
 msgid "ver.drift"
-msgstr "Live · file changed"
+msgstr "Allocated · file changed"
 
 msgid "ver.driftLocal"
 msgstr "strategy.py no longer matches this version: the file was edited without a new backtest."
@@ -9058,9 +9058,6 @@ msgstr "Optimize"
 msgid "po.secAmounts"
 msgstr "Strategies and Amounts"
 
-msgid "po.help"
-msgstr "View Guide"
-
 msgid "po.signalsPaused"
 msgstr "Signals paused"
 
@@ -9177,7 +9174,7 @@ msgid "mg.apply"
 msgstr "Apply Amounts"
 
 msgid "mg.applyDiffSet"
-msgstr "Allocation {a}, here {b}"
+msgstr "These strategies differ from Allocation. Use These in Allocation"
 
 msgid "mg.askAgent"
 msgstr "Discuss with the agent"
@@ -9540,7 +9537,7 @@ msgid "mg.runNow"
 msgstr "Run with current numbers"
 
 msgid "set.ccy"
-msgstr "Display currency"
+msgstr "Cloud display currency"
 
 msgid "set.ccyFail"
 msgstr "Couldn't switch. Try again later."
@@ -9795,9 +9792,6 @@ msgstr "Not enough history. Shorten the lookback in Method"
 msgid "mg.needTarget"
 msgstr "Enter the target first"
 
-msgid "mg.applyDiffSetN"
-msgstr "Allocation has {n} not listed here"
-
 msgid "mg.applyWhyUnread"
 msgstr "Can’t read the amounts; apply once it updates"
 
@@ -9805,7 +9799,7 @@ msgid "sz.noVol"
 msgstr "No volatility data for the last 90 days"
 
 msgid "mg.why.alloc"
-msgstr "Change Allocation"
+msgstr "Use These in Allocation"
 
 msgid "mg.why.tbMethod"
 msgstr "Method"
@@ -9831,7 +9825,7 @@ msgid "mg.why.signinUpd"
 msgstr "sign in to Blave to update it"
 
 msgid "mg.why.pickTitle"
-msgstr "Allocation strategies"
+msgstr "Change Allocation Strategies"
 
 msgid "mg.sizeNoHist"
 msgstr "This result can’t compute Volatility"
@@ -10030,7 +10024,7 @@ msgstr "Connecting stops paper trading and pauses auto-trading."
 
 # Mac: no futures tiles; this line sits under the "Taiwan futures" label
 msgid "cx.macTw"
-msgstr "Capital and President Futures need Windows. Use a Windows cloud machine instead."
+msgstr "Capital and President Futures need Windows."
 
 # Futures brokers (President / Capital): first fact line — brokers use certificates, not API keys
 msgid "cx.fact.cert"
@@ -12165,15 +12159,51 @@ msgstr "First period after trial"
 msgid "p3.set.firstV"
 msgstr "{d} · {p} TWD"
 
-msgid "p3.f.renew"
-msgstr "Then renews every {pd} days. From your balance if it covers it all, otherwise all on your card."
-
-msgid "p3.f.renewNoNum"
-msgstr "Then renews each period. From your balance if it covers it all, otherwise all on your card."
-
 msgid "p3.set.balTip"
 msgstr "Your balance pays for Blave AI and for your plan."
 
 msgid "p3.set.topupTip"
 msgstr "When your balance drops below {lo} TWD, your card on file adds {a} TWD."
+
+msgid "p3.f.trialEnds"
+msgstr "Starting a cloud machine ends the trial."
+
+msgid "sp.cf.addFire"
+msgstr "Add and Place Orders"
+
+msgid "sp.oosFail"
+msgstr "Failed out-of-sample validation."
+
+msgid "sp.usWhy"
+msgstr "Uses a US-stock signal, so it can’t auto-trade yet."
+
+msgid "chat.imageN"
+msgstr "Image {n}"
+
+msgid "chat.imageCount"
+msgstr "{n} images"
+
+msgid "chat.imagePrev"
+msgstr "Previous Image"
+
+msgid "chat.imageNext"
+msgstr "Next Image"
+
+msgid "po.guide"
+msgstr "Guide"
+
+msgid "po.guideAria"
+msgstr "Guide (opens in browser)"
+
+msgid "menu.tabN"
+msgstr "Chat Tab {n}"
+
+msgid "menu.tabLast"
+msgstr "Last Chat Tab"
+
+msgid "env.open.stayLocal"
+msgstr "Keep It Local"
+
+msgid "cx.macTwGo"
+msgstr "Use a Cloud Machine"
 

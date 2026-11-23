@@ -57,7 +57,8 @@
 /* 徽章:Mini tag。「目前」「檔案已改」描邊——列 hover 的底跟中性 tag 底同值,填色款滑過會消失 */
 .vtag { flex: none; align-self: center; display: inline-flex; align-items: center; height: 18px; padding: 0 6px; border-radius: var(--radius-micro); font-size: 11px; line-height: 1; white-space: nowrap; }
 .vtag.cur { border: 1px solid var(--border-frame); color: var(--ink-2); }
-.vtag.live { background: var(--color-greenLight); color: var(--color-greenBlack); font-weight: 600; }
+/* 「已配置」只講有下單金額,不講在跑(暫停中、只有模擬也會出):不用綠,描邊款＋600 跟「目前」分開(spec p3-0160 §4a) */
+.vtag.live { border: 1px solid var(--border-frame); color: var(--ink); font-weight: 600; }
 .vtag.drift { border: 1px solid var(--ink-3); color: var(--ink); font-weight: 600; }
 
 /* ---- §4 時光機橫幅 ---- */

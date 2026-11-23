@@ -34,9 +34,11 @@ t("R4-7 回合結束把 b.verb 掛 data-i18n=turn.process", /b\.verb\.dataset\.i
 // R4-3 事件一律拿最長範圍判「恢復／啟動」
 t("R4-3 總覽事件抓最長範圍(TR_RANGES 最後一個),畫面照圖表範圍篩", /S\.api\.tradeEvents\(\{ days: TR_RANGES\[TR_RANGES\.length - 1\]\[1\] \}\)/.test(tr) && /if \(ms != null && ms >= from\) rows\.push/.test(tr));
 
-// R3-2 熱圖軸名截尾時全名在 title
-t("R3-2 參數掃描與樣本外熱圖左上軸名掛 title(全名)", [["report-robust.js", "sc"], ["report-wf.js", "w"]].every(([f, v]) => { const s = read(f);
-  return s.includes('corner.appendChild(el("span", "r mono", ' + v + '.rowParam + " ↓")).title = ' + v + ".rowParam;") && s.includes('corner.appendChild(el("span", "mono", ' + v + '.colParam + " →")).title = ' + v + ".colParam;"); }));
+// R3-2 熱圖軸名(spec p3-0160 §5):拆掉左上合併格,橫軸名在熱圖上方跨所有欄、直軸名直排在左側;放不下截尾、全名在 title
+t("R3-2 參數掃描熱圖與樣本外落點網格:左上角不再放軸名;橫軸名 th.rob-ax-c 跨所有欄、直軸名 .rob-ax-r 直排,兩個都掛 title(全名)", [["report-robust.js", "sc"], ["report-wf.js", "w"]].every(([f, v]) => { const s = read(f);
+  return !/corner\.appendChild\(el\("span"/.test(s) && s.includes('el("span", "mono", ' + v + '.colParam + " →")') && s.includes("cs.title = " + v + ".colParam;")
+    && s.includes("ac.colSpan = " + v + ".cols.length;") && s.includes('el("div", "rob-ax-r mono", ' + v + '.rowParam + " →")') && s.includes("axR.title = " + v + ".rowParam;"); })
+  && /\.rob-ax-r \{[^}]*writing-mode: vertical-rl;[^}]*contain: size|\.rob-ax-r \{[^}]*contain: size;[^}]*writing-mode: vertical-rl;/.test(read("report-robust.css")));
 
 // R5-5 送上雲端等著的那一行寫策略名稱
 t("R5-5 「…等著上雲端」代入 hoLabel(策略名稱),字串加引號", /t\("env\.open\.pend", \{ id: typeof hoLabel === "function" \? hoLabel\(pid, RP\.list\) : pid \}\)/.test(tr) && STR.zh["env.open.pend"] === "「{id}」等著上雲端。");

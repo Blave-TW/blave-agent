@@ -232,6 +232,7 @@ function spView(cloud) {
       unsaved: routeDirty && trUnsaved(), zvOff: !!gv.zv.off, firing: trCfFiring(S.st, S.pending) && hasAcct, goKey: gv.key, goOff: !usable,
       offNote: gv.zv.off ? spOffNote(S, name, r || {}) : null, goNote: !gv.zv.off && gv.zv.reason ? { key: gv.zv.reason, vars: gv.zv.book ? { n: trBookQty(gv.zv.book) } : null } : null });
     if (v.st === "route" && S.spErr) v.note = { text: S.spErr, err: true };   // 〔儲存〕直送失敗:沒有框可重開,原因換在這一行(錯誤色,同框裡那句)
+    if (S.spSaved && S.spSaved.name === name && now - S.spSaved.at < SP_SAVED_MS) v.saved = true;   // spSavedPaint:另一段畫,不蓋掉說明句
     return Object.assign(v, { name, env: S.env, market, paper: v.mark ? trCfPaperOnly() : null });
   });
 }
@@ -249,9 +250,15 @@ function spPaintNote(note) {
   const a = trEl("button", "btn-quiet", text.slice(at, at + word.length)); a.type = "button"; a.addEventListener("click", () => poOpen("cfg", true));
   n.append(text.slice(0, at), a, text.slice(at + word.length));
 }
+function spPaintSaved(on) { const n = $("rp-saved"); if (!n) return; n.hidden = !on; n.textContent = on ? t("tr.saved") : ""; }
 // 狀態詞／記號／主鈕。主鈕節點沿用(keep):確認框、連接框關掉要把焦點還給它
 function spPaintAct(act, v, keep) {
-  if (v.word) act.appendChild(trEl("span", "rp-status", t(v.word)));
+  if (v.word) {
+    const w = trEl("span", "rp-status", t(v.word));
+    // 原因句:title 給滑鼠、aria-describedby 給讀屏(同一句),可聚焦才鍵盤看得到;不另在說明行放一句(canon strategy-report › 狀態詞)
+    if (v.tip) { const d = trEl("span", "sr-only", t(v.tip)); d.id = "rp-status-why"; w.classList.add("has-tip"); w.tabIndex = 0; w.title = t(v.tip); w.setAttribute("aria-describedby", d.id); act.append(w, d); }
+    else act.appendChild(w);
+  }
   if (v.mark) act.appendChild(trEl("span", "mode " + (v.paper ? "paper" : "real"), t("po.live", { mode: t(v.paper ? "tr.mode.paper" : "tr.mode.real") })));
   if (!v.btn) return;
   const b = keep || trEl("button", "");
@@ -281,11 +288,27 @@ async function spAmt(S, v, b) {
   const now = spView(S.env === "cloud"); if (!now || now.name !== v.name) return;
   if (now.st === "locked") return trZGo("pick", b);
   if (now.st !== "add") return;
-  const name = v.name, tw = v.market === "tw", base = trBase() || {}, x = TR.list.find((y) => y.name === name) || {};
-  trCfOpen({ stored: base, opener: b, from: "sp", track: tw ? "po_add_saved" : "sp_amt_saved",
+  const name = v.name, tw = v.market === "tw", base = trBase() || {}, x = TR.list.find((y) => y.name === name) || {}, cloud = S.env === "cloud", head0 = spHeadSig(now);
+  trCfOpen({ stored: base, opener: b, from: "sp", track: tw ? "po_add_saved" : "sp_amt_saved", oosFail: spOosFail(cloud ? RPC : RP, name),
     input: { name, initial: Number(base[name]) > 0 ? trFmt(Number(base[name])) : "", kind: trRowTxfNew(name) ? "lots" : "amount", oneLeg: !tw && !x.portfolio, tw },
-    toPo: tw ? null : (amt) => spToPo(S, name, amt), onSaved: () => spAfterSave(S, name, v.market) });
+    toPo: tw ? null : (amt) => spToPo(S, name, amt), onSaved: () => { spAfterSave(S, name, v.market); spSavedPaint(S, name, head0); } });
   if (TR_CF.cur && TR_CF.cur.ctx === delCtx && !$("del-scrim").hidden) trackFeature(tw ? "po_add" : "sp_auto_open");
+}
+// 頁首動作槽「看起來是哪一態」:存完跟存前一樣才需要另外講「已儲存」
+function spHeadSig(v) { return v ? JSON.stringify([v.st, v.word, v.btn && v.btn.key, v.mark, v.paper]) : ""; }
+/* 存完當場重畫頁首(暫停中變〔啟動下單〕、在跑換記號),重畫後的狀態本身就是回饋;頁首什麼都沒變(例如在跑時只改金額)才講「已儲存」4 秒
+   (spec p3-0160 §4b;電腦版沒有 toast 元件。設計師裁定:接在說明句後面自成一段 role=status、--ink-2,不蓋掉說明句,收起不做動畫) */
+function spSavedPaint(S, name, head0) {
+  if (S !== TR_BAGS[ENV.cur] || typeof hoPaint !== "function" || $("rp").hidden) return;
+  if (spHeadSig(spView(S.env === "cloud")) === head0) { S.spSaved = { name, at: Date.now() }; setTimeout(() => { if (S.spSaved && Date.now() - S.spSaved.at >= SP_SAVED_MS) { S.spSaved = null; if (!$("rp").hidden) hoPaint(); } }, SP_SAVED_MS); }
+  hoPaint();
+}
+const SP_SAVED_MS = 4000;
+/* 這支目前版的樣本外驗證有結果、而且落在門檻下(低於／遠低於);沒跑過、過時、無法判斷都不算(spec p3-0160 §4b) */
+function spOosFail(B, name) {
+  const W = (window.BlaveReport || {})._wf;
+  if (!W || !B || B.name !== name || !B.data || !B.data.wf) return false;
+  try { const w = W.sanitizeWf(B.data.wf, B.data.code); return !!w && !w.stale && ["far", "low"].indexOf(W.wfBand(w)) >= 0; } catch (_) { return false; }
 }
 async function spToPo(S, name, amt) {
   if (S !== TR_BAGS[ENV.cur]) return;
@@ -1214,9 +1237,9 @@ function mgSuggestTable(wrap, ap, why) {
     });
     tbl.appendChild(tb);
   });
-  // 表底合計:套用後的合計(= 確認框「目標」那一欄的合計)
+  // 表底合計:套用後的合計(= 確認框「目標」那一欄的合計)。跨幣別時換成投入資金的幣別、不換顯示幣別:同一張表上下兩個單位會被直接拿來比(QA R3-15)
   const tbT = document.createElement("tbody"), rT = trEl("tr", "total"), l = trEl("td", "", t("tr.total")); l.colSpan = 2;
-  const tot = d.eff === null || quoteMissing ? null : trZoneSum(mpsAmountsPayload(d), null, (n, v) => { const sp = byName[n] && byName[n].spec; return sp ? trTxfRefMoney(sp, v, trTxfPrice()) : v; }).total;
+  const tot = d.eff === null || quoteMissing ? null : trZoneSum(mpsAmountsPayload(d), null, (n, v) => { const sp = byName[n] && byName[n].spec; return sp ? trTxfRefMoney(sp, v, trTxfPrice()) : v; }, d.ccy).total;
   if (multi && tot && tot.ccy) l.appendChild(trEl("span", "ccy", tot.ccy));
   const tc = trEl("td", "n", tot ? trTotalText(tot) : "—"); if (tot && !multi && tot.ccy && hu === t("tr.lotsUnit")) tc.appendChild(trEl("span", "ccy", tot.ccy));
   rT.append(l, tc); tbT.appendChild(rT); tbl.appendChild(tbT);
@@ -1228,7 +1251,7 @@ function mgSuggestTable(wrap, ap, why) {
   ap.disabled = d.eff === null || quoteMissing || !changed || !!TR.save && TR.save !== "failed" || trCfgUnread(trReport()) || trStored() === null || !mgSameAsAmounts() || !TR.listLoaded || (TR.env === "cloud" && !(TR.st && TR.st.alive));
   const wk = ap.disabled ? mgApplyWhy(d, quoteMissing, changed) : null;
   if (why && wk) {
-    const txt = wk === "mg.applyDiffSet" ? mgDiffText() : wk === "mg.needTarget" ? t(wk, { t: t({ vol: "sz.t.vol", mdd: "sz.t.mdd", lev: "sz.lev" }[mgBag().sizing.method]) }) : t(wk);
+    const txt = wk === "mg.needTarget" ? t(wk, { t: t({ vol: "sz.t.vol", mdd: "sz.t.mdd", lev: "sz.lev" }[mgBag().sizing.method]) }) : t(wk);
     mgWhyFill(why, txt, MG_WHY_FIX[wk], "mg-why-fix"); mgWhyHost(why).id = "mg-apply-why";
   }
   // 用的是上次存下來的匯率(登入失效／雲端讀不到):表下講是哪一天的,數字是 ≈
@@ -1249,10 +1272,6 @@ function mgApplyWhy(d, quoteMissing, changed) {
   if (!TR.listLoaded || (TR.env === "cloud" && !(TR.st && TR.st.alive))) return "mg.applyWhyWait";
   if (!changed) return "mg.applyWhySame";
   return "mg.applyWhyWait";
-}
-function mgDiffText() {
-  const a = trNames(), b = mgMembers();
-  return a.length === b.length ? t("mg.applyDiffSetN", { n: a.filter((n) => b.indexOf(n) < 0).length }) : t("mg.applyDiffSet", { a: a.length, b: b.length });
 }
 /* 原因句的補救連結(mockup apply-why-links):有事能做才連,等一下就好的不在表上。link 是句中要畫底線的字,不在句中就接在句尾;沒寫 link = 整句都是連結。go: run 只出字、不連(〔重算權重〕只住工具列)。
    部位大小那三格就在鈕左邊,缺哪一格直接講、不出連結(spec portfolio-optimize-lite §2,同網頁)。

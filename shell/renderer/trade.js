@@ -1969,16 +1969,17 @@ function trTipLabel(cls, text, tip) {
 function trSec(labelNode, acts) { const s = trEl("div", "pf-sec"); s.appendChild(labelNode); if (acts) s.appendChild(acts); return s; }
 /* 策略組合區段標籤旁的問號:外開教學頁的那一段(spec portfolio-help-icon §1)。氣泡跟 aria-label 是同一句,
    不掛 aria-describedby、不加 title(讀屏會念兩次)。feature_used 只有 name 一格,哪一顆寫進名字(網頁 GA 改帶 tab) */
+/* 區段標籤旁的說明外連(canon strategy-report › 說明文章外連;QA 0159 R4-2):會開瀏覽器的不用「?」(? 只給頁內泡泡),
+   改成文字「說明」＋ arrow-up-right,可及名稱補「(在瀏覽器開啟)」、包含可見字;網址帶電腦版說明外連的 src */
 function poHelpGroup(label, anchor, fk) {
   const g = trEl("span", "lbl-grp"), hb = trEl("button", "pf-help"); hb.type = "button"; hb.dataset.fk = fk;
-  hb.setAttribute("aria-label", t("po.help"));
-  const NS = "http://www.w3.org/2000/svg", ic = document.createElementNS(NS, "svg");   // Lucide circle-help
+  hb.setAttribute("aria-label", t("po.guideAria"));
+  hb.appendChild(trEl("span", "", t("po.guide")));
+  const NS = "http://www.w3.org/2000/svg", ic = document.createElementNS(NS, "svg");   // Lucide arrow-up-right
   ic.setAttribute("class", "ic"); ic.setAttribute("viewBox", "0 0 24 24"); ic.setAttribute("aria-hidden", "true");
-  const c = document.createElementNS(NS, "circle"); c.setAttribute("cx", "12"); c.setAttribute("cy", "12"); c.setAttribute("r", "10"); ic.appendChild(c);
-  ["M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3", "M12 17h.01"].forEach((d) => { const p = document.createElementNS(NS, "path"); p.setAttribute("d", d); ic.appendChild(p); });
+  ["M7 7h10v10", "M7 17 17 7"].forEach((d) => { const p = document.createElementNS(NS, "path"); p.setAttribute("d", d); ic.appendChild(p); });
   hb.appendChild(ic);
-  const tip = hb.appendChild(trEl("span", "pf-help-tip", t("po.help"))); tip.setAttribute("aria-hidden", "true");
-  hb.addEventListener("click", () => { window.blave.openExternal(docsUrl("portfolio") + "#" + anchor); trackFeature(fk === "po-help-opt" ? "po_help_opt" : "po_help_cfg"); });
+  hb.addEventListener("click", () => { window.blave.openExternal(docsUrl("portfolio") + "?src=desktop_learn#" + anchor); trackFeature(fk === "po-help-opt" ? "po_help_opt" : "po_help_cfg"); });
   g.append(label, hb); return g;
 }
 function poCfgSec() { return trSec(poHelpGroup(trTipLabel("label", t("po.secAmounts"), t("tr.zeroMeansOff")), "amounts", "po-help-cfg"), trPickBtn()); }
@@ -2064,7 +2065,7 @@ function trPushLabels() {
 // app 選單每一格的字(主行程 main.js appMenuTemplate 的 MENU_EN;字串表 menu.x → tm 的鍵 menuX)
 const TR_MENU_KEYS = ["menu.about", "menu.services", "menu.hide", "menu.hideOthers", "menu.showAll", "menu.quit", "menu.file", "menu.newTab", "menu.closeTab", "menu.close", "menu.edit",
   "menu.undo", "menu.redo", "menu.cut", "menu.copy", "menu.paste", "menu.pasteStyle", "menu.delete", "menu.selectAll", "menu.view", "menu.local", "menu.cloud",
-  "menu.actualSize", "menu.zoomIn", "menu.zoomOut", "menu.fullEnter", "menu.fullExit", "menu.window", "menu.minimize", "menu.zoom", "menu.front", "menu.help", "menu.site", "menu.copyLink"];
+  "menu.actualSize", "menu.zoomIn", "menu.zoomOut", "menu.fullEnter", "menu.fullExit", "menu.window", "menu.minimize", "menu.zoom", "menu.front", "menu.help", "menu.site", "menu.copyLink", "menu.tabN", "menu.tabLast"];
 function trWire() {
   $("tr-tabs").addEventListener("click", (e) => { const b = e.target.closest(".main-tab"); if (b) trSetTab(b.dataset.tab); });
   $("tr-tabs").addEventListener("keydown", (e) => {
@@ -2073,15 +2074,15 @@ function trWire() {
     if (j < 0 || j >= TR_TABS.length || j === i) return;
     e.preventDefault(); trSetTab(TR_TABS[j], true);
   });
-  // 選中態看 aria-current(envShowMain 管它):雲端沒有 welcome、自動下單頁就是預設,再點一次只收展開層,其餘照舊 trOpen
+  /* 選中態看 aria-current(envShowMain 管它)。導覽項是冪等的(spec p3-0160 R5-11):再點一次只收展開層,不再切回歡迎頁——
+     像開關一樣切換,用戶會以為內容不見了。策略組合同 */
   $("tr-nav").addEventListener("click", () => {
     if (!$("tr-nav").hasAttribute("aria-current")) trOpen();
-    else sideReclick(() => trLeave(ENV.cur));
+    else sideReclick(null);
   });
-  // 策略組合:再點一次同自動下單(收掉回那一邊的 welcome)
   $("po-nav").addEventListener("click", () => {
     if (!$("po-nav").hasAttribute("aria-current")) poOpen();
-    else sideReclick(() => trLeave(ENV.cur));
+    else sideReclick(null);
   });
 
   window.addEventListener("resize", () => { if (TR.open && TR.tab === "over") { TR.sig.over = null; trPaintOver(); } });
@@ -3600,12 +3601,12 @@ function trFxView() {
   return { fx: null, base };
 }
 // 金額表與確認框共用的分區合計與淨值倍數(分母是畫面上那一份淨值);acctZone 只給區的排序用
-function trZoneSum(amounts, eq, money) {
+function trZoneSum(amounts, eq, money, base) {
   const fv = trFxView(), vid = trVenueId(), acct = trUnit(), mf = money || trRowMoney;
   const mult = trEquityMult(amounts, trZoneOf, mf, vid, acct, eq, fv.fx, trPaperTwOk());
   // 倍數那一段的字:綁了交易所但淨值還沒讀到寫「淨值 —」(不寫 0.00×);沒綁、或這個帳戶不交易這些列,整段不出
   const multText = mult != null ? t("tr.equityMult", { x: trMultFmt(mult) }) : vid && !(typeof eq === "number" && isFinite(eq) && eq > 0) ? t("tr.equityMultNa") : "";
-  return { ...trZoneTotals(amounts, trZoneOf, mf, fv.fx, fv.base), mult, multText,
+  return { ...trZoneTotals(amounts, trZoneOf, mf, fv.fx, base || fv.base), mult, multText,
     acctZone: trMultZone(vid, acct, Object.keys(amounts).map(trZoneOf)) };
 }
 // 合計那個數:換算出來的(≈)取整、不帶小數;null = 「—」。逐幣別的 tooltip 退場(同網頁 63b7b5fe)
@@ -4343,6 +4344,9 @@ function trCfOpen(o) {
   // 換合約的判讀(trCt / trCtPayload / trRowTxfNew)讀 TR.ct.edits:有輸入格時換成只有框裡那一支的選擇,策略組合頁那份不算進來
   const ctView = (f) => { if (!inp) return f(); const keep = S.ct; S.ct = Object.assign({}, keep, { edits: iv.ct ? { [inp.name]: iv.ct } : {} }); try { return f(); } finally { S.ct = keep; } };
   const mayFire = trMayFire(S.st, S.pending), old = (n) => Number(stored[n]) || 0;
+  /* 從策略頁開、這支還沒在策略組合裡:標題＝主鈕講「加到策略組合／加入並下單」,不然用戶不知道金額存去哪(canon confirm-modal;spec p3-0160 §4b) */
+  const addNew = !!inp && sp && !(inp.name in stored);
+  const okText = (fire) => t(addNew ? (fire ? "sp.cf.addFire" : "po.add") : fire ? "tr.cf.titleFire" : "tr.save");
   let names, sending, removed, ctAll, ctPending, joined, swappedNs, blankNew = [];
   const arrow = (dd, was) => { dd.append(trEl("span", "was", was), trEl("span", "arr", "→")); };
   const cfRow = (cls, label, dd) => { const r = trEl("div", "cf-row" + (cls ? " " + cls : "")); r.append(trEl("dt", "", label), dd); return r; };
@@ -4534,9 +4538,9 @@ function trCfOpen(o) {
       return ns.slice(0, 3).join(LANG === "zh" ? "、" : ", ") + (ns.length > 3 ? (LANG === "zh" ? "" : " ") + t("tr.opt.catchMore", { n: ns.length - 3 }) : ""); };
     if (hw.length) body.appendChild(trEl("p", "cf-note", t("tr.cf.held", { syms: syms(hw), names: list(held.names) })));
     if (hg.length) body.appendChild(trEl("p", "cf-note", t("tr.cf.gated", { syms: syms(hg) })));
-    const title = t(fire ? "tr.cf.titleFire" : "tr.cf.title");
+    const title = t(addNew ? (fire ? "sp.cf.addFire" : "po.add") : fire ? "tr.cf.titleFire" : "tr.cf.title");
     if (cf.ctx && delCtx === cf.ctx) {
-      $("del-title").textContent = title; $("del-ok").textContent = t(fire ? "tr.cf.titleFire" : "tr.save"); $("del-ok").disabled = blocked || inOff();
+      $("del-title").textContent = title; $("del-ok").textContent = okText(fire); $("del-ok").disabled = blocked || inOff();
       const mk = $("del-mark"), paper = trCfPaperOnly(); mk.hidden = !fire; mk.className = "mode " + (paper ? "paper" : "real"); mk.textContent = fire ? t(paper ? "tr.mode.paper" : "tr.mode.real") : "";
     }
     cf.title = title; cf.firing = fire; cf.rows = m.rows.length + amtOnly.length; cf.notes = (nextOn ? 1 : 0) + (closeMaybe ? 1 : 0) + (hw.length ? 1 : 0) + (hg.length ? 1 : 0);
@@ -4548,13 +4552,15 @@ function trCfOpen(o) {
     derive(); cf.sending = sending; cf.blocked = blocked; cf.sig = null; paintBody();
     if (cf.ctx && delCtx === cf.ctx) $("del-ok").disabled = blocked || inOff();
   }, () => !cf.firing && !$("del-ok").disabled));
+  // 這支目前版的樣本外驗證沒過:輸入格下講事實,不寫建議、不上紅(canon confirm-modal;spec p3-0160 §4b)
+  if (inp && opt.oosFail) frag.appendChild(trEl("p", "cf-in-ref cf-oos", t("sp.oosFail")));
   frag.append(body, extra);
   const anyChange = !!inp || cf.rows > 0 || cf.notes > 0 || stratRows.length > 0 || blank.length > 0 || !!paperCashKey || Object.keys(sending).some((n) => Number(sending[n]) !== old(n));
   // 框腳左邊的「到策略組合」(策略頁的輸入格框,台股沒有):關框、把已填的金額帶成草稿(poAdd)
   const link = inp && opt.toPo ? { label: t("po.addGo"), onClick: () => opt.toPo(ivVal()) } : null;
   const box = trCloudBox({
     title: cf.title, mark: cf.firing ? t(trCfPaperOnly() ? "tr.mode.paper" : "tr.mode.real") : null, markKind: trCfPaperOnly() ? "paper" : "real", lines: [], extra: frag,
-    okDisabled: blocked || inOff(), ok: cf.firing ? t("tr.cf.titleFire") : t("tr.save"), opener, link, focus: inp ? "cf-in" : null,
+    okDisabled: blocked || inOff(), ok: okText(cf.firing), opener, link, focus: inp ? "cf-in" : null,
     onCancel: () => { TR_CF.cur = null; if (opt.onCancel) opt.onCancel(); },
     onOk: async () => {
       TR_CF.cur = null;
@@ -4788,7 +4794,7 @@ function poSigTable(r, stored, states, mode) {
   if (trade) {
     // 區段標題「策略組合」+ 右上「到策略組合修改」:頁首原因行**實際畫出**連結(TR.noAmtLink)或動作列有導引鈕(TR.zBridge)時藏——一個畫面一條橋
     const sec = trSec(trEl("span", "label", t("po.nav")));
-    if (!TR.noAmtLink && !TR.zBridge) { const acts = trEl("div", "pf-acts"), lk = trEl("button", "btn-quiet po-bridge", t("po.bridgeEdit")); lk.type = "button"; lk.dataset.fk = "po-bridge"; lk.addEventListener("click", () => poOpen("cfg", true)); acts.appendChild(lk); sec.appendChild(acts); }
+    if (!TR.noAmtLink && !TR.zBridge) { const acts = trEl("div", "pf-acts"), lk = trEl("button", "btn-quiet hit44 po-bridge", t("po.bridgeEdit")); lk.type = "button"; lk.dataset.fk = "po-bridge"; lk.addEventListener("click", () => poOpen("cfg", true)); acts.appendChild(lk); sec.appendChild(acts); }
     frag.appendChild(sec);
   } else frag.appendChild(trSec(trTipLabel("label", t("po.sigTargets"), t("po.sigTargetsTip"))));
   const qmap = trQuoteMap() || {};
@@ -5870,16 +5876,24 @@ function trRefocus(groupCls, label) {
   const b = [...g.querySelectorAll("button")].find((x) => x.textContent === label); if (b) b.focus();
 }
 function trToken(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+/* 縱軸範圍。權益:最少是最新權益的 1%,以資料中間點為中心往上下展開;資料本身比 1% 寬就照資料(QA 0159 R4-4;spec p3-0160 §8)——
+   10 萬 USDT 上 0.7 的雜訊應該畫成近乎平線。損益照舊含 0 */
+const TR_CURVE_MIN_FRAC = 0.01;
+function trCurveRange(vs, isPnl) {
+  let lo = Infinity, hi = -Infinity;
+  vs.forEach((v) => { lo = Math.min(lo, v); hi = Math.max(hi, v); });
+  if (isPnl) { lo = Math.min(lo, 0); hi = Math.max(hi, 0); }
+  else { const need = Math.abs(vs[vs.length - 1]) * TR_CURVE_MIN_FRAC; if (hi - lo < need) { const mid = (hi + lo) / 2; lo = mid - need / 2; hi = mid + need / 2; } }
+  if (hi - lo < 1e-9) { hi += 1; lo -= 1; }
+  return [lo, hi];
+}
 function trDrawCurve(canvas, pts, isPnl) {
   const W = canvas.clientWidth, H = canvas.clientHeight; if (!W || !H) return;
   const dpr = window.devicePixelRatio || 1;
   canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
   const ctx = canvas.getContext("2d"); ctx.scale(dpr, dpr);
   const padL = 8, padR = 72, padT = 12, padB = 22;
-  let lo = Infinity, hi = -Infinity;
-  pts.forEach((p) => { lo = Math.min(lo, p.v); hi = Math.max(hi, p.v); });
-  if (isPnl) { lo = Math.min(lo, 0); hi = Math.max(hi, 0); }
-  if (hi - lo < 1e-9) { hi += 1; lo -= 1; }
+  let [lo, hi] = trCurveRange(pts.map((p) => p.v), isPnl);
   const span = hi - lo; lo -= span * 0.08; hi += span * 0.08;
   const t0 = pts[0].t, t1 = pts[pts.length - 1].t || t0 + 1;
   const xAt = (tt) => padL + ((tt - t0) / Math.max(1, t1 - t0)) * (W - padL - padR);
@@ -6220,7 +6234,7 @@ function trOvFills(r) {
   const acts = trEl("div", "pf-acts ev-fills"), cnt = trEl("span", "");
   const parts = t(n === 1 ? "tr.ov.evFillsOne" : "tr.ov.evFills").split("{n}");   // 數字單獨一個 .mono,字串自己決定數字落在哪
   cnt.append(parts[0], trEl("span", "mono", String(n)), parts.slice(1).join("{n}"));
-  const go = trEl("button", "btn-quiet", t("tr.ov.evFillsLink")); go.type = "button";
+  const go = trEl("button", "btn-quiet hit44", t("tr.ov.evFillsLink")); go.type = "button";
   go.addEventListener("click", () => trSetTab("hist", true));
   acts.append(cnt, go); return acts;
 }
@@ -6631,7 +6645,7 @@ function cxTiles(L) {
   if (CXF.paperBound) w.appendChild(trEl("p", "cx-replace", t("cx.replacePaper")));
   const group = (gid, labelKey, items, note) => {
     const lab = trEl("p", "cx-grp", t(labelKey)); lab.id = "cx-grp-" + gid; w.appendChild(lab);
-    if (note) { w.appendChild(trEl("p", "cx-macnote", note)); return; }
+    if (note) { w.appendChild(note); return; }
     const g = trEl("div", "cx-tiles"); g.setAttribute("role", "group"); g.setAttribute("aria-labelledby", lab.id);
     items.forEach(([id, name]) => {
       const b = trEl("button", "cx-tile"); b.type = "button"; b.id = "cx-tile-" + id; b.disabled = off;
@@ -6640,7 +6654,14 @@ function cxTiles(L) {
     w.appendChild(g);
   };
   const tw = cxTwTiles(CXF.env, window.blave.platform);
-  const twGroup = () => { if (tw === null) group("tw", "cap.group.tw", [], t("cx.macTw")); else if (tw.length) { group("tw", "cap.group.tw", tw.map(([id, k]) => [id, t(k)])); if (CXF.env === "local" && window.blave.platform !== "win32") w.appendChild(trEl("p", "cx-macnote", t("cx.macTw"))); } };
+  /* Mac 的台灣期貨段:一句講要 Windows,後面接〔改用雲端主機〕開加購框、預選 Windows(QA 0158 P3-10;spec p3-0160 §11)。
+     統一的憑證要在自己的 Windows 申請是開通流程的事,這裡不寫 */
+  const macTw = () => { const p = trEl("p", "cx-macnote", t("cx.macTw"));
+    if (typeof p3Live === "function" && p3Live()) { const b = trEl("button", "btn-quiet hit44", t("cx.macTwGo")); b.type = "button";
+      b.addEventListener("click", () => { trackFeature("cx_mac_tw_cloud"); cxModalClose(false); p3OpenAddon(null, p3TierOf("windows", "starter"), undefined, "cloud"); });
+      p.append(LANG === "zh" ? "" : " ", b); }
+    return p; };
+  const twGroup = () => { if (tw === null) group("tw", "cap.group.tw", [], macTw()); else if (tw.length) { group("tw", "cap.group.tw", tw.map(([id, k]) => [id, t(k)])); if (CXF.env === "local" && window.blave.platform !== "win32") w.appendChild(macTw()); } };
   const twFirst = typeof MKT !== "undefined" && mktTwFirst(MKT.v);   // 主要市場台指期:台灣期貨那組排前面
   if (twFirst) twGroup();
   group("crypto", "cx.group.crypto", cxVenuesFor(CXF.env).map((id) => [id, trVenueLabel(id)]));
@@ -7233,12 +7254,14 @@ function envNavMark(which) {
 }
 /* 側欄已選中的那一項再點一次(Wei 09-28)。瀏覽器展開層蓋著中欄時,人眼前看到的是展開層、不是那一頁:這一下先收展開層、露出那一頁
    (那一頁本來就開著,MutationObserver 看不到「新畫面冒出來」,不收就永遠沒反應)。
-   back = 這一區還在第二層(策略庫、報告的詳情):先回第一層的列表,列表再點才回 welcome。
-   都沒有才 leave() 收掉那一頁,由 envShowMain 落到這一邊的 welcome。守門同切視角:框開著 / 組字中不動 */
+   back = 這一區還在第二層(策略庫、報告的詳情):先回第一層的列表。
+   都沒有才 leave() 收掉那一頁,由 envShowMain 落到這一邊的 welcome;leave 是 null(策略庫、策略組合、自動下單三個導覽項,R5-11)= 已在列表就什麼都不做。
+   守門同切視角:框開著 / 組字中不動 */
 function sideReclick(leave, back) {
   if (!envCanSwitch()) return;
   if (typeof BR !== "undefined" && BR.exp && BR.bw && !BR.bw.hidden) { brCollapse(true); return; }
   if (back) { back(); return; }
+  if (!leave) return;
   leave(); envShowMain();
 }
 /* 每一輪都叫(trPaint 的第一步):切換器兩格、側欄、視窗標題、雲端空態。回 false = 中欄現在是雲端空態,自動下單頁不必畫。
@@ -7289,6 +7312,8 @@ function envPaint() {
   const sg = $("side-gate"); sg.hidden = !ready;
   if (ready && sg.dataset.i18n !== "side.cloud.emptyReady") { sg.dataset.i18n = "side.cloud.emptyReady"; sg.textContent = t("side.cloud.emptyReady"); }
   $("strat-list").hidden = cloud; $("strat-list-cloud").hidden = !cloud || gate;
+  // 雲端沒主機(不是「準備好了」那一態):左欄沒東西可列,系統代收成細軌,不動用戶的收合偏好(設計師裁定 0.1.60 #7)
+  if (typeof paneSideForce === "function") paneSideForce(cloud && gate && !ready);
   // 雲端視角的 placeholder。走 dataset:換語言時 applyStatic 會照 data-i18n-ph 重填
   const inGate = envInputGate();
   const phKey = !cloud ? "ws.placeholder" : !inGate || kind === "loading" ? "chat.ph.cloud" : kind === "unreach" ? "chat.ph.cloudUnreach" : "chat.ph.cloudGate";
@@ -7561,6 +7586,13 @@ function envPaintEmpty(kind, pid) {
     if (c.note) card.appendChild(trEl("p", "cv-note", c.note));
     if (err) card.appendChild(errEl()); else if (c.msg) card.appendChild(trEl("p", "cv-slot", c.msg));
     const act = trEl("div", "cv-acts"); act.appendChild(main); card.appendChild(act);
+    /* 有一支等著上雲端:給一個講得出結果的出口(QA 0159 R5-5)——取消這支的待送、切回這台電腦、焦點回這支的策略頁頭。
+       頂列切換鈕只換畫面,用戶看不出待送會不會留著;待送由 envSwitch 換邊時清(收斂在那一處) */
+    if (pid) act.appendChild(btn("btn-quiet hit44", t("env.open.stayLocal"), () => {
+      trackFeature("cloud_stay_local");
+      envSwitchGuarded("local");
+      requestAnimationFrame(() => { const h = $("rp-name"); if (ENV.cur === "local" && h && h.offsetParent) h.focus(); });
+    }, "stay-local"));
     if (side) { const f = trEl("p", "cv-foot"); f.appendChild(side); card.appendChild(f); }
     page.appendChild(card);
   }

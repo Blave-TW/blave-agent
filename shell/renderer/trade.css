@@ -55,6 +55,9 @@ html[data-env="cloud"] .envsw { --envsw-rail: var(--bg-body); }
 }
 /* 安靜分段(canon segment):選中 = 墊一階底色 + 圖示變深,不反白——「現在在哪一邊」已經有灰頂列、側欄、視窗標題三個通道 */
 .envsw button[aria-pressed="true"] { background: var(--surface-segment-on); color: var(--ink); }
+/* 熱區寬 36 → 44:兩格相鄰,只往外側長(高已由 segment 共用規則補到 44;QA 0158 P3-5) */
+.envsw button:first-child::before { left: -8px; }
+.envsw button:last-child::before { right: -8px; }
 /* 格內唯一的記號:掛在圖示右上角,不佔寬;底下墊一圈格子的底色,跟圖示線條分開 */
 .envsw .run-dot, .envsw .dot { position: absolute; top: 3px; right: 5px; margin: 0; box-shadow: 0 0 0 2px var(--envsw-rail); }
 .envsw button[aria-pressed="true"] .run-dot, .envsw button[aria-pressed="true"] .dot { box-shadow: 0 0 0 2px var(--surface-segment-on); }
@@ -120,6 +123,7 @@ html[data-env="cloud"] .cs-tabs .tab:not([aria-selected="true"]):has(+ .tab:not(
 .cn-st.is-calm .fault-mark { background: var(--ink-3); }   /* 永豐自動重試中:等一下就好,灰短劃(sinopac spec §1.3) */
 [data-theme="dark"] .cv-card .plan-err:not(.is-calm) { color: var(--color-redBlack); }
 .cv-acts { margin-top: var(--space-16); }
+.cv-acts:has(> .btn-quiet) { display: flex; flex-direction: column; align-items: center; gap: var(--space-16); }   /* 〔留在這台電腦〕在主鈕下、置中,間距 16 = 熱區 44 不壓到主鈕 */
 .cv-acts .btn-fill, .cv-acts .btn-out { width: 100%; height: 36px; }
 .cv-foot { margin: var(--space-8) 0 0; font-size: 12px; line-height: 1.6; color: var(--ink-3); text-align: center; }
 /* 狀態頁:一句話,同一條中線,不留招攬字 */
@@ -250,21 +254,12 @@ html.ws-sc .side-gate { display: none; }
 /* 區段標籤＋問號外連教學(spec portfolio-help-icon §1.1)。.pf-sec 是 baseline 對齊,這一組不 center 會浮高;
    .lbl-grp 不設 position,標籤的 .tip 仍以 .pf-sec 為定位基準 */
 .lbl-grp { display: inline-flex; align-items: center; gap: var(--space-8); align-self: center; margin-right: var(--space-4); }
-.pf-help { position: relative; z-index: 2; flex: none; display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; padding: 0;
-  border-radius: var(--radius-sm); color: var(--ink-3); transition: background-color var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard); }
-/* 熱區 44:左邊只擴 6——標籤本身是 tooltip 觸發點,兩個熱區之間留 2 不重疊 */
+/* 說明外連:文字＋往外箭頭(12px、ink-3),滑過提亮;熱區 44 高,左邊只擴 6——標籤本身是 tooltip 觸發點,兩個熱區之間留 2 不重疊 */
+.pf-help { position: relative; z-index: 2; flex: none; display: inline-flex; align-items: center; gap: var(--space-2); height: 24px; padding: 0;
+  font-size: 12px; font-weight: 400; color: var(--ink-3); transition: color var(--motion-fast) var(--ease-standard); }
+.pf-help .ic { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .pf-help::before { content: ""; position: absolute; inset: -10px -14px -10px -6px; }
-/* 往下開:面板頂端往上開會被分頁列裁掉。延遲只掛在出現那一側(hover 規則裡),移開時 visibility 0s 立刻收 */
-.pf-help-tip { position: absolute; left: 0; top: calc(100% + 6px); z-index: 20; padding: 6px 10px; border-radius: var(--radius-sm);
-  background: var(--surface-overlay); color: var(--ink-2); box-shadow: var(--shadow-overlay);
-  font-size: 12px; font-weight: 400; line-height: 1.45; white-space: nowrap; pointer-events: none;
-  visibility: hidden; opacity: 0; transition: opacity var(--motion-fast) var(--ease-standard), visibility 0s; }
-@media (hover: hover) {
-  .pf-help:hover { background-color: var(--surface-muted); color: var(--ink); }
-  .pf-help:hover .pf-help-tip { visibility: visible; opacity: 1; transition-delay: var(--motion-tooltip-delay); }
-}
-.pf-help:focus-visible .pf-help-tip { visibility: visible; opacity: 1; transition-delay: 0s; }
-@media (hover: none) { .pf-help-tip { display: none; } }
+@media (hover: hover) { .pf-help:hover { color: var(--ink); } }
 .trv .pf-state { padding: var(--space-24) 0; }
 
 /* ---- 表格 ---- */
@@ -991,6 +986,7 @@ tr:nth-child(2n) .mg-sk.amt { width: 44px; }
 .cf-in-row .set-selw { flex: none; margin-left: 0; }
 .del-body.lines p.cf-in-ref { margin: var(--space-6) 0 0; font-size: 12px; line-height: 1.5; color: var(--ink-3); }
 .del-body.lines p.cf-in-err { margin: var(--space-6) 0 0; font-size: 12px; line-height: 1.5; color: var(--color-redText); }
+.del-body.lines p.cf-oos { color: var(--ink-2); }   /* 樣本外沒過:事實句,比換算小字高一階、不用紅(canon confirm-modal) */
 .cf-in-ref[hidden], .cf-in-err[hidden] { display: none; }
 .cf-in-ref .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }   /* 確認框在 .app 外面,吃不到 .app .mono */
 .cx-body .btn-quiet::before { inset: auto; left: 50%; top: 50%; width: max(44px, calc(100% + 8px)); height: 44px; transform: translate(-50%, -50%); }   /* 連接框文字鈕熱區 44(設計稽核 sinopac M8,同 .ph-links) */

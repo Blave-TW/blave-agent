@@ -65,8 +65,8 @@ ok("summaryKey 帶顯示幣別與選項:改了偏好就推(合計、投入資金
   ok("改成 TWD:送一次、記 display_ccy_set、叫輪詢(ENV.cloudDirty)把新的那份信封拿進來;新信封到之前下拉先停在 TWD",
     J(sent) === J(["set:TWD", "feature:display_ccy_set", "poll"]) && ctx.ENV.cloudDirty === true && nodes["set-ccy"].value === "TWD", J(sent));
   const html = fs.readFileSync(path.join(R, "index.html"), "utf8"), S = fs.readFileSync(path.join(R, "strings.js"), "utf8"), tel = fs.readFileSync(path.join(SHELL, "telemetry.js"), "utf8");
-  ok("位置:設定 › 一般,語言那一列底下;字串兩語;埋點 display_ccy_set 在白名單",
+  ok("位置:設定 › 一般,語言那一列底下;字串兩語(label 講出只管雲端,QA 0159 R3-8);埋點 display_ccy_set 在白名單",
     html.indexOf('id="set-lang"') > 0 && html.indexOf('id="set-ccy-row"') > html.indexOf('id="set-lang"') && html.indexOf('id="set-ccy-row"') < html.indexOf('id="set-up"')
-    && S.includes('"set.ccy": "顯示幣別"') && S.includes('"set.ccy": "Display currency"') && S.includes('"set.ccyFail": "切換失敗，稍後再試。"') && /"display_ccy_set"[\],]/.test(tel));
+    && S.includes('"set.ccy": "雲端顯示幣別"') && S.includes('"set.ccy": "Cloud display currency"') && S.includes('"set.ccyFail": "切換失敗，稍後再試。"') && /"display_ccy_set"[\],]/.test(tel));
   console.log(red ? `\n${red} 項沒過` : "\nALL PASS"); process.exit(red ? 1 : 0);
 })().catch((e) => { console.error(e); process.exit(1); });

@@ -445,10 +445,17 @@
     // fixed layout 先扣掉 border-spacing 再分欄:角落欄 + cols 共 cols+1 欄,spacing 是 cols+2 個。
     // 單參數不設:340 的地板會頂掉 .is-single 的 max-width,390 寬還會逼出橫捲
     if (!sc.single) tbl.style.minWidth = Math.max(340, 84 + sc.cols.length * 52 + (sc.cols.length + 2) * 4) + "px";
+    /* 軸名不擠在左上角那一格(QA 0159 R3-2;spec p3-0160 §5):橫軸名在熱圖上方、跨所有欄,直軸名直排在左側,都不截;
+       真的放不下才截尾,title 放全名。照舊用常數名(跟程式碼分頁、agent 講的參數名對得上) */
     const thead = el("thead"), hr = el("tr");
+    if (!sc.single) {
+      const ar = el("tr", "rob-ax-row"), ac = el("th", "rob-ax-c");
+      ar.appendChild(el("th", "corner"));
+      ac.colSpan = sc.cols.length; ac.scope = "colgroup";
+      const cs = el("span", "mono", sc.colParam + " →"); cs.title = sc.colParam; ac.appendChild(cs);
+      ar.appendChild(ac); thead.appendChild(ar);
+    }
     const corner = el("th", "corner");
-    corner.appendChild(el("span", "r mono", sc.rowParam + " ↓")).title = sc.rowParam;   // 84px 會截尾,全名放 title(QA 0159 R3-2)
-    if (!sc.single) corner.appendChild(el("span", "mono", sc.colParam + " →")).title = sc.colParam;
     hr.appendChild(corner);
     sc.cols.forEach((c) => { const th = el("th", null, sc.single ? "" : pv(c, sc.cd)); th.scope = "col"; hr.appendChild(th); });
     thead.appendChild(hr);
@@ -485,7 +492,11 @@
     });
     tbl.appendChild(tbody);
     frame.appendChild(tbl);
-    wrap.appendChild(frame);
+    const body = el("div", "rob-heat-body"), axR = el("div", "rob-ax-r mono", sc.rowParam + " →");   // 直排時「→」轉成朝下
+    axR.title = sc.rowParam; axR.setAttribute("aria-hidden", "true");   // 讀屏從表的 aria-label 與每格 aria-label 拿參數名
+    const R = window.BlaveReport || {};
+    body.append(axR, R.scrollFade ? R.scrollFade(frame, t("rp.tab.rob")) : frame);
+    wrap.appendChild(body);
 
     const legend = el("div", "rob-legend");
     function item(sw, frag) {

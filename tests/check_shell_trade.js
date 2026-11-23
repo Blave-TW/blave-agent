@@ -2666,7 +2666,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       const fills = all.find((n) => n.className === "pf-acts ev-fills"), link = fills && fills.kids.find((k) => k.tag === "button");
       ok("§1.4 標題列右側「成交 N 筆 ·」+ 看交易歷史:在 .pf-sec 的 .pf-acts 槽、數字 .mono、用複數 key(2 筆)", !!fills && all.find((n) => n.className === "pf-sec").kids.includes(fills)
         && fills.kids[0].kids.some((k) => k && k.className === "mono" && k.textContent === "2") && fills.kids[0].textContent.includes("tr.ov.evFills")
-        && link && link.className === "btn-quiet" && link.textContent === "tr.ov.evFillsLink" && link.attrs.type !== "submit", J(fills && fills.textContent));
+        && link && link.className === "btn-quiet hit44" && link.textContent === "tr.ov.evFillsLink" && link.attrs.type !== "submit", J(fills && fills.textContent));
       link.on.click(); ok("§1.4 點了切到交易歷史分頁(trSetTab hist,焦點跟到分頁)", J(ctx.tabbed) === J(["hist", true]));
       ok("§1.4 1 筆用單數 key", (() => { const f = paintEv({ orders: [CAP] }).find((n) => n.className === "pf-acts ev-fills"); return !!f && f.kids[0].textContent.includes("tr.ov.evFillsOne") && !f.kids[0].textContent.includes("tr.ov.evFills|"); })());
       // 0.1.28 Wei 實測「成交 6 筆」、交易歷史 7 列:N 改數連結打開的那一組(交易歷史 = trOrdersShown 全部,不分區間),不再只數事件區間內

@@ -501,7 +501,7 @@ if (!process.versions.electron) {
       /\n  libIdeaSync\(\);\n/.test(src.slice(src.indexOf("(function libWire()"))) && /envShowMain\(\);\n\s*libIdeaSync\(\);/.test(cutFn(src, "libOpen")) && /libIdeaPaint\(\);/.test(cutFn(src, "libShowMain"))
       && /if \(typeof libIdeaSync === "function"\) libIdeaSync\(\);/.test(cutFn(appSrc, "enterWorkspace")) && /if \(typeof libIdeaPaint === "function"\) libIdeaPaint\(\);/.test(cutFn(appSrc, "acctPaint"))
       && /tvPrefs\(\); if \(typeof libIdeaSync === "function"\) libIdeaSync\(\); \}\);/.test(brSrc) && (src.match(/libIdeaNow\(\)/g) || []).length === 5 && !/libIdeaOn\(/.test(src.slice(src.indexOf("/* ── 純邏輯到此")).replace(/return libIdeaOn\(\{/, "")));
-    ok("③ 頁首說明句(§2.7):找點子開著才接 idea.descLead + 文字鈕 + 句號,文字鈕與句號同一個 .nw;拿掉「官方策略免費…」", /const nw = libEl\("span", "nw"\);\s*nw\.append\(libIdeaBtn\("btn-quiet", "idea\.link", "lib_head"\), LANG === "zh" \? "\\u3002" : "\."\);/.test(cutFn(src, "libPaintDesc"))
+    ok("③ 頁首說明句(§2.7):找點子開著才接 idea.descLead + 文字鈕 + 句號,文字鈕與句號同一個 .nw;拿掉「官方策略免費…」", /const nw = libEl\("span", "nw"\);\s*nw\.append\(libIdeaBtn\("btn-quiet hit44", "idea\.link", "lib_head"\), LANG === "zh" \? "\\u3002" : "\."\);/.test(cutFn(src, "libPaintDesc"))
       && STR.zh["lib.desc"] === "報酬皆為回測。" && STR.en["lib.desc"] === "Returns are backtested.");
     {   // canon brand.md「數字必須真實或標注」:標注在頁首(卡上的字搬上去),所以真的把列與頁首畫出來,兩語、找點子開關都驗
       class N {

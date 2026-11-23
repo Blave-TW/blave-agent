@@ -1,4 +1,5 @@
 // 側欄已選中的那一項再點一次(Wei 09-28):沒被瀏覽器展開層蓋著 → 收掉那一頁回預設畫面(這台電腦 welcome / 雲端自動下單頁);
+// 0.1.60(spec p3-0160 R5-11):策略庫、策略組合、自動下單三個導覽項改成冪等——詳情先回列表、已在列表什麼都不做(leave 傳 null),不再回歡迎頁;策略列與報告照舊;
 // 蓋著 → 只收展開層、露出那一頁;框開著 / 組字中(envCanSwitch 為假)什麼都不動。
 //   ① trade.js sideReclick 本體照上面三條走
 //   ② 四個側欄入口(自動下單、策略庫、這台電腦的策略列、雲端策略列)與左下選單「報告」(0.1.57,rptMenuGo)的 click handler 從原文切出來跑:沒選中 → 照舊開;選中 → 經 sideReclick
@@ -24,6 +25,9 @@ const cutHandler = (s, anchor) => {
     vm.runInNewContext(cutFn(trSrc, "sideReclick") + "\nsideReclick(() => log.push('leave'));", ctx);
     return log.join();
   };
+  const runNull = (back) => { const log = [], ctx = { log, BR: {}, envCanSwitch: () => true, brCollapse: () => log.push("collapse"), envShowMain: () => log.push("show"), back: back ? () => log.push("back") : null };
+    vm.runInNewContext(cutFn(trSrc, "sideReclick") + "\nsideReclick(null, back);", ctx); return log.join(); };
+  ok("① leave 是 null(導覽項,R5-11):已在列表什麼都不做、不回歡迎頁;在詳情照舊先回列表", runNull(false) === "" && runNull(true) === "back", [runNull(false), runNull(true)]);
   ok("① 沒蓋著:先 leave 再 envShowMain(落到這一邊的預設畫面)", run({}) === "leave,show", run({}));
   ok("① 展開層蓋著(BR.exp + #bw 沒藏):只收展開層(算用戶收回),那一頁不收", run({ exp: { mode: "wall" }, bw: { hidden: false } }) === "collapse:true", run({ exp: { mode: "wall" }, bw: { hidden: false } }));
   ok("① BR.exp 殘著但 #bw 藏著 / 還沒建:不算蓋著,照 leave", run({ exp: { mode: "one" }, bw: { hidden: true } }) === "leave,show" && run({ exp: { mode: "one" } }) === "leave,show");
@@ -33,20 +37,20 @@ const cutHandler = (s, anchor) => {
 // ── ② 五個入口 ──
 // sideReclick 的替身:記一筆再照真的 leave 跑(①已經驗過它本身)
 const entry = (src, anchor, env) => {
-  const log = [], ctx = Object.assign({ log, sideReclick: (leave) => { log.push("reclick"); leave(); } }, env(log));
+  const log = [], ctx = Object.assign({ log, sideReclick: (leave, back) => { log.push("reclick"); if (back) back(); else if (leave) leave(); else log.push("stay"); } }, env(log));
   vm.runInNewContext("(" + cutHandler(src, anchor) + ")()", ctx);
   return log.join();
 };
 {
-  const env = (open) => (log) => ({ libBag: () => ({ open }), libOpen: () => log.push("open"), libLeave: (e) => log.push("leave:" + e) });
-  ok("② 策略庫:沒開 → libOpen;開著 → sideReclick(libLeave)",
-    entry(libSrc, 'g("lib-nav")', env(false)) === "open" && entry(libSrc, 'g("lib-nav")', env(true)) === "reclick,leave:undefined", [entry(libSrc, 'g("lib-nav")', env(false)), entry(libSrc, 'g("lib-nav")', env(true))]);
+  const env = (open, detail) => (log) => ({ libBag: () => ({ open, detail }), libOpen: () => log.push("open"), libLeave: (e) => log.push("leave:" + e), libBack: () => log.push("back") });
+  const r = [entry(libSrc, 'g("lib-nav")', env(false)), entry(libSrc, 'g("lib-nav")', env(true)), entry(libSrc, 'g("lib-nav")', env(true, true))];
+  ok("② 策略庫:沒開 → libOpen;開著在列表 → 不動(R5-11);在詳情 → 回列表", r.join("|") === "open|reclick,stay|reclick,back", r);
 }
 {
   const env = (cur, current) => (log) => ({ ENV: { cur }, $: () => ({ hasAttribute: (a) => a === "aria-current" && current }), trOpen: () => log.push("open"), trLeave: (e) => log.push("leave:" + e) });
   const r = [entry(trSrc, '$("tr-nav")', env("local", false)), entry(trSrc, '$("tr-nav")', env("local", true)), entry(trSrc, '$("tr-nav")', env("cloud", true)), entry(trSrc, '$("tr-nav")', env("cloud", false))];
-  ok("② 自動下單:沒選中 → trOpen;選中 → sideReclick(trLeave(那一邊)):收的是現在這一邊那一袋,落回那一邊的歡迎頁(0.1.30 雲端也有歡迎頁)",
-    r.join("|") === "open|reclick,leave:local|reclick,leave:cloud|open", r);
+  ok("② 自動下單:沒選中 → trOpen;選中 → 不動(R5-11:不再回歡迎頁,只收展開層)",
+    r.join("|") === "open|reclick,stay|reclick,stay|open", r);
 }
 {
   const env = (sel) => (log) => ({ x: { name: "a" }, RP: { name: sel }, stratSelect: (n) => log.push("select:" + n) });

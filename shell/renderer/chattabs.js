@@ -385,11 +385,15 @@ function tabsTip(el, T) {
   tip.textContent = "";
   if (cut) { const b = document.createElement("b"); b.textContent = tabsTitle(T); tip.appendChild(b); }
   if (word) tip.appendChild(document.createTextNode(word));
+  // 快捷鍵(QA 0159 R4-10):⌘1–⌘8 是第幾個,⌘9 是最後一個;切視角的 ⇧⌘1／⇧⌘2 寫在切換鈕的 title。符號不進譯文
+  const k = tabsKeyOf(T.sid);
+  if (k) { const s = document.createElement("span"); s.className = "tab-key" + (tip.childNodes.length ? " after" : ""); s.textContent = (window.blave.platform === "win32" ? "Ctrl+" : "\u2318") + k; tip.appendChild(s); }
   if (!tip.childNodes.length) { tip.hidden = true; return; }
   const head = $("cs-head").getBoundingClientRect(), r = el.getBoundingClientRect();
   tip.style.left = Math.max(8, Math.min(r.left - head.left, head.width - 268)) + "px";
   tip.hidden = false; tip.dataset.sid = T.sid;
 }
+function tabsKeyOf(sid) { const i = CS.order.indexOf(sid); return i < 0 ? null : i < 8 ? i + 1 : i === CS.order.length - 1 ? 9 : null; }
 function tabsTipOff() { const tip = $("tabs-tip"); if (tip) { tip.hidden = true; delete tip.dataset.off; delete tip.dataset.sid; } }
 // 每秒:開著的 tooltip 跟著跳秒(分頁每次重畫是新元素,照 sid 找回來)
 function tabsTipTick() {
@@ -532,6 +536,7 @@ document.addEventListener("mousedown", (e) => { if (!$("cs-menu").hidden && !e.t
 $("cs-hint").addEventListener("click", () => { csShowList(true); trackFeature("hist_open"); });
 if (typeof window.blave.onTabNew === "function") window.blave.onTabNew(() => csNewClick());
 if (typeof window.blave.onTabClose === "function") window.blave.onTabClose(() => tabsCloseCur());
+if (typeof window.blave.onTabGo === "function") window.blave.onTabGo((n) => { if (Number.isInteger(n) && n >= 1 && n <= 9) tabsGo(n); });   // 選單「顯示」› 對話分頁 N(滑鼠點)
 // 手機來的那一輪(relay.js):背景開成分頁(記號跟著 relay 的 phoneSids),手機送的那句接在歷史後面、帶「來自手機」;
 // 列外那個 aria-live 念一次「{標題}，來自手機」,不然讀屏不知道列上多了一個分頁
 if (typeof window.blave.onTabOpen === "function") window.blave.onTabOpen((o) => {

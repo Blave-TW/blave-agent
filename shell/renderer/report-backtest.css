@@ -262,3 +262,14 @@
   font-size: 13px;
   color: var(--ink-3);
 }
+
+/* 卡內橫捲的右緣淡出(report-backtest.js scrollFade;canon tables.md):從透明淡到 frame 的底色,不擋滑鼠;
+   上下各讓 1px 框線、右上右下跟著 frame 圓角 */
+.x-fade-host { position: relative; }
+.x-fade {
+  position: absolute; top: 1px; bottom: 1px; width: 24px; pointer-events: none;
+  background: linear-gradient(90deg, transparent, var(--bg-body));
+  border-radius: 0 calc(var(--radius-lg) - 1px) calc(var(--radius-lg) - 1px) 0;
+}
+.x-fade.mid { border-radius: 0; }
+.x-fade[hidden] { display: none; }

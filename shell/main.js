@@ -1765,7 +1765,36 @@ function loadStrategy(name) {
   try { codeBuf = fs.readFileSync(path.join(dir, "strategy.py")); code = codeBuf.toString("utf8"); } catch (_) {}
   // 掃描／樣本外是哪一版碼跑的(lib 寫的 code_hash = lib.strategy.code_hash):跟現在的檔不同就不是這份碼的結論,畫面照過時畫。改名不算改碼
   if (codeBuf) for (const r of [scan, wf]) if (r && typeof r.code_hash === "string" && !codeHashMatches(codeBuf, r.code_hash)) r.code_stale = true;
-  return { name, stats, scan, wf, code, dataSources: stratDataSources(dir), missingSources: stratMissingSources(dir), versions: stratVersions(dir), perf: stratPerf(dir), ...stratMeta(code), exports: stratExports(dir, code), cryptoKline: stratUsesKline(dir), transfer: stratTransfer(dir) };
+  return { name, stats, scan, wf, code, sourceId: stratSourceId(dir, name), dataSources: stratDataSources(dir), missingSources: stratMissingSources(dir), versions: stratVersions(dir), perf: stratPerf(dir), ...stratMeta(code), exports: stratExports(dir, code), cryptoKline: stratUsesKline(dir), transfer: stratTransfer(dir) };
+}
+/* 這支是策略庫哪一支(策略邏輯多語用;spec strategy-logic-i18n-0159 §7.1):source.json 的 marketplace_id,規則照 runtime _read_source_id——
+   正整數、最多讀 4096 bytes,否則不算。source.json 缺(QA 0159 #20:agent 漏寫、還沒第一次回測補寫)就退回外殼自己記的「已安裝」對照表 */
+function stratSourceId(dir, name) {
+  try {
+    const buf = wsfile.read(path.join(dir, "source.json"), 4096);
+    const v = buf ? JSON.parse(buf.toString("utf8")) : null, id = v && typeof v === "object" ? v.marketplace_id : null;
+    if (Number.isInteger(id) && id > 0) return id;
+  } catch (_) { /* 沒有、太大、壞掉:看對照表 */ }
+  const hit = Object.entries(libraryInstalled()).find(([, n]) => n === name);
+  return hit ? Number(hit[0]) : null;
+}
+/* 策略庫那支的多語策略邏輯:GET /openclaw/marketplace/strategies/<id>?lang= 的 { logic, logic_code }(官方策略匿名就讀得到,不帶 token)。
+   每個 (id, lang) 這次開 app 只問一次;失敗也記著,10 分鐘內不重打。兩個值都過 cloud.js logicOf 同一套形狀檢查。
+   api 還沒部署這兩欄 = 都 null,畫面照舊讀碼(spec strategy-logic-i18n-0159 §7.2) */
+const LOGIC_I18N_RETRY_MS = 10 * 60 * 1000, logicI18nCache = new Map();   // `${id}:${lang}` → { at, v }
+async function strategyLogicI18n(id, langRaw) {
+  if (!Number.isInteger(id) || id <= 0) return null;
+  const lang = langRaw === "en" ? "en" : "zh", ck = `${id}:${lang}`, hit = logicI18nCache.get(ck);
+  if (hit && (hit.v || Date.now() - hit.at < LOGIC_I18N_RETRY_MS)) return hit.v;
+  let v = null;
+  try {
+    const r = await getJSON(`${API_BASE}/openclaw/marketplace/strategies/${id}?lang=${lang}`, {});
+    const b = r && r.status === 200 && r.body && typeof r.body === "object" ? r.body : null, s = b && b.strategy && typeof b.strategy === "object" ? b.strategy : b;
+    const { logicOf } = require("./cloud");
+    if (s && ("logic" in s || "logic_code" in s)) v = { logic: logicOf(s.logic), logicCode: logicOf(s.logic_code) };
+  } catch (_) { v = null; }
+  logicI18nCache.set(ck, { at: Date.now(), v });
+  return v;
 }
 /* 拉回之後本機背景跑的狀態(runtime command_listener 寫的 transfer.json),形狀與淘汰規則同雲端 strategy_reporter._read_transfer:
    { kind, status, at, err?, exit?, stopped_after_s?, tail? };沒有、壞形狀、結束超過一週、或之後的回測已經寫出更新的 stats.json = null。
@@ -4434,6 +4463,7 @@ app.whenReady().then(() => {
   handle("delete-session", (_e, id) => deleteSession(id));
   handle("list-strategies", () => listStrategies());
   handle("load-strategy", (_e, name) => loadStrategy(String(name || "")));
+  handle("strategy-logic-i18n", (_e, id, lang) => strategyLogicI18n(Number(id), String(lang || "")));
   handle("save-export", (e, ref) => saveExport(BrowserWindow.fromWebContents(e.sender), ref && typeof ref === "object" ? ref : null), { ok: false });
   handle("load-session-exports", (_e, id) => loadSessionExports(id));
   handle("reveal-export", (_e, token) => { const p = savedExports.get(String(token || "")); if (!p || !fs.existsSync(p)) return false; shell.showItemInFolder(p); return true; }, false);
@@ -4941,7 +4971,7 @@ const MENU_EN = { menuAbout: "About Blave", menuServices: "Services", menuHide: 
   menuCopy: "Copy", menuPaste: "Paste", menuPasteStyle: "Paste and Match Style", menuDelete: "Delete", menuSelectAll: "Select All",
   menuView: "View", menuLocal: "This Computer", menuCloud: "Cloud", menuActualSize: "Actual Size", menuZoomIn: "Zoom In", menuZoomOut: "Zoom Out",
   menuFullEnter: "Enter Full Screen", menuFullExit: "Exit Full Screen", menuWindow: "Window", menuMinimize: "Minimize", menuZoom: "Zoom",
-  menuFront: "Bring All to Front", menuHelp: "Help", menuSite: "Blave Website", menuCopyLink: "Copy Link" };
+  menuFront: "Bring All to Front", menuHelp: "Help", menuSite: "Blave Website", menuCopyLink: "Copy Link", menuTabN: "Chat Tab {n}", menuTabLast: "Last Chat Tab" };
 // draftOk = 這一次離開已經問過「還沒儲存，要離開嗎」(或沒有草稿);結束被取消、改成收起來、或開了新視窗就收回。
 // draftNote = 有草稿、但後面那道框(下單中 / 回合中 / 統一有部位)本來就會問:草稿那句併進那個框,不連跳兩個
 let draftOk = false, draftNote = false;
@@ -5076,6 +5106,11 @@ function appMenuTemplate(L, dev, full, onEnv, onSite, onFull, ask = false) {
     { label: l("menuView"), submenu: [
       { label: l("menuLocal"), accelerator: "Cmd+Shift+1", click: () => onEnv("local") },
       { label: l("menuCloud"), accelerator: "Cmd+Shift+2", click: () => onEnv("cloud") },
+      sep,
+      /* ⌘1–⌘9 切對話分頁也列在這裡,跟上面 ⇧⌘1／⇧⌘2 放一起才分得出兩組(QA 0159 R4-10)。按鍵照舊由畫面的 keydown 接(chattabs.js),
+         選單只顯示不註冊(registerAccelerator:false),不然選單先吃掉、畫面那條就不會跑;用滑鼠點照樣切 */
+      ...[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => ({ label: n === 9 ? l("menuTabLast") : l("menuTabN").replace("{n}", String(n)), accelerator: "CmdOrCtrl+" + n, registerAccelerator: false,
+        click: () => { const w = turnWin(); if (w) w.webContents.send("tab-go", n); } })),
       sep,
       ...(dev ? [{ role: "reload" }, { role: "forceReload" }, { role: "toggleDevTools" }, sep] : []),   // 開發版才有,維持英文
       r("resetZoom", "menuActualSize"), r("zoomIn", "menuZoomIn"), r("zoomOut", "menuZoomOut"), sep,

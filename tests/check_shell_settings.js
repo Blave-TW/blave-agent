@@ -152,7 +152,7 @@ ok("安裝失敗在 Windows:換 up.installFailed.win(沒有「應用程式」資
 ok("下載中 / 暫存中:關於列講 up.row.downloading(這時按檢查更新不會查);沒有更新來源不寫狀態字", ["downloading", "staging"].every((ph) => paint({ ...C, phase: ph }, cloud()).line === 'up.row.app{"av":"0.0.7"} · up.row.downloading') && paint({ ...C, phase: "off" }, cloud()).line === 'up.row.app{"av":"0.0.7"}' && !!STR.zh["up.row.downloading"] && !!STR.en["up.row.downloading"]);
 ok("檢查更新查完焦點回鈕:鈕檢查中是真 disabled,原本在鈕上才收回", /hadFocus = document\.activeElement === btn/.test(fnSrc("upCheck")) && /hadFocus && !btn\.disabled\) btn\.focus\(\)/.test(fnSrc("upCheck")));
 ok("狀態字不換色:upPlan 不回任何 cls,CSS 沒有 .st.up / .st.ok / 舊兩行版的 id;檢查更新不再掛「也會更新雲端」的 hover(up.check.cloudTip 刪了)", !("cls" in plan(idle, cloud()).row) && !("cls" in plan(idle, cloud()).cloud) && !/\.set-about \.st|set-up-(ver|txt|cver|ctxt|cnote|lbtn|head)|up-dot/.test(css + html + src) && !/cloudTip/.test(src + fs.readFileSync(path.join(R, "strings.js"), "utf8")));
-ok("DOM:關於兩行(0.1.15):第一行電腦版 + 檢查更新,底下是排程自動更新的開關(0.1.36);第二行 #set-upc(預設 hidden)雲端主機 + 更新雲端主機;兩行都 role=status;#ws-update 的字不走 data-i18n", /<p class="set-up-line" id="set-up-line" role="status"><\/p>\s*<button type="button" class="btn-quiet" id="set-up-btn"><\/button>\s*<\/div>\s*<!--[^>]*-->\s*<div class="set-upsch" id="set-upsch" hidden>[\s\S]*?<\/button><\/div>\s*<\/div>\s*<div class="set-up-row" id="set-upc" hidden>\s*<p class="set-up-line" id="set-upc-line" role="status"><\/p>\s*<button type="button" class="btn-quiet" id="set-upc-btn" hidden><\/button>/.test(html)
+ok("DOM:關於兩行(0.1.15):第一行電腦版 + 檢查更新,底下是排程自動更新的開關(0.1.36);第二行 #set-upc(預設 hidden)雲端主機 + 更新雲端主機;兩行都 role=status;#ws-update 的字不走 data-i18n", /<p class="set-up-line" id="set-up-line" role="status"><\/p>\s*<button type="button" class="btn-quiet hit44" id="set-up-btn"><\/button>\s*<\/div>\s*<!--[^>]*-->\s*<div class="set-upsch" id="set-upsch" hidden>[\s\S]*?<\/button><\/div>\s*<\/div>\s*<div class="set-up-row" id="set-upc" hidden>\s*<p class="set-up-line" id="set-upc-line" role="status"><\/p>\s*<button type="button" class="btn-quiet" id="set-upc-btn" hidden><\/button>/.test(html)
   && (() => { const span = html.slice(html.indexOf('id="ws-update"'), html.indexOf("</button>", html.indexOf('id="ws-update"'))); return !/data-i18n/.test(span) && /<span><\/span>/.test(span); })());
 // ── 聊天輸入列右上那一格只剩 (c) 更新中…;本機等重開的提示搬到側欄膠囊(0.1.36 spec desktop-update-pill §3.2:同一件事只講一處)──
 p = paint({ ...C, phase: "ready" }, cloud());
@@ -1208,10 +1208,10 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
         const TIP = 'l p3-tipw>mp-tip:plan.bal|tip:p3.set.balTipp3.set.topupTip{"lo":"50","a":"300"}', TIP1 = "l p3-tipw>mp-tip:plan.bal|tip:p3.set.balTip";
         PV_N = 5; PV_PD = "30"; PV_YD = "365"; PV_X = "888"; PV_P = "888"; PV_Y = "8,880"; PV_D = "12 月 4 日";
         let r = D(TRIAL);
-        ok("v3 試用中(月繳):標題「Blave Agent 方案 · 月繳」＋徽章「試用中 · 剩 n 天」、不出狀態列;下一列左標右值「試用結束扣第一期｜MM/DD · 888 TWD」(金額讀 api 的下一期);鈕上方兩行(續扣、開主機會結束試用);〔到網站取消試用〕緊接在倒數徽章後面(設計稽核 D1),鈕列只剩〔開雲端主機〕、照預設靠右",
+        ok("v3 試用中(月繳):標題「Blave Agent 方案 · 月繳」＋徽章「試用中 · 剩 n 天」、不出狀態列;下一列左標右值「試用結束扣第一期｜MM/DD · 888 TWD」(金額讀 api 的下一期);鈕上方只一行「開雲端主機會結束試用」(Wei 11-23 Q1:續扣與今天付多少交給加購框);〔到網站取消試用〕緊接在倒數徽章後面(設計稽核 D1),鈕列只剩〔開雲端主機〕、照預設靠右",
           r.st === "" && r.kids.join() === "plan-id,plan-ttl,plan-bal plan-kv" && r.ttl === '[h6:p3.a.title · plan.cyc.monthly|plan-badge:pv.st.trial' + JSON.stringify(planVars()) + "]|btn-quiet:plan.trialCancel"
           && r.head.length === 1 && r.head[0].dataset.k === "trial:head"
-          && r.kv === 'p3.set.firstL|p3.set.firstV{"d":"' + md + '","p":"888"}' && JSON.stringify(r.rules) === JSON.stringify(['p3.f.renew{"pd":"30"}', "p3.f.trialConvertNoNum"])
+          && r.kv === 'p3.set.firstL|p3.set.firstV{"d":"' + md + '","p":"888"}' && JSON.stringify(r.rules) === JSON.stringify(["p3.f.trialEnds"]) && !/p3\.f\.renew|TWD/.test(r.rules.join())
           && r.actCls === "plan-act" && JSON.stringify(r.acts) === JSON.stringify(["btn-out:p3.h.title"]) && !/pv\.h\.ready|pv\.d\.trial|p3\.f\.trial\b|p3\.f\.trial\{/.test(r.texts)
           && !/is-tight/.test(css + src) && !/\.plan-ttl[^{]*\.btn-quiet\{[^}]*margin/.test(css) && /\.plan-ttl\{[^}]*column-gap:var\(--space-16\);row-gap:var\(--space-4\)/.test(css) && /\.plan-ttl-h\{display:inline-flex;flex-wrap:wrap;align-items:center;gap:var\(--space-8\)\}/.test(css)
           && /:is\([^)]*\.plan-ttl\) \.btn-quiet::before[^{]*\{[^}]*height: 44px/.test(fs.readFileSync(path.join(R, "planv3.css"), "utf8")), JSON.stringify(r));
@@ -1222,20 +1222,20 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
           r.lbl === TIP && r.tipOk && !/p3\.topup\b|p3\.topup"|plan\.topupShort/.test(r.texts) && r.fine === "", r.lbl + "|" + r.fine);
         PV_X = "8,880";
         r = D({ ...TRIAL, plan: { ...TRIAL.plan, next_cycle: "annual" } });
-        ok("v3 試用中、已排年繳:標題「· 年繳」、扣款列 8,880、續扣每 365 天", r.ttl.startsWith("[h6:p3.a.title · plan.cyc.annual|") && r.kv === 'p3.set.firstL|p3.set.firstV{"d":"' + md + '","p":"8,880"}' && r.rules[0] === 'p3.f.renew{"pd":"365"}', JSON.stringify(r));
+        ok("v3 試用中、已排年繳:標題「· 年繳」、扣款列 8,880;鈕上方照舊只一行", r.ttl.startsWith("[h6:p3.a.title · plan.cyc.annual|") && r.kv === 'p3.set.firstL|p3.set.firstV{"d":"' + md + '","p":"8,880"}' && JSON.stringify(r.rules) === JSON.stringify(["p3.f.trialEnds"]), JSON.stringify(r));
         PV_X = "";
         r = D({ ...TRIAL, plan: { ...TRIAL.plan, next_cycle: "annual" } });
         ok("…api 沒給下一期金額:年繳退報價的年價(不退月價 888)", r.kv === 'p3.set.firstL|p3.set.firstV{"d":"' + md + '","p":"8,880"}', r.kv);
         PV_P = ""; PV_Y = ""; PV_PD = "";
         r = D(TRIAL);
-        ok("…金額與一期天數都讀不到:扣款列右邊只放日期、續扣用 NoNum 句;不印空的 TWD", r.kv === "p3.set.firstL|" + md && JSON.stringify(r.rules) === JSON.stringify(["p3.f.renewNoNum", "p3.f.trialConvertNoNum"]) && !/TWD/.test(r.texts.replace(/p3\.set\.\w+|p3\.f\.\w+/g, "")), JSON.stringify(r));
+        ok("…金額與一期天數都讀不到:扣款列右邊只放日期;不印空的 TWD", r.kv === "p3.set.firstL|" + md && JSON.stringify(r.rules) === JSON.stringify(["p3.f.trialEnds"]) && !/TWD/.test(r.texts.replace(/p3\.set\.\w+|p3\.f\.\w+/g, "")), JSON.stringify(r));
         PV_P = "888"; PV_PD = "30"; PV_X = "888";
         r = D({ ...TRIAL, trial_cancel_at_end: true, plan: { ...TRIAL.plan, cancel_at_period_end: true } });
-        ok("v3 試用已取消:徽章換「已取消試用 · {d}結束」、沒有扣款列與續扣句,只留開主機那句;徽章後面〔到網站恢復試用〕(記 trial_resume_web)、鈕列只剩〔開雲端主機〕",
-          /^\[h6:p3\.a\.title · plan\.cyc\.monthly\|plan-badge:pv\.st\.trialCancelled\{[^\]]*\]\|btn-quiet:plan\.trialResume$/.test(r.ttl) && r.kv === "" && JSON.stringify(r.rules) === JSON.stringify(["p3.f.trialConvertNoNum"])
+        ok("v3 試用已取消:徽章換「已取消試用 · {d}結束」、沒有扣款列,鈕上方只留「開雲端主機會結束試用」;徽章後面〔到網站恢復試用〕(記 trial_resume_web)、鈕列只剩〔開雲端主機〕",
+          /^\[h6:p3\.a\.title · plan\.cyc\.monthly\|plan-badge:pv\.st\.trialCancelled\{[^\]]*\]\|btn-quiet:plan\.trialResume$/.test(r.ttl) && r.kv === "" && JSON.stringify(r.rules) === JSON.stringify(["p3.f.trialEnds"])
           && /\|btn-quiet:plan\.trialResume$/.test(r.ttl) && JSON.stringify(r.acts) === JSON.stringify(["btn-out:p3.h.title"]) && (featured.length = 0, r.head[0]._click(), featured.join() === "trial_resume_web"), JSON.stringify(r));
         r = D({ ...TRIAL, plan: { ...TRIAL.plan, no_auto_payment: "auto_topup_off" } });
-        ok("v3 試用中、到期不會扣(no_auto_payment／內部帳號):沒有扣款列、續扣句與取消鈕,只剩〔開雲端主機〕", r.kv === "" && r.head.length === 0 && JSON.stringify(r.rules) === JSON.stringify(["p3.f.trialConvertNoNum"]) && JSON.stringify(r.acts) === JSON.stringify(["btn-out:p3.h.title"])
+        ok("v3 試用中、到期不會扣(no_auto_payment／內部帳號):沒有扣款列、續扣句與取消鈕,只剩〔開雲端主機〕", r.kv === "" && r.head.length === 0 && JSON.stringify(r.rules) === JSON.stringify(["p3.f.trialEnds"]) && JSON.stringify(r.acts) === JSON.stringify(["btn-out:p3.h.title"])
           && D({ ...TRIAL, plan: { ...TRIAL.plan, next_charge_source: "free" } }).kv === "", JSON.stringify(r));
         r = D({ ...TRIAL, trial_gen: "v2" });
         ok("時閘前的試用(trial_gen 不是 v3):照現行那格(狀態列、pv.h.ready、兩顆分開),只換餘額 tooltip", /pv\.st\.trial/.test(r.st) && r.ttl === "" && /pv\.h\.ready/.test(r.texts) && r.actCls === "plan-act" && r.lbl === TIP, JSON.stringify(r));

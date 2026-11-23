@@ -54,6 +54,6 @@ const flush = () => new Promise((r) => setTimeout(r, 0));
     ok("先點自動下單再點策略組合(實測的繞路):一樣落在策略組合頁", view(c) === "po" && marked(c) === "po-nav", [view(c), marked(c)]); }
   { const c = await boot();
     c.poNavClick(); await flush(); c.poNavClick(); await flush();
-    ok("選中後再點一次:回歡迎頁,側欄標記一起拿掉(標記與畫面不會分家)", view(c) === "main-empty" && marked(c) === "", [view(c), marked(c)]); }
+    ok("選中後再點一次:停在策略組合、側欄標記照舊(導覽項是冪等的,不再切回歡迎頁;spec p3-0160 R5-11)", view(c) === "po" && marked(c) === "po-nav", [view(c), marked(c)]); }
   console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0);
 })();

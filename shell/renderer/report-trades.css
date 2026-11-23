@@ -145,3 +145,9 @@
 @media (prefers-reduced-motion: reduce) {
   .tr-row { transition: none; }
 }
+/* 十字線讀數(QA 0159 R4-1):每個 pane 左上一行,主圖 top 8;副圖 top 由 JS 照 pane 高算(在指標名下面)。不擋滑鼠 */
+.tr-read {
+  position: absolute; z-index: 2; top: var(--space-8); left: var(--space-8);
+  font-size: 12px; line-height: 1.4; color: var(--ink-2); font-variant-numeric: tabular-nums; white-space: pre; pointer-events: none;
+}
+.tr-read[hidden] { display: none; }

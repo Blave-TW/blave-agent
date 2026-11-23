@@ -777,7 +777,7 @@ function libPaintDesc() {
   if (!on) { d.textContent = t("lib.desc"); return; }
   d.append(libJoin(t("lib.desc"), t("idea.descLead")) + (LANG === "zh" ? "" : " "));
   const nw = libEl("span", "nw");
-  nw.append(libIdeaBtn("btn-quiet", "idea.link", "lib_head"), LANG === "zh" ? "\u3002" : ".");
+  nw.append(libIdeaBtn("btn-quiet hit44", "idea.link", "lib_head"), LANG === "zh" ? "\u3002" : ".");
   d.appendChild(nw);
 }
 // 找點子的入口鈕(頁首 / 第一組空):市場預設照清單選的市場
@@ -830,7 +830,7 @@ function libRow(s, sort) {
   const b = libEl("button", "lib-row"); b.type = "button"; b.dataset.id = String(s.id);
   const l = libEl("div", "lib-row-l"), l1 = libEl("div", "l1"), l2 = libEl("div", "l2");
   // 按鈕照內容唸(不另給 aria-label,看得到的 tag 才念得到):標題與 tag 之間塞空白文字節點,唸起來才不會黏在一起;flex 版面不畫它
-  l1.appendChild(libEl("span", "t", s.title)); libTags(s).forEach((x) => l1.append(" ", x));
+  const tt = libEl("span", "t", s.title); tt.title = s.title || ""; l1.appendChild(tt); libTags(s).forEach((x) => l1.append(" ", x));
   l2.append(...libSymbolNodes(s, true));
   if (sort === "installs") l2.append(" · ", libRich("lib.installs", { n: libMono(String(s.purchase_count)) }));
   else if (sort === "newest") { const d = libListedDays(s, Date.now()); if (d !== null) l2.append(" · ", libRich("lib.listedFor", { n: libMono(String(d)) })); }
@@ -1805,7 +1805,7 @@ function libChartDraw(host, r) {
 /* ── 接線(這支比 app.js 先載:只用 getElementById,不碰 app.js 的全域;handler 裡的才在點擊時取)── */
 (function libWire() {
   const g = (id) => document.getElementById(id);
-  g("lib-nav").addEventListener("click", () => { if (!libBag().open) libOpen(); else sideReclick(() => libLeave(), libBag().detail ? libBack : null); });   // 詳情先回列表;列表再點 = 回 welcome(trade.js sideReclick)
+  g("lib-nav").addEventListener("click", () => { if (!libBag().open) libOpen(); else sideReclick(null, libBag().detail ? libBack : null); });   // 詳情先回列表;已在列表什麼都不做(R5-11,trade.js sideReclick)
   g("lib-back").addEventListener("click", libBack);
   g("lib-mkt-trig").addEventListener("click", () => { if (g("lib-mkt-menu").hidden) libMktOpen(); else libMktClose(false); });
   g("lib-mkt-menu").addEventListener("click", (e) => { const b = e.target.closest(".ct-mi[data-mkt]"); if (b) libMktPick(b.dataset.mkt); });
