@@ -378,8 +378,8 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
         && withVI({ reason: "IP_CHANGED", ip: null }, () => cxFailWord("local")) === "cx.failShort"
         && ["TRADING_LOST", "KEY_REJECTED", "REJECTED"].every((r) => withVI({ reason: r, ip: "203.0.113.9" }, () => cxFailWord("local")) === "cx.failShort")
         && withVI({ reason: "IP_CHANGED", ip: "203.0.113.9" }, () => cxFailWord("cloud")) === "cx.failShort" && cxFailWord("local") === "cx.failShort");
-      ok("完整句只在標題下的狀態行(trStateText 出自 cxFailWord);頂列 trShortState 仍是短詞 cx.failShort(稽核 S3:en 版 IP 會被省略號切掉)", /\? cxFailWord\(TR\.env\) \+ " · " \+ s : s;/.test(fn("trStateText")) && !/t\("cx\.failShort"\)/.test(fn("trStateText"))
-        && /\? t\("cx\.failShort"\) \+ \(s \? " · " \+ s : ""\) : s;/.test(fn("trShortState")) && !/cxFailWord/.test(fn("trShortState")));
+      ok("完整句只在標題下的狀態行(trStateParts 的 fail 出自 cxFailWord);頂列 trStateShort 仍是短詞 cx.failShort(稽核 S3:en 版 IP 會被省略號切掉)", /if \(bad\) \{ p\.fail = cxFailWord\(TR\.env\); p\.bad = true; \}/.test(fn("trStateParts")) && !/t\("cx\.failShort"\)/.test(fn("trStateParts"))
+        && /return p\.bad \? t\("cx\.failShort"\) \+ \(p\.top \? " · " \+ p\.top : ""\) : p\.top;/.test(fn("trStateShort")) && !/cxFailWord/.test(fn("trStateShort")));
       globalThis.t = tOld; } }
   // 設計 v4 §7:下單停了而且不是人按的(監督者被叫去跑、卻沒在跑)= 出事,沿用「已自動暫停」那一套;你還沒按啟動 = 沒有記號
   { const dead = (wanted, hb) => ({ alive: true, report: rep({ reconciler: { alive: false, heartbeat_at: hb }, daemon: { reconciler: { wanted, running: false } } }) });
@@ -400,15 +400,46 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
   ok("A 另一邊的詞進得了 title / aria-label:真錢 + 已自動暫停(看過之後詞還在);下單中;未登入;平常什麼都沒有", W(halted) === "tr.mode.real|env.st.autoPaused" && W(envCell("cloud", cloudSt(okc("running")))) === "tr.mode.real|tr.autoOn"
     && W(envCell("cloud", cloudSt({ code: "NO_LOGIN" }, null))) === "null|env.st.signedOut" && W(envCell("local", { alive: true, report: rep({ venues: P, account: null, halt: { halted: true, source: "web" } }) })) === "tr.mode.paper|null");
   ok("trPaintHead 裡沒有未宣告的 st(踩過:雲端正常讀得到時整頁丟 ReferenceError、標題停在上一邊的字)", !/(^|[^.\w])st\b/.test(fn("trPaintHead")));
-  // 設計師 R2-1:同一份狀態下,切換器那一格的詞(tooltip)= 標題描述 = 頂列右邊那一句(後兩者都出自 trStateText)
+  // 設計師 R2-1:同一份狀態下,切換器那一格的詞(tooltip)= 標題描述 = 頂列右邊那一句(後兩者都出自 trStateParts)
   const same = (st) => envCell(st.cloud ? "cloud" : "local", st, false).word === envHeadWord(envHeadState(st, 1e12), st);
   const autoH = { halt: { halted: true, source: "reconciler", at: "t1" } }, userH = { halt: { halted: true, source: "web", at: "t1" } };
   ok("R2-1 三處同一個詞:自動暫停(雲端 / 這台電腦)、已停機;人按的暫停與下單中都沒有特別的詞", [cloudSt(okc("running"), rep(autoH)), { alive: true, report: rep(autoH) }, cloudSt(okc("stopped", { stale: true }), rep(), false), cloudSt(okc("running"), rep(userH)), cloudSt(okc("running")), { alive: true, report: rep() }].every(same)
     && envHeadWord("halted", cloudSt(okc("running"), rep(autoH))) === "env.st.autoPaused" && envHeadWord("halted", cloudSt(okc("running"), rep(userH))) === null && envHeadWord("dead", cloudSt(okc("stopped"), rep(), false)) === "side.stopped");
-  ok("R2-1 寫法:trStateText 的暫停與停機兩句都出自 envHeadWord 那兩個 key", /envHeadWord\(state, TR\.st\) !== "env\.st\.autoPaused" \? t\("tr\.halted"\) : t\("env\.st\.autoPaused"\)/.test(fn("trStateText")) && /=== "stopped"\) return t\("side\.stopped"\)/.test(fn("trStateText")));
+  ok("R2-1 寫法:trStateParts 的暫停與停機兩句都出自 envHeadWord 那兩個 key(頂列詞與標題下同一個 w)", /envHeadWord\(state, TR\.st\) !== "env\.st\.autoPaused" \? t\("tr\.halted"\) : t\("env\.st\.autoPaused"\); p = P\(w, w, /.test(fn("trStateParts")) && /=== "stopped"\) return P\(t\("side\.stopped"\), t\("side\.stopped"\)\)/.test(fn("trStateParts")));
   ok("側欄頂不再寫「雲端 / 這台電腦」(Wei):DOM、CSS、程式、字串都沒有 envhead 與「主機運行中」", !/envhead/.test(html + code + fs.readFileSync(path.join(R, "trade.css"), "utf8")) && !/side\.cloud\.(running|headAria|stopped)/.test(code + fs.readFileSync(path.join(R, "strings.js"), "utf8")));
   const cellSrc = fn("envPaintCell");
   ok("A 格內不再放錢記號與狀態詞(只 append 圖示與一個記號);詞進 title 與 aria-label", (cellSrc.match(/b\.appendChild\(/g) || []).length === 2 && !/"mode |"w"|"w /.test(cellSrc) && /b\.title = tip \+/.test(cellSrc) && /setAttribute\("aria-label", tip\)/.test(cellSrc) && /aria-keyshortcuts/.test(cellSrc));
+  { // 0.1.61 設計落地稽核 S1:看得見那一格的 tooltip／aria-label 狀態詞 = 頂列那句(tbState);另一格照 envCell;記號、看過才消、播報照 c.word
+    const vm = require("vm"), btn = () => ({ attrs: {}, kids: [], title: "", textContent: "", setAttribute(k, v) { this.attrs[k] = v; }, appendChild(x) { this.kids.push(x); } });
+    const B = { "env-local": btn(), "env-cloud": btn() }, said = [];
+    const ctx = vm.createContext({ JSON, Date, LANG: "zh", ENV: { cur: "local", seen: {}, cells: {}, said: {} }, TR: { st: {} }, $: (id) => B[id], t: (k, v) => v ? k + "(" + Object.values(v).join("|") + ")" : k,
+      envIcon: () => ({}), trEl: () => ({ setAttribute() {} }), envName: (e) => e, envMoneyText: (m) => m, srSay: (x) => said.push(x), envCellMark: () => null,
+      envCellWords: (c) => ({ money: c.money ? "m" : null, state: c.word || null }), envHeadState: () => "halted", trTbText: () => (ctx.HAS ? ctx.TB : "") });
+    vm.runInContext(fn("envPaintCell"), ctx);
+    const paint = (env, c) => vm.runInContext("envPaintCell", ctx)(env, c);
+    const cell = { money: "real", word: "env.st.autoPaused", sig: null };
+    ctx.HAS = true; ctx.TB = "已暫停"; paint("local", cell); paint("cloud", cell);
+    const onTip = B["env-local"].attrs["aria-label"], offTip = B["env-cloud"].attrs["aria-label"];
+    ctx.TB = "串接失敗 · 已暫停"; paint("local", cell); const onTip2 = B["env-local"].attrs["aria-label"], onTitle2 = B["env-local"].title;
+    ctx.HAS = false; paint("local", { money: null, word: "env.st.signedOut", sig: null }); const noTb = B["env-local"].attrs["aria-label"];
+    ok("S1 看得見那一格:aria-label 與 title 的狀態詞 = 頂列那句(含「串接失敗 · 」、頂列一變就重畫);另一格照 envCell 的詞;頂列沒詞時退回 envCell",
+      onTip === "env.tip(local|real|已暫停)" && offTip === "env.tip(cloud|real|env.st.autoPaused)" && onTip2 === "env.tip(local|real|串接失敗 · 已暫停)" && onTitle2.indexOf(onTip2) === 0
+      && noTb === "env.tip1(local|env.st.signedOut)");
+    // 稽核 B1:雲端主機在跑、連不上(alive false / transient)或回報過舊(stale):看得見那格不念「執行中」,同頂列與系統匣「讀不到狀態」。這段跑 production 的 trTbHas / trTbUnsure / trTbText
+    const said0 = said.length;
+    vm.runInContext(["trTbHas", "trTbUnsure", "trTbText"].map(fn).join("\n"), ctx);
+    Object.assign(ctx, { envCloudKind, trVenueId: () => "binance", envHeadState: () => "running", trStateShort: () => "執行中", trStateParts: () => ({}) });
+    const cloudTip = (alive, c0) => { ctx.ENV.cur = "cloud"; ctx.TR = { env: "cloud", st: { alive, cloud: { code: "OK", machine: { state: "running" }, last_ok_at: Date.now() - 60000, ...c0 }, report: {} } };
+      paint("cloud", { money: "real", word: null, sig: null }); return B["env-cloud"].attrs["aria-label"] + "|" + B["env-cloud"].title; };
+    const tTr = cloudTip(false, { transient: true }), tDead = cloudTip(false, {}), tStale = cloudTip(true, { stale: true }), tOk = cloudTip(true, {});
+    // 稽核 B3:上一份回報是 unconfirmed 時危險詞不降級(trStateShort 回什麼就念什麼)
+    ctx.envHeadState = () => "unconfirmed"; ctx.trStateShort = () => "可能仍在下單";
+    const uTr = cloudTip(false, { transient: true }), uSt = cloudTip(true, { stale: true });
+    ctx.envHeadState = () => "running"; ctx.trStateShort = () => "執行中";
+    ok("B1 雲端連不上／回報過舊:切換器看得見那格 tooltip 與 aria-label 是「讀不到狀態」(tm.stUnknown),不念執行中;連得上照念頂列那句;上一份是可能仍在下單就照念(B3)",
+      [tTr, tDead, tStale].every((x) => x.indexOf("tm.stUnknown") >= 0 && x.indexOf("執行中") < 0) && tOk.indexOf("執行中") >= 0 && said.length === said0
+      && [uTr, uSt].every((x) => x.indexOf("可能仍在下單") >= 0 && x.indexOf("tm.stUnknown") < 0));
+    ok("S1 播報與看過才消照舊用 c.word / c.sig(不改成頂列那句)", said.every((x) => !/已暫停/.test(x)) && /const word = c\.word \? t\(c\.word\) : "";/.test(cellSrc) && /if \(c\.sig && on\) ENV\.seen\[env\] = c\.sig;/.test(cellSrc)); }
   const css = fs.readFileSync(path.join(R, "trade.css"), "utf8");
   ok("A 選中格不反白(不用 --control-fill)、格寬固定 36(chat-tabs §13.13.2)", !/\.envsw[^{]*\{[^}]*--control-fill/.test(css) && /\.envsw button \{[^}]*width: 36px/.test(css) && /\.envsw button\[aria-pressed="true"\] \{[^}]*--surface-segment-on/.test(css));
   { const appCss = fs.readFileSync(path.join(R, "app.css"), "utf8");
@@ -438,7 +469,7 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
     && envHeadState(repAged(0.5, { last_ok_at: NOW + 3 * 3600e3 - 1000, fetched_at: NOW + 3 * 3600e3 - 1000 }), NOW + 3 * 3600e3) === "running");
   ok("R3 拿到之後又擱了很久也算進去(50 分鐘前的回報 + 擱了 20 分鐘);沒有 server_time 就只看連線那一條", envHeadState(repAged(50 / 60, { last_ok_at: NOW - 20 * MIN, fetched_at: NOW - 20 * MIN, server_time: (NOW - 20 * MIN) / 1000, reported_at: (NOW - 70 * MIN) / 1000 }), NOW) === "unknown"
     && envHeadState(repAged(2, { server_time: null }), NOW) === "running");
-  ok("雲端不知道現況:不放主鈕(鈕字不替它下結論)、標題用中性那句", /\(ro && state === "unknown"\)\)\) \{ if \(b\) \{ if \(document\.activeElement === b\) \$\("tr-h"\)\.focus\(\); b\.remove\(\); \} trPaintGoStop\(false\); trPaintNoAmt\(pend\); trPaintGoRel\(b0, b0\); return; \}/.test(fn("trPaintHead")) && /state === "unknown"\) return t\("tr\.cloud\.unknown"\)/.test(fn("trStateText")));
+  ok("雲端不知道現況:不放主鈕(鈕字不替它下結論)、標題用中性那句", /\(ro && state === "unknown"\)\)\) \{ if \(b\) \{ if \(document\.activeElement === b\) \$\("tr-h"\)\.focus\(\); b\.remove\(\); \} trPaintGoStop\(false\); trPaintNoAmt\(pend\); trPaintGoRel\(b0, b0\); return; \}/.test(fn("trPaintHead")) && /state === "unknown"\) return P\(null, null, t\("tr\.cloud\.unknown"\)\)/.test(fn("trStateParts")));
   // ── 稽核 N2:紅字看「多久沒成功」,不是畫面讀了幾次 ──
   const T = 1e12, snap = { transient: "OFFLINE", last_ok_at: T };
   ok("N2 同一份 snapshot 讀三次(一次網路抖動)不出紅字;超過三個週期才出;讀得到就收", [0, 16000, 32000].every((d) => envUnreachAlert(snap, T + d) === false) && envUnreachAlert(snap, T + ENV_UNREACH_MS + 1) === true

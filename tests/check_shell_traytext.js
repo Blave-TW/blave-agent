@@ -37,7 +37,7 @@ t("主機重開後對帳器停著(reconciler.stopped.reason = machine_restart)�
   t("…已按暫停 → 已暫停;gated true / 缺欄位 → 已暫停;缺 stMayTrade 那個字 → 整行不顯示",
     cloudLine(Cg({ gated: false }, { halted: true })).state === "paused" && cloudLine(Cg({ gated: true })).state === "paused" && cloudLine(Cg({})).state === "paused"
     && statusLine(TPL, cloudLine(Cg({ gated: false })), L) === null); }
-{ // 「讀不到狀態」只給真的讀不到(連不上 / 回報過舊);讀得到、對帳器只是沒在跑 = 雲端頁同一句「尚未啟動下單」(trade.js trStateText 的 dead)
+{ // 「讀不到狀態」只給真的讀不到(連不上 / 回報過舊);讀得到、對帳器只是沒在跑 = 雲端頁同一句「尚未啟動下單」(trade.js trStateParts 的 dead)
   const S = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8");
   const zh = (k) => { const i = S.indexOf("zh:"), m = new RegExp('"' + k.replace(/\./g, "\\.") + '": "([^"]*)"').exec(S.slice(i)); return m && m[1]; };
   const en = (k) => { const m = new RegExp('"' + k.replace(/\./g, "\\.") + '": "([^"]*)"').exec(S.slice(0, S.indexOf("zh:"))); return m && m[1]; };

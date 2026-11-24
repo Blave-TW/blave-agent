@@ -549,7 +549,7 @@ function presPaint() {
 }
 function presFootRestore() { const go = $("cx-go"); go.classList.remove("is-busy"); }
 
-// 帳戶讀取器的 positions(同主行程 president_local.heldLots);trade.js trStateText 用它在狀態句尾接「電腦保持清醒」
+// 帳戶讀取器的 positions(同主行程 president_local.heldLots);trade.js trStateParts 用它在狀態句尾接「電腦保持清醒」
 function presHeldLots(report) {
   const a = report && report.account && report.account.venues && report.account.venues[PRESIDENT];
   const p = a && a.positions && typeof a.positions === "object" ? a.positions : {};

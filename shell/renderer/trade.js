@@ -1631,7 +1631,7 @@ function envAutoHalt(st) {
    切換器不可以還亮綠點(設計師必改 6)。只是沒設白名單不算(那不是 verdict)。細節在設定分頁帳戶那一列。 */
 function trKeyBad(env) { return env !== "cloud" && typeof CXF !== "undefined" && !!(CXF.bn && CXF.bn.verdict); }
 // 標題下狀態行的「串接失敗」那個詞:IP 換了就把新 IP 講進去(光寫「串接失敗」用戶不知道是去 Binance 改白名單);其他 reason 照舊短詞。
-// 只改呈現,判定仍是 binance_link 的 verdict;拿不到 IP(verdict.ip 只收驗過的 IPv4)就退回短詞。頂列(trShortState)不用它:那裡是短詞、en 版會被省略號切掉 IP
+// 只改呈現,判定仍是 binance_link 的 verdict;拿不到 IP(verdict.ip 只收驗過的 IPv4)就退回短詞。頂列(trStateShort)不用它:那裡是短詞、en 版會被省略號切掉 IP
 function cxFailWord(env) { const v = trKeyBad(env) ? CXF.bn.verdict : null; return v && v.reason === "IP_CHANGED" && v.ip ? t("cx.failIp", { ip: v.ip }) : t("cx.failShort"); }
 function envCell(env, st, pending) {
   const kind = env === "cloud" ? envCloudKind(st) : "running";
@@ -2351,7 +2351,7 @@ async function trOpen(tab) {
   if (typeof rptLeave === "function") rptLeave(S.env);   // 報告也收(renderer/reports.js)
   if (S !== TR_BAGS[ENV.cur]) { S.open = true; return; }   // 等的時候切走了:只記下這一邊是開著的,不碰另一邊的畫面
   if (S.env === "local" && typeof trOnbReset === "function") trOnbReset();   // 每次進這一頁重判清單空那張卡(§B3)
-  S.open = true; S.view = "tr"; S.sig = {}; ENV.sig.tb = null;
+  S.open = true; S.view = "tr"; S.sig = {};
   envShowMain();
   trPaint();
   if (tab && !$("tr-tabs").hidden) trSetTab(tab);   // 指定分頁的入口(之後的通知、狀態帶)一律走 trSetTab:底線、tabindex、面板三件事一起換
@@ -2363,7 +2363,7 @@ function trLeave(env) {
   if (!L.open) return;
   L.open = false;
   if (e === "local" && typeof trOnbReset === "function") trOnbReset();
-  if (ENV.cur === e) { $("tr").hidden = true; $("po").hidden = true; $("tr-nav").removeAttribute("aria-current"); $("po-nav").removeAttribute("aria-current"); ENV.sig.tb = null; trPaintHead(); }   // 離開這頁:頂列換成短狀態詞
+  if (ENV.cur === e) { $("tr").hidden = true; $("po").hidden = true; $("tr-nav").removeAttribute("aria-current"); $("po-nav").removeAttribute("aria-current"); }
 }
 function trRepaint() { TR.sig = {}; TR_BAGS.local.sig = {}; ENV.sig = {}; ENV.cells = {}; trPaint(); if (!$("cx-scrim").hidden) cxModalPaint(); }
 
@@ -2394,83 +2394,88 @@ function trRunZText(r) {
   return zc === "draft" ? t("tr.runningZDraft") : zc === "pick" ? t("tr.runningZPick") : zc === "noStrat" ? t("tr.runningZNoStrat") : zc === "noVenue" ? t("tr.runningZNoVenue", { venue: trVenueLabel(trVenueId(), true) })
     : zc === "amt" ? t("tr.runningZZero") : t("tr.runningZ");
 }
-function trStateText(state) {
+/* 狀態句拆段(spec-paused §2.4):頂列與標題下都從這一份來,不另判(§3)。
+   top = 頂列短詞;lead = 標題下開頭那段狀態詞(頂列有詞時不畫);tail = 原因、時間與出口;fail = 讀帳失敗前綴(cxFailWord,只在標題下);bad = 頂列接「串接失敗」。
+   狀態寫在同一句話裡、帶出口的(異常停止、下單機起不來、登入已停止…)lead 給 null、整句放 tail:拆了文法會斷、出口跟著不見(規則 1) */
+function trStateParts(state) {
   const r = trReport() || {}, rec = r.reconciler || {};
+  const P = (top, lead, tail) => ({ top: top || "", lead: lead || null, tail: tail || "", fail: null, bad: false });
   // 雲端:主機停機就講停機(心跳那一句在這裡沒有意義);主機那一輪沒回報成功 = 讀不到,不沿用寫死「這台電腦」的那兩句
   if (TR.env === "cloud") {
-    if (envCloudKind(TR.st) === "stopped") return t("side.stopped");
-    if (state === "unknown") return t("tr.cloud.unknown");
+    if (envCloudKind(TR.st) === "stopped") return P(t("side.stopped"), t("side.stopped"));
+    if (state === "unknown") return P(null, null, t("tr.cloud.unknown"));
   }
   // 過場中講過場(設計師 A-2):不能一邊亮綠點一邊寫「對帳沒有在跑」
-  if (TR.pending) return TR.pending.want === "halted" ? t("tr.stopping") : TR.pending.want === "released" ? t("tr.releasing") : TR.pending.want === "acct" ? t("tr.acct.confirming") : t("tr.starting");
+  if (TR.pending) { const w = TR.pending.want === "halted" ? t("tr.stopping") : TR.pending.want === "released" ? t("tr.releasing") : TR.pending.want === "acct" ? t("tr.acct.confirming") : t("tr.starting"); return P(w, w); }
   // 常駐程式不在跑:誠實講,並給出口(重試中 / 起不來請重開 Blave)。灰字,同其他故障
   const down = trHostDown(TR.st, Date.now());
-  if (down === "lock") { const k = TR.st.lockRetry; return t("tr.hostLock", { n: Math.max(1, Math.min(Number(k.attempt) || 1, 99)), max: Math.max(1, Math.min(Number(k.max) || 4, 99)) }); }
+  if (down === "lock") { const k = TR.st.lockRetry; return P(t("tr.hostShort"), null, t("tr.hostLock", { n: Math.max(1, Math.min(Number(k.attempt) || 1, 99)), max: Math.max(1, Math.min(Number(k.max) || 4, 99)) })); }
   const zS = trNoAmounts(r) && !trRestartUnconfirmed(r);   // Z:狀態句不叫人按停用的「啟動下單」(v2 §9-1)
-  if (down) return down === "retry" ? t(zS ? "tr.hostRetryZ" : "tr.hostRetry") : t("tr.hostDown");
+  if (down) return P(t("tr.hostShort"), null, down === "retry" ? t(zS ? "tr.hostRetryZ" : "tr.hostRetry") : t("tr.hostDown"));
   // 第一份報告還在路上:通用的「載入中…」只有在「不知道在等誰、多久、會不會自己好」時才該用,這裡三件事都知道(spec §1 規則 5)
-  if (state === "loading") return TR.env === "cloud" ? t("tr.cloud.hdFetching") : trLoadingText();
-  if (state === "unknown") return t("tr.unknown");
+  if (state === "loading") return P(null, null, TR.env === "cloud" ? t("tr.cloud.hdFetching") : trLoadingText());
+  if (state === "unknown") return P(null, null, t("tr.unknown"));
   // 永豐(這台電腦):登入停了 = 紅記號那句,出口在主鈕旁的〔重新登入〕;自動重試中 = 下一次重試的時刻,沒有鈕(spec §6.1)
   // 兩個視角同一句(spec §1.2 雲端流程逐字同;設計稽核 M3)
-  if ((typeof trSpHeldRun === "function" && trSpHeldRun(state, r))) return t("sp.head.stopped");
-  if (state === "running" && trVenueIds(r).indexOf("sinopac") >= 0) { const at = (typeof trSpRetryAt === "function" ? trSpRetryAt(r, "sinopac") : null); if (at !== null) return t("sp.head.retry", { time: (at > 0 && typeof spHm === "function" && spHm(at)) || "—" }); }
-  if (trPresHeldRun(state, r)) return t(TR.env === "cloud" ? "tr.presStoppedCloud" : "tr.presStopped");   // 不接「串接失敗」前綴,出口在主鈕旁的〔重新登入〕
-  if (state === "setup") return trVenueLabel(trVenueIds(r)[0], true) + " · " + t("cap.pending");   // 開通中(統一／群益本機):不接「串接失敗」前綴、不講已暫停
+  if ((typeof trSpHeldRun === "function" && trSpHeldRun(state, r))) return P(t("sp.st.stopped"), null, t("sp.head.stopped"));
+  if (state === "running" && trVenueIds(r).indexOf("sinopac") >= 0) { const at = (typeof trSpRetryAt === "function" ? trSpRetryAt(r, "sinopac") : null); if (at !== null) return P(t("sp.st.retry"), null, t("sp.head.retry", { time: (at > 0 && typeof spHm === "function" && spHm(at)) || "—" })); }
+  if (trPresHeldRun(state, r)) return P(t("tr.s.presStopped"), null, t(TR.env === "cloud" ? "tr.presStoppedCloud" : "tr.presStopped"));   // 不接「串接失敗」前綴,出口在主鈕旁的〔重新登入〕
+  if (state === "setup") return P(t("cap.pending"), trVenueLabel(trVenueIds(r)[0], true) + " · " + t("cap.pending"));   // 開通中(統一／群益本機):不接「串接失敗」前綴、不講已暫停;交易所名已在頂列記號裡
   // 雲端剛存了金鑰 / 模擬帳戶、主機還沒回報(S5):標頭不跟內文打架——「連接中…」,過了上限「沒有收到主機確認」(v2 §5)
-  if (state === "noaccount" && TR.env === "cloud" && TR.cxSaved) return trCxSavedStale(TR.cxSaved, Date.now()) ? t("tr.cloud.hdNoConfirm")
-    : trCxAssumed(TR.cxSaved, Date.now()) ? t("tr.cloud.hdFetching") : t("tr.cloud.hdConnecting");
-  if (state === "noaccount") return trNoAccountStopped(r) ? t("tr.halted") + " · " + t("tr.cloud.restartNoAccountZ") : t("tr.noAccount");
+  if (state === "noaccount" && TR.env === "cloud" && TR.cxSaved) return P(null, null, trCxSavedStale(TR.cxSaved, Date.now()) ? t("tr.cloud.hdNoConfirm")
+    : trCxAssumed(TR.cxSaved, Date.now()) ? t("tr.cloud.hdFetching") : t("tr.cloud.hdConnecting"));
+  if (state === "noaccount") return P(null, null, trNoAccountStopped(r) ? t("tr.halted") + " · " + t("tr.cloud.restartNoAccountZ") : t("tr.noAccount"));
   // 下單程式在跑、但沒有任何策略設金額(§8):不寫「自動下單執行中」——那讀起來像在照策略下單
-  let s = trNoAmounts(r) ? t("tr.runningZ") : t("tr.autoOn");
+  const on = state === "running" ? t("tr.s.on") : null;
+  let p = P(on, t("tr.autoOn"));
+  if (trNoAmounts(r)) { p = P(on, ...trLeadCut(t("tr.runningZ"))); p.z = true; }
   // 主機重開、沒能確認停住:狀態詞「可能仍在下單」+ 紅字原因行(先暫停、再更新)。不提早 return:讀帳失敗的前綴照樣要接
-  if (state === "unconfirmed") s = t("tr.cloud.mayTrade") + " · " + t("tr.cloud.restartUnconfirmed");
+  if (state === "unconfirmed") p = P(t("tr.cloud.mayTrade"), t("tr.cloud.mayTrade"), t("tr.cloud.restartUnconfirmed"));
   /* 已暫停一律帶原因行(常駐、不截斷):重開過 = 什麼單都不下(B,優先);HALT = 不開新倉、平倉停損照走(A)。
      兩者同時成立(先按暫停、之後又重開)講 B——那時「平倉照常」已經不成立 */
   // 暫停中又遇到統一登入停了:平倉與停損也送不出去,不接 HALT 那句「平倉照常」(設計複查 v045 R3)
-  else if (state === "halted" && trVenueIds(r).indexOf("president") >= 0 && trPresLoginHeld(r, "president")) s = t("tr.halted") + " · " + t(TR.env === "cloud" ? "tr.presStoppedCloud" : "tr.presStoppedHalted");
-  else if (state === "halted" && trVenueIds(r).indexOf("sinopac") >= 0 && typeof trSpLoginHeld === "function" && trSpLoginHeld(r, "sinopac")) s = t("tr.halted") + " · " + t("sp.head.stoppedHalted");   // 永豐登入停了:平倉也送不出去,不接 HALT 那句「平倉照常」
+  else if (state === "halted" && trVenueIds(r).indexOf("president") >= 0 && trPresLoginHeld(r, "president")) p = P(t("tr.halted"), t("tr.halted"), t(TR.env === "cloud" ? "tr.presStoppedCloud" : "tr.presStoppedHalted"));
+  else if (state === "halted" && trVenueIds(r).indexOf("sinopac") >= 0 && typeof trSpLoginHeld === "function" && trSpLoginHeld(r, "sinopac")) p = P(t("tr.halted"), t("tr.halted"), t("sp.head.stoppedHalted"));   // 永豐登入停了:平倉也送不出去,不接 HALT 那句「平倉照常」
   else if (state === "halted") { const rk = trRestartKind(r), ask = trAcctAsk(r), done = !trBookHold(r) && TR.acctDone && (TR.acctDone.outcome === "kept" || TR.acctDone.outcome === "reset");
-    s = !ask && !done && trAppRestartQuiet(r) ? t("tr.notStarted")
-      : (ask ? t("env.st.autoPaused") : done || rk || envHeadWord(state, TR.st) !== "env.st.autoPaused" ? t("tr.halted") : t("env.st.autoPaused")) + " · "
-      + trHaltReasonText(r, TR.acctDone); }
+    if (!ask && !done && trAppRestartQuiet(r)) p = P(t("tr.s.off"), t("tr.notStarted"));
+    else { const w = ask ? t("env.st.autoPaused") : done || rk || envHeadWord(state, TR.st) !== "env.st.autoPaused" ? t("tr.halted") : t("env.st.autoPaused"); p = P(w, w, trHaltReasonText(r, TR.acctDone)); } }
   // 「尚未啟動下單」講的是狀態、不是叫人按鈕(§12:不需要 Z 變體);「停了、不是你按的」在 Z 時去掉尾巴
-  else if (state === "dead") s = trDeadKind(r) === "died" ? t(zS ? "tr.diedZ" : "tr.died", { t: rec.heartbeat_at ? trStamp(rec.heartbeat_at) : "—" })
-    : rec.heartbeat_at ? t("tr.notStarted") + " · " + t("tr.lastRun", { t: trStamp(rec.heartbeat_at) }) : t("tr.notStarted");
+  else if (state === "dead") p = trDeadKind(r) === "died" ? P(t("tr.s.died"), null, t(zS ? "tr.diedZ" : "tr.died", { t: rec.heartbeat_at ? trStamp(rec.heartbeat_at) : "—" }))
+    : P(t("tr.s.off"), t("tr.notStarted"), rec.heartbeat_at ? t("tr.lastRun", { t: trStamp(rec.heartbeat_at) }) : "");
   // 在跑、統一有口在倉(只在這台電腦、Windows):同一句尾接「電腦保持清醒」——設計師裁定 A,不另立橫幅、不講「不會平倉」
-  else if (!trNoAmounts(r) && TR.env === "local" && window.blave.platform === "win32") { const lots = presHeldLots(r); if (lots > 0) s += " · " + t("tr.presAwake", { n: lots }); }
+  else if (!trNoAmounts(r) && TR.env === "local" && window.blave.platform === "win32") { const lots = presHeldLots(r); if (lots > 0) p.tail = t("tr.presAwake", { n: lots }); }
   // 統一下單程式剛起來、第一筆帳戶回報還沒回來:中性句,不講失敗也不講「尚未啟動」(讀到帳戶或 60 秒後照舊;對帳器自己掛了的照講)
-  if (state === "dead" && trDeadKind(r) !== "died" && trPresBooting(r, Date.now())) return t("tr.presBooting");
-  // 讀帳失敗標在狀態行最前面(細節在 設定 分頁的帳戶段);頁面與暫停鈕照常在
+  if (state === "dead" && trDeadKind(r) !== "died" && trPresBooting(r, Date.now())) return P(t("tr.presBooting"), t("tr.presBooting"));   // 頂列同一句,標題下去掉後沒字(設計落地稽核 M1;Wei 裁定用 tr.presBooting)
+  // 讀帳失敗標在狀態行最前面(細節在 設定 分頁的帳戶段);頁面與暫停鈕照常在。頂列接短詞 cx.failShort(en 版 IP 會被省略號切掉)
   // 失敗而且下單程式沒在跑:整句換成帶出口的那一句(到「設定」),不把三個狀態串成一串(設計稽核 desktop-10-08 #7)
-  if (trFailStopped(state, r)) return t("cx.failStopped");
-  return trFailedIds(r).length || trKeyBad(TR.env) ? cxFailWord(TR.env) + " · " + s : s;
+  const bad = trFailedIds(r).length > 0 || trKeyBad(TR.env);
+  if (bad && trFailStopped(state, r)) { const q = P(p.top, null, t("cx.failStopped")); q.bad = true; return q; }
+  if (bad) { p.fail = cxFailWord(TR.env); p.bad = true; }
+  return p;
 }
-/* 標題下那一行 = trStateText 再換兩處(spec-autotrade-empty;trStateText 本身照舊,其餘各態不受影響):
+// 固定格式「狀態詞 · 其餘」的字串(tr.runningZ* 兩語都是)切成 [lead, tail];不是拿頂列短詞去比對
+function trLeadCut(s) { const i = s.indexOf(" · "); return i < 0 ? [null, s] : [s.slice(0, i), s.slice(i + 3)]; }
+// 整句:讀屏、title、TR.lastSaid 與沒有頂列詞時看得到的那一行
+function trStateJoin(p) { return [p.fail, p.lead, p.tail].filter(Boolean).join(" · "); }
+// 頂列那一句:不帶時間、不帶出口。沒連交易所、讀取中、讀不到不出(trTbHas)
+function trTbHas(state) { return state !== "noaccount" && state !== "loading" && state !== "unknown" && !!trVenueId(); }
+// 雲端主機在跑、但這一刻連不上或回報過舊:envHeadState 沿用上一份回報,頂列與切換器那格不能因此講「執行中」——同系統匣「讀不到狀態」(稽核 B1)
+function trTbUnsure() { const c = TR.env === "cloud" && TR.st && TR.st.cloud; return !!c && envCloudKind(TR.st) === "running" && (!TR.st.alive || !!c.transient || !!c.stale); }
+// 例外:上一份回報說「可能仍在下單」就照講(危險詞不降級,稽核 B3)
+function trTbText(state, p) { return !trTbHas(state) ? "" : trTbUnsure() && state !== "unconfirmed" ? t("tm.stUnknown") : trStateShort(p || trStateParts(state)); }
+function trStateShort(p) { return p.bad ? t("cx.failShort") + (p.top ? " · " + p.top : "") : p.top; }
+/* 標題下那一行 = trStateParts 再換兩處(spec-autotrade-empty;其餘各態不受影響):
    ① 下單程式在跑、沒有金額:「還沒有策略設定金額」換成缺的那一步(§6-2);
    ② 純 Z 還沒啟動:「尚未啟動下單(· 上次執行)」不寫,缺哪一步那句搬到這一行;霧開著或等回報時空著(v2 §2)。
    只認 dead 分支自己那句(異常停止、統一開機中、串接失敗停著、過場、常駐程式不在跑都是別的字,照舊) */
-function trHeadText(state, zg) {
-  const s = trStateText(state), r = trReport() || {}, rz = t("tr.runningZ"), ns = t("tr.notStarted");
-  if (s.length >= rz.length && s.slice(s.length - rz.length) === rz) return s.slice(0, s.length - rz.length) + trRunZText(r);
-  if (state === "dead" && zg && zg.status !== null && (s === ns || s.indexOf(ns + " · ") === 0)) return zg.status ? t(zg.status, trZVars(zg.status)) : "";
-  return s;
+function trHeadParts(state, zg) {
+  const p = trStateParts(state), r = trReport() || {};
+  if (p.z) { const [lead, tail] = trLeadCut(trRunZText(r)); return { ...p, lead, tail }; }
+  if (state === "dead" && zg && zg.status !== null && !p.fail && p.lead === t("tr.notStarted")) return { ...p, lead: null, tail: zg.status ? t(zg.status, trZVars(zg.status)) : "" };
+  return p;
 }
 /* 讀帳失敗 + 下單程式沒在跑(停著、或 HALT 但對帳器不在):統一登入失敗停掉就是這一型。HALT 中對帳器還活著的不算(它在跑) */
 function trFailStopped(state, r) { return (trFailedIds(r).length > 0 || trKeyBad(TR.env)) && (state === "dead" || (state === "halted" && !trRecRunning(TR.st))); }
-/* 頂列用的短狀態詞(§6):不帶時間、不帶出口;完整句留給標題下那一行。字面 key 一個一個寫(check_shell_strings 靠字面掃) */
-function trShortState(state) {
-  const r = trReport() || {};
-  if (TR.env === "cloud" && envCloudKind(TR.st) === "stopped") return t("side.stopped");
-  if (TR.pending) return TR.pending.want === "halted" ? t("tr.stopping") : TR.pending.want === "released" ? t("tr.releasing") : TR.pending.want === "acct" ? t("tr.acct.confirming") : t("tr.starting");
-  if (trHostDown(TR.st, Date.now())) return t("tr.hostShort");
-  if (trPresHeldRun(state, r)) return t("tr.s.presStopped");
-  if (typeof trSpHeldRun === "function" && trSpHeldRun(state, r)) return t("sp.st.stopped");
-  if (state === "running" && trVenueIds(r).indexOf("sinopac") >= 0 && typeof trSpRetryAt === "function" && trSpRetryAt(r, "sinopac") !== null) return t("sp.st.retry");
-  const s = state === "setup" ? t("cap.pending") : state === "running" ? t("tr.s.on") : state === "unconfirmed" ? t("tr.cloud.mayTrade") : state === "halted" ? (envHeadWord(state, TR.st) === "env.st.autoPaused" ? t("env.st.autoPaused") : t("tr.halted"))
-    : state === "dead" ? (trDeadKind(r) === "died" ? t("tr.s.died") : t("tr.s.off")) : "";
-  return trFailedIds(r).length || trKeyBad(TR.env) ? t("cx.failShort") + (s ? " · " + s : "") : s;
-}
 /* 全頁唯一的紅字槽。want = 這句話在狀態變成什麼的時候就不成立了(例:「它還在交易」在已暫停之後是假話)→ 到了就自己清掉。
    src = 這一則是誰寫的。**指令的失敗與「讀不到雲端」共用這一格**,而 trPaintHead 每一輪都會重畫:
    沒有這個標記的話,送完指令那一步的 trPaint() 會把剛寫上去的錯誤當場洗掉,畫面上等於一句話都沒出現過。 */
@@ -2692,17 +2697,21 @@ function trGoClick(b) {
 }
 function trPaintHead() {
   // state = 文字與鈕字用的(雲端讀不到新狀態時 = 上一份回報自己說的,見 envHeadState);綠點另外看保守的 trExecState
-  const state = envHeadState(TR.st, Date.now()), text = trHeadText(state, trZNow(state)), ro = TR.env === "cloud";
+  const state = envHeadState(TR.st, Date.now()), hp = trHeadParts(state, trZNow(state)), text = trStateJoin(hp), ro = TR.env === "cloud";
   const kind = ro ? envCloudKind(TR.st) : null, stopped = kind === "stopped";
   // 綠點只留切換器那一顆(設計 v4 §6):這一行不再畫點,它是這頁狀態的文字載體
   // 標題列狀態行。雲端讀不到新狀態時,後面接「最後更新」(保留上一次的數字,但要講它不是現況)
   const c = (ro && TR.st && TR.st.cloud) || null;
   const staleAt = c && (c.transient ? c.last_ok_at : c.stale && !stopped && c.reported_at ? c.reported_at * 1000 : !TR.st.alive && !stopped && kind === "running" ? c.last_ok_at : 0);
-  const full = staleAt ? text + " · " + t("tr.cloud.stale", { t: trStamp(staleAt / 1000) }) : text;
-  const desc = $("tr-desc"); desc.textContent = "";
+  const stale = staleAt ? t("tr.cloud.stale", { t: trStamp(staleAt / 1000) }) : "", full = stale ? text + " · " + stale : text;
+  // 頂列(spec-paused §2.1):每一頁都出短狀態詞,含自動下單頁與雲端視角;沒連交易所、讀取中、讀不到不出。交易所名已在前面的記號裡,句尾不重複
+  const id = trVenueId(), has = trTbHas(state), tbState = trTbText(state, hp);
+  // 標題下那一行(§2.2):頂列有詞時去掉開頭那段狀態詞(lead),只講原因、時間與出口;去完沒字整行不出。讀屏與 title 照用整句(full)
+  const vis = tbState && hp.top && !(trTbUnsure() && state !== "unconfirmed") ? [hp.fail, hp.tail, stale].filter(Boolean).join(" · ") : full;   // 頂列退成「讀不到狀態」時狀態詞沒講過,不去;「可能仍在下單」頂列照講(trTbText),照去
+  const desc = $("tr-desc"); desc.textContent = ""; desc.hidden = !vis && !!full;   // 本來就空(Z 霧開著)照舊留空行
   // 異常停止那一句:tr.diedLead 那一段加重;前面若有「串接失敗 · 」、後面接「最後更新」就不拆
   const died = state === "dead" && !TR.pending && !trHostDown(TR.st, Date.now()) && trDeadKind(trReport()) === "died";
-  const cutAt = died && full === text && !trFailedIds(trReport()).length && !trKeyBad(TR.env) ? trDiedCut(full, t("tr.diedLead")) : -1;
+  const cutAt = died && full === text && !trFailedIds(trReport()).length && !trKeyBad(TR.env) ? trDiedCut(vis, t("tr.diedLead")) : -1;
   const tx = trEl("span", "txt");
   // 重開那一條原因行升為正文墨色(警示語氣但不用紅字);HALT 那一條照舊次要灰
   // A′(自動暫停、什麼單都不下)與沒有交易所的重開停止(B0)同 B 一級
@@ -2710,14 +2719,14 @@ function trPaintHead() {
   const hr = trReport() || {};
   // 帳戶對不上(halt.unexplained):用戶自己按的暫停也升,那兩句是按啟動前要先做的事(designer halt-unexplained-copy-review §一「顏色」,同網頁 warn)
   const inkReason = state === "halted" && (trRestartKind(hr) || (trHaltStopsAll(hr.halt) && !(trHaltFreeze(hr) && trHaltByUser(hr.halt))) || trAcctAsk(hr) || trHaltUnexplained(hr.halt).length) ? trHaltReasonText(hr, TR.acctDone) : state === "noaccount" && trNoAccountStopped(hr) ? t("tr.cloud.restartNoAccountZ") : "";
-  const inkAt = inkReason ? full.indexOf(inkReason) : -1;
+  const inkAt = inkReason ? vis.indexOf(inkReason) : -1;
   /* 「可能仍在下單」那一條原因行用紅字(錢可能還在外面暴露、而用戶以為停了);狀態詞本身一般墨色。
      紅的只有原因那一句本身:前面可能有「串接失敗 · 」、後面可能接「 · 最後更新…」(回報過舊),兩種都不能讓紅字消失 */
-  const ucReason = state === "unconfirmed" ? t("tr.cloud.restartUnconfirmed") : "", ucAt = ucReason ? full.indexOf(ucReason) : -1;
-  if (cutAt > 0) tx.append(trEl("span", "up", full.slice(0, cutAt)), full.slice(cutAt));
-  else if (ucAt > 0) tx.append(full.slice(0, ucAt), trEl("span", "danger", ucReason), full.slice(ucAt + ucReason.length));
-  else if (inkAt > 0) tx.append(full.slice(0, inkAt), trEl("span", "ink", inkReason), full.slice(inkAt + inkReason.length));
-  else tx.textContent = full;
+  const ucReason = state === "unconfirmed" ? t("tr.cloud.restartUnconfirmed") : "", ucAt = ucReason ? vis.indexOf(ucReason) : -1;
+  if (cutAt > 0) tx.append(trEl("span", "up", vis.slice(0, cutAt)), vis.slice(cutAt));
+  else if (ucAt >= 0) tx.append(vis.slice(0, ucAt), trEl("span", "danger", ucReason), vis.slice(ucAt + ucReason.length));   // 去掉開頭後原因句可能在第 0 字
+  else if (inkAt >= 0) tx.append(vis.slice(0, inkAt), trEl("span", "ink", inkReason), vis.slice(inkAt + inkReason.length));
+  else tx.textContent = vis;
   // 串接失敗停著:帶設定分頁同一個紅記號(眼睛才不會先落在標題與灰鈕上,把失敗漏掉)
   const failStop = trFailStopped(state, hr);
   if (failStop) { const m = trEl("span", "fault-mark"); m.setAttribute("aria-hidden", "true"); desc.appendChild(m); }
@@ -2740,11 +2749,7 @@ function trPaintHead() {
     else if (TR.alertSrc === "unreach") trAlert("");
   }
   trAlertShow();
-  // 切換器右邊那一句:這一邊的狀態。沒連接交易所時是空的
-  const id = trVenueId(), has = state !== "noaccount" && state !== "loading" && state !== "unknown" && !!id;
-  // 頂列(設計 v4 §6,P1=A):自動下單頁開著時只留錢記號、不出字(完整句就在標題下,不重複);離開這頁才出**短狀態詞**。
-  // 雲端視角的頁永遠開著 → 永遠只有記號。句子只有短狀態詞:交易所名已經在前面的記號裡(Wei 0.0.6),句尾不再重複
-  const pageOpen = TR_BAGS[ENV.cur].open === true && TR_BAGS[ENV.cur].view !== "po", tbState = has && !pageOpen ? trShortState(state) : "";
+  // 切換器右邊那一句(tbState,上面跟標題下同一份 hp 算):這一邊的狀態
   const txt = $("tr-tb-txt");
   // 出事(這一格有紅短劃那種事)時,狀態詞加重;其餘灰字
   const tbUp = !!tbState && envCell(TR.env, TR.st, !!TR.pending).dot === "bad", tsig = LANG + "|" + tbState + "|" + tbUp;
@@ -7472,7 +7477,9 @@ function envPaintCell(env, c) {
   if (c.sig && on) ENV.seen[env] = c.sig;
   if (!c.sig) delete ENV.seen[env];
   const mark = envCellMark(c, ENV.seen[env]), w = envCellWords(c);
-  const sig = LANG + "|" + JSON.stringify([c, on, mark]);
+  // 看得見的那一格:狀態詞跟頂列同一句(設計落地稽核 S1);頂列沒詞(沒連帳戶、未登入…)照 envCell
+  const tb = on ? trTbText(envHeadState(TR.st, Date.now())) : "";
+  const sig = LANG + "|" + JSON.stringify([c, on, mark, tb]);
   if (ENV.cells[env] === sig) return;
   const first = ENV.cells[env] == null; ENV.cells[env] = sig;
   b.setAttribute("aria-pressed", on ? "true" : "false");
@@ -7480,7 +7487,7 @@ function envPaintCell(env, c) {
   // 另一邊的事靠它們讀得到;看得見的這一邊另外寫在切換器右邊那一句
   b.textContent = ""; b.appendChild(envIcon(env));
   if (mark) { const d = trEl("i", mark === "run" ? "run-dot live" : "dot " + mark); d.setAttribute("aria-hidden", "true"); b.appendChild(d); }
-  const money = w.money ? envMoneyText(c.money) : "", state = w.state ? t(w.state) : "";
+  const money = w.money ? envMoneyText(c.money) : "", state = tb || (w.state ? t(w.state) : "");
   const where = envName(env), tip = money && state ? t("env.tip", { where, money, state }) : money || state ? t("env.tip1", { where, x: money || state }) : where;
   // 快捷鍵由程式接、不進譯文;只接在 title。讀屏會把符號唸出來,所以 aria-label 不接,改用 aria-keyshortcuts
   b.title = tip + "  " + (env === "cloud" ? "\u21e7\u23182" : "\u21e7\u23181");

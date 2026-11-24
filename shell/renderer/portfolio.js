@@ -172,7 +172,7 @@ async function poOpen(tab, focus) {
   S.open = true; S.view = "po";
   if (tab) S.poTab = tab;
   if (S !== TR_BAGS[ENV.cur]) return;   // 等的時候切走了:只記下這一邊是開著的
-  S.sig = {}; ENV.sig.tb = null;
+  S.sig = {};
   envShowMain();
   trackFeature("portfolio_open");
   trPaint();
