@@ -21,6 +21,9 @@
   const ROB_MAX_DIM = 40;          // 每軸格數上限(同 api 的 _clean_scan);再大不是給人看的,也防 DOM 爆量
   const ROB_STEPS = [0.5, 1.0, 1.75];   // |Sharpe| 四階色深門檻(同雲端)
   const ROB_ALPHA = [0.12, 0.23, 0.34, 0.45];   // 四階 alpha = 雲端 color-mix 的 12/23/34/45%
+  /* 熱圖外層(.rob-heat-body)的寬上限:一格最寬 120,寬欄時格子不拉成橫帶(designer desktop-widescreen-2026-11-24 §2.3)。
+     列標 84 + 每欄 120 + border-spacing(欄數 + 2 個,同 table min-width 的算法),再加 frame 的內距與框 34、直軸名 15 + 間距 8。表照舊 width:100%,窄時照舊橫捲 */
+  const heatCap = (nCols) => 84 + nCols * 120 + (nCols + 2) * 4 + 34 + 23;
 
   const isNum = (v) => typeof v === "number" && isFinite(v);
 
@@ -495,6 +498,7 @@
     const body = el("div", "rob-heat-body"), axR = el("div", "rob-ax-r mono", sc.rowParam + " →");   // 直排時「→」轉成朝下
     axR.title = sc.rowParam; axR.setAttribute("aria-hidden", "true");   // 讀屏從表的 aria-label 與每格 aria-label 拿參數名
     const R = window.BlaveReport || {};
+    if (!sc.single) body.style.maxWidth = heatCap(sc.cols.length) + "px";   // 單參數由 .is-single 的 328 收
     body.append(axR, R.scrollFade ? R.scrollFade(frame, t("rp.tab.rob")) : frame);
     wrap.appendChild(body);
 
@@ -768,5 +772,5 @@
   };
   // 純計算函式掛出來給核對腳本用(tests/check_shell_robust.js);畫面不靠這個
   // report-wf.js(樣本外驗證)的軸、常數讀法、數字格式也從這裡拿(同一套,不另抄)
-  window.BlaveReport._rob = { sanitizeScan, staleParts, staleTpl, scanChanges, feeTxt, gridInfo, scanInfo, ROB_END_GRACE_DAYS, robWhere, constFromCode, locate, nbrMean, argmax, decimals, sentSig, pv, f2, numList, ROB_MAX_DIM, valBtn };
+  window.BlaveReport._rob = { sanitizeScan, staleParts, staleTpl, scanChanges, feeTxt, gridInfo, scanInfo, ROB_END_GRACE_DAYS, robWhere, constFromCode, locate, heatCap, nbrMean, argmax, decimals, sentSig, pv, f2, numList, ROB_MAX_DIM, valBtn };
 })();

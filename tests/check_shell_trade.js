@@ -2883,12 +2883,13 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
         J([early, shown, keptOnTap, toggledOff, escOff, escPass, blurOff, above, tip().style.top, scrollOff, winOff, body.kids.length])); }
     { const css = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.css"), "utf8");
       const narrow = css.slice(css.indexOf("@container (max-width: 520px)"));
+      // 0.1.61(designer desktop-widescreen-2026-11-24 §7.1-3):商品欄不再是 1fr,欄全照內容寬、靠左
       ok("交易歷史欄位對齊(設計複驗):.pf-log 是 grid 六欄、.pf-log-row 是 subgrid 跨滿、口數不靠 margin-left:auto;窄欄(@container 520)同一區塊改五欄",
-        /\.pf-log \{ display: grid; grid-template-columns: max-content max-content 1fr max-content max-content max-content; \}/.test(css)
+        /\.pf-log \{ display: grid; grid-template-columns: max-content max-content max-content max-content max-content max-content; justify-content: start; \}/.test(css)
         && /\.pf-log-row \{ display: grid; grid-template-columns: subgrid; grid-column: 1 \/ -1; align-items: baseline; \}/.test(css)
         && /\.pf-log-row \.amt \{ margin-left: 0; text-align: right; \}/.test(css)
         && css.indexOf(".pf-log-row .amt { margin-left: 0;") > css.indexOf(".pf-log-row .amt { margin-left: auto; }")
-        && /^  \.pf-log \{ grid-template-columns: max-content max-content 1fr max-content max-content; \}/m.test(narrow.slice(0, narrow.indexOf("\n}")))); }
+        && /^  \.pf-log \{ grid-template-columns: max-content max-content max-content max-content max-content; \}/m.test(narrow.slice(0, narrow.indexOf("\n}")))); }
     { ctx.trUnit = () => null; const all = paintHist([CAP, BTC]); ctx.trUnit = () => "TWD";
       const b = all.filter((n) => n.className === "amt mono")[0];
       ok("spec-0.1.13 #3 下單紀錄:帳戶幣未知 → 加密單不帶幣別、表下改講 tr.ccyUnknown(不出「金額單位：null」)", b.textContent === "500" && all.some((n) => n.className === "pf-foot" && n.textContent === "tr.ccyUnknown")

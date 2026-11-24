@@ -6151,17 +6151,23 @@ function turnEndPost(r, pre, d) {
 }
 
 /* 側欄 / 聊天欄:拖拉調寬 + 收合(雲端工作頁那套移植,數字相同)。
-   側欄 236(180–400)、聊天 452(336–720)、中間保底 480 —— 上限是動態的。
+   側欄 236(180–400)、聊天預設 clamp(452, 30vw, 620)(336–720)、中間保底 480 —— 上限是動態的。
    收合:hover 分隔線浮出把手點一下,或把欄拖過門檻(側欄 <110、聊天 <240);
-   側欄收成 44px 細軌、聊天收成 24px 邊條。雙擊分隔線回預設。
+   側欄收成 44px 細軌、聊天收成 24px 邊條。雙擊分隔線(或聚焦時按 Home)回預設(聊天欄回到跟著視窗走)。
    這是每台電腦自己的偏好,放 localStorage;讀寫失敗就用預設。
-   want = 用戶自己拉的寬,w = 照視窗夾過、真的畫出來的寬:視窗縮小只夾 w,拉回來照 want 還原(0.1.39 Mac 實測縮到 1024 再拉回停在 364) */
+   want = 用戶自己拉的寬,w = 照視窗夾過、真的畫出來的寬:視窗縮小只夾 w,拉回來照 want 還原(0.1.39 Mac 實測縮到 1024 再拉回停在 364)。
+   want 為 null = 沒拉過、照 auto 跟著視窗寬(designer desktop-widescreen-2026-11-24 A):上限 620 = 13px 的 44em 572 加左右內距 48。
+   舊版存下的 want 452 分不出是預設還是剛好拖到 452,一律當沒拉過 */
 const PANES = {
   side: { div: "div-side", prop: "--side-w", cls: "ws-sc", def: 236, min: 180, max: 400, snap: 110, off: 44, dir: 1 },
-  chat: { div: "div-chat", prop: "--chat-w", cls: "ws-cc", def: 452, min: 336, max: 720, snap: 240, off: 24, dir: -1 },
+  chat: { div: "div-chat", prop: "--chat-w", cls: "ws-cc", def: 452, min: 336, max: 720, snap: 240, off: 24, dir: -1,
+    auto: (vw) => Math.max(452, Math.min(0.3 * vw, 620)) },
 };
 const MAIN_MIN = 480;
-const paneSt = { side: { w: PANES.side.def, want: PANES.side.def, off: false }, chat: { w: PANES.chat.def, want: PANES.chat.def, off: false } };
+const paneSt = { side: { w: PANES.side.def, want: PANES.side.def, off: false }, chat: { w: PANES.chat.def, want: null, off: false } };
+function paneWant(key) { const p = PANES[key], v = paneSt[key].want; return v != null ? v : p.auto ? p.auto(window.innerWidth) : p.def; }
+/* 兩欄夾寬跑兩輪:第一輪算側欄時用的是聊天欄舊的寬,視窗一次縮很多(離開全螢幕)時側欄會被多夾;第二輪照兩邊的新寬重夾,側欄拿回原寬 */
+function panesFit(skip) { for (let i = 0; i < 2; i++) Object.keys(PANES).forEach((k) => { if (!skip(k)) paneSt[k].w = paneClamp(k, paneWant(k)); }); }
 /* 系統代收側欄(設計師裁定 0.1.60 #7):雲端視角沒有主機時左欄沒有東西可列,收成細軌(齒輪、帳號留著)。
    不寫進用戶的收合偏好(paneSt.side.off 不動、不存);切回本機或主機開好就回到他原本的樣子 */
 let paneSideAuto = false;
@@ -6170,7 +6176,7 @@ function paneOff(key) { return paneSt[key].off || (key === "side" && paneSideAut
 function paneSideForce(on) {
   if (paneSideAuto === !!on) return;
   paneSideAuto = !!on;
-  Object.keys(PANES).forEach((k) => { if (!paneOff(k)) paneSt[k].w = paneClamp(k, paneSt[k].want); });
+  panesFit(paneOff);
   panesRender(false);
 }
 
@@ -6198,7 +6204,7 @@ function panesRender(save) {
 }
 function paneToggle(key, off) {
   paneSt[key].off = off;
-  if (!off) paneSt[key].w = paneClamp(key, paneSt[key].want);
+  if (!off) paneSt[key].w = paneClamp(key, paneWant(key));
   panesRender(true);
   if (key === "chat" && !off && typeof phNoticeTrack === "function") phNoticeTrack();   // 聊天欄展開:輸入框上方那一列這時才看得到
 }
@@ -6209,24 +6215,28 @@ function panesInit() {
       const s = saved[key];
       if (!s || typeof s !== "object") return;
       paneSt[key].off = !!s.off;
-      paneSt[key].want = Number(s.want) || Number(s.w) || PANES[key].def;
+      // 0.1.60 以前收合一次就把預設 452 一起存成 want:等於預設的當作沒拉過
+      let v = s.want === null ? null : Number(s.want) || Number(s.w) || null;
+      if (PANES[key].auto && v === PANES[key].def) v = null;
+      paneSt[key].want = v != null || PANES[key].auto ? v : PANES[key].def;
     });
   } catch (_) {}
-  Object.keys(PANES).forEach((key) => { paneSt[key].w = paneClamp(key, paneSt[key].want); });
+  panesFit(() => false);
   panesRender(false);
 
   let handleAt = 0;   // 連點把手不算分隔線雙擊
   Object.keys(PANES).forEach((key) => {
     const p = PANES[key], st = paneSt[key], d = $(p.div);
-    let down = false, dragging = false, fromHandle = false, x0 = 0, w0 = 0;
+    let down = false, dragging = false, moved = false, fromHandle = false, x0 = 0, w0 = 0;
     const begin = () => { dragging = true; d.classList.add("active"); document.body.classList.add("resizing"); };
     const locked = () => key === "side" && paneSideAuto;
     d.addEventListener("pointerdown", (e) => {
       if (e.button !== 0 || locked()) return;
       e.preventDefault();
       d.setPointerCapture(e.pointerId);
-      down = true; dragging = false;
-      // 把手正好浮在游標處,用戶常從那裡起手拖:位移 >3px 才算拖,原地放開才算點
+      down = true; dragging = false; moved = false;
+      // 把手正好浮在游標處,用戶常從那裡起手拖:位移 >3px 才算拖,原地放開才算點。
+      // 分隔線本體按下就亮(active),但一樣要位移 >3px 才改寬:觸控板按壓的零點幾 px 不該把跟著視窗走的寬釘成固定寬
       fromHandle = !!e.target.closest(".handle");
       x0 = e.clientX; w0 = paneEdge(key);
       if (!fromHandle) begin();
@@ -6234,7 +6244,7 @@ function panesInit() {
     d.addEventListener("pointermove", (e) => {
       if (!down) return;
       const dx = e.clientX - x0;
-      if (!dragging) { if (Math.abs(dx) <= 3) return; begin(); }
+      if (!moved) { if (Math.abs(dx) <= 3) return; moved = true; if (!dragging) begin(); }
       const raw = w0 + dx * p.dir;
       st.off = raw < p.snap;
       // 拖過門檻收合時,寬度留在起手前那個值 —— 不然再展開只剩最小寬
@@ -6258,14 +6268,15 @@ function panesInit() {
     };
     d.addEventListener("pointerup", end);
     d.addEventListener("pointercancel", end);
+    const reset = () => { st.off = false; st.want = p.auto ? null : p.def; st.w = paneClamp(key, paneWant(key)); panesRender(true); };
     d.addEventListener("dblclick", () => {
       if (Date.now() - handleAt < 500 || locked()) return;
-      st.off = false; st.want = p.def; st.w = paneClamp(key, p.def);
-      panesRender(true);
+      reset();
     });
     d.addEventListener("keydown", (e) => {
       if (locked()) return;
       if (e.key === "Enter" || e.key === " ") { e.preventDefault(); paneToggle(key, !st.off); return; }
+      if (e.key === "Home") { e.preventDefault(); reset(); return; }   // 鍵盤版的雙擊
       const step = e.key === "ArrowRight" ? 16 : e.key === "ArrowLeft" ? -16 : 0;
       if (!step) return;
       e.preventDefault();
@@ -6277,10 +6288,15 @@ function panesInit() {
   });
   $("rail-open").addEventListener("click", () => paneToggle("side", false));
   $("chat-strip").addEventListener("click", () => paneToggle("chat", false));
-  // 視窗縮小時重新夾一次,中間那欄才不會被擠到 480 以下
+  // 視窗縮小時重新夾一次,中間那欄才不會被擠到 480 以下;沒拉過的聊天欄照視窗寬重算。
+  // 跟著視窗變的寬不吃緩動(只有收合、展開走 --motion-base),等畫完兩幀再把 transition 還回去
+  let snapRaf = 0;
   window.addEventListener("resize", () => {
-    Object.keys(PANES).forEach((k) => { if (!paneSt[k].off) paneSt[k].w = paneClamp(k, paneSt[k].want); });
+    document.documentElement.classList.add("ws-snap");
+    panesFit((k) => paneSt[k].off);
     panesRender(false);
+    cancelAnimationFrame(snapRaf);
+    snapRaf = requestAnimationFrame(() => { snapRaf = requestAnimationFrame(() => document.documentElement.classList.remove("ws-snap")); });
   });
 }
 panesInit();

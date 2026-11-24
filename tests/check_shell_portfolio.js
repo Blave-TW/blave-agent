@@ -1323,10 +1323,11 @@ let psPromise = null;
   { const ap = cutF(src, "psApply"), cl = cutF(src, "psClose");
     ok("確定後留在優化分頁、焦點落〔套用金額〕,不搬去配置金額格;取消回連結,連結被重畫換掉就憑 data-fk 找", ap.indexOf("if (fromWhy) {") > ap.indexOf("poPaintCfg();") && ap.indexOf("if (fromWhy) {") < ap.indexOf('querySelectorAll(".amt-in")') && /const ap = \$\("mg-apply"\); if \(ap && !ap\.disabled\) ap\.focus\(\);/.test(ap)
       && /else if \(!\(fromWhy && mgWhyFocus\(\)\)\) psRefocus\(\);/.test(cl) && /\$\("ps-title"\)\.textContent = t\("tr\.pick\.title"\);/.test(cl)); }
-  // spec portfolio-optimize-lite §3:原因句跟預覽同一列、靠右、可用整列寬(不放最右一欄,長句會撐寬鈕);高度固定、空著也佔位
+  // spec portfolio-optimize-lite §3:原因句跟預覽同一列、靠右、可用整列寬(不放最右一欄,長句會撐寬鈕);高度固定、空著也佔位。
+  // 0.1.61(designer desktop-widescreen-2026-11-24 §2.4):鈕直接接在目標值後面,不再隔一條 1fr,多的寬度留在列尾
   { const css = fs.readFileSync(path.join(R, "trade.css"), "utf8"), bp = cutF(psrc, "mgBuildPage");
     ok("部位大小那一列:投入資金、三選一、目標、〔套用金額〕一列;預覽與原因句一列(原因句 role=status、鈕 aria-describedby 指到它);窄欄折三列量主欄寬(container)",
-      /sz\.append\(fund\.wrap, seg, tf\.wrap, ap, msg\)/.test(bp) && /grid-template-areas: "fund seg t \. go" "msg msg msg msg msg"/.test(css) && /\.mg-szw \{ container: mg-sz \/ inline-size;/.test(css)
+      /sz\.append\(fund\.wrap, seg, tf\.wrap, ap, msg\)/.test(bp) && /grid-template-areas: "fund seg t go" "msg msg msg msg";[^}]*justify-content: start;/.test(css) && /\.mg-szw \{ container: mg-sz \/ inline-size;/.test(css)
       && /@container mg-sz \(max-width: 620px\)/.test(css) && /\.mg-apply-why \{ grid-area: why; flex: 1; min-width: 0; min-height: 18px;[^}]*text-align: right;/.test(css));
     ok("〔套用金額〕與「計算中…」疊在同一格(鈕寬不跳);計算中鈕裡轉圈＋字", /ap\.appendChild\(trEl\("span", "lbl", t\("mg\.apply"\)\)\)/.test(bp) && /busy\.append\(sp, t\("mg\.busy"\)\)/.test(bp) && /\.mg-apply > \.lbl, \.mg-apply > \.lbl-busy \{ grid-area: 1 \/ 1; \}/.test(css) && /E\.ap\.classList\.toggle\("is-busy", busy\)/.test(cutF(psrc, "mgSzRecalc")));
     ok("三選一一組一個 Tab 停點、方向鍵換選項(spec §8-4);「方法 未設定」灰字一般字重(§8-6)", /b\.tabIndex = on \|\| \(!m && i === 0\) \? 0 : -1;/.test(cutF(psrc, "mgSzRecalc")) && /e\.key === "ArrowRight" \|\| e\.key === "ArrowDown" \? 1/.test(bp) && /\.tb-fld \.v\.unset \{ color: var\(--ink-3\); font-weight: 400; \}/.test(css) && /"v unset"/.test(cutF(psrc, "mgToolbar")));

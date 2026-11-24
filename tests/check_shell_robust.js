@@ -8,6 +8,7 @@
 //   單參數(spec single-param-scan-2026-10-12 §4):col_param "_" + 一格 col_vals → single;定位只讀第一個常數、文字不出現 _ / "/ 0" / N×1、
 //      確認框「範圍」列與 rob.msgRescan1;二維零變化靠 tests/fixtures/shell_robust_3x3.json(改前存的 innerHTML 快照)逐字比對。
 //      0.1.60 重錄快照(spec p3-0160 R3-2):12 份都只差軸名搬出角落格(左側直排 .rob-ax-r、上方 .rob-ax-c 列)與外包的 .rob-heat-body／.x-fade-host,其餘逐字未動。
+//      0.1.61 重錄(designer desktop-widescreen-2026-11-24 §2.3):12 份只差 .rob-heat-body 多一個 style="max-width: 521px;"(3 欄 × 一格最寬 120 的熱圖上限),其餘逐字未動。
 // 跑法:node tests/check_shell_robust.js(找不到 shell/node_modules 的 Electron 時 ② SKIP,①③ 照跑)
 const path = require("path"), fs = require("fs"), vm = require("vm");
 const SHELL = path.join(__dirname, "..", "shell");

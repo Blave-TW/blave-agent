@@ -453,7 +453,7 @@
     const R = rob(), pv = R.pv, sep = t("wf.listSep");
     const wrap = el("div", "wf-block");
     wrap.appendChild(el("div", "bt-label", t("wf.driftLabel")));
-    const frame = el("div", "rob-frame"), tbl = el("table", "wf-grid");
+    const frame = el("div", "rob-frame"), tbl = el("table", "wf-grid" + (w.single ? " is-single" : ""));   // 單參數同參數熱圖 .is-single 的 328,切分頁寬度不跳
     tbl.setAttribute("aria-label", w.single ? tplText(t("wf.driftAria1"), { rp: w.rowParam }) : tplText(t("wf.driftAria"), { rp: w.rowParam, cp: w.colParam }));
     // 每欄 32px:格內只有一位數,可讀下限比熱圖低。fixed layout 先扣掉 border-spacing 再分欄,欄數 +2 個間隙一起算
     tbl.style.minWidth = 84 + w.cols.length * 32 + (w.cols.length + 2) * 4 + "px";
@@ -501,6 +501,7 @@
     frame.appendChild(tbl);
     const body = el("div", "rob-heat-body"), axR = el("div", "rob-ax-r mono", w.rowParam + " →");   // 直排時「→」轉成朝下
     axR.title = w.rowParam; axR.setAttribute("aria-hidden", "true");   // 讀屏從表與每格的 aria-label 拿參數名
+    if (!w.single && R.heatCap) body.style.maxWidth = R.heatCap(w.cols.length) + "px";   // 二維同參數掃描熱圖:一格最寬 120
     const BR = window.BlaveReport || {};
     body.append(axR, BR.scrollFade ? BR.scrollFade(frame, t("rp.tab.wf")) : frame);
     wrap.appendChild(body);
