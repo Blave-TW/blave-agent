@@ -402,7 +402,7 @@ def no_access_case(name, pack, names, nar, lang="zh"):
     check(pack.skip is None and os.path.exists(path) and types[-1] == "footnote" and types.count("footnote") == 1
           and all(math.isfinite(v) for v in walk_numbers(doc))
           and [m["name"] for m in pack.missing] == list(names) and all(m["reason"] == "no_data_access" for m in pack.missing)
-          and len(item) == 1 and txt.startswith(expect) and all(n in txt for n in names) and "14" in txt
+          and len(item) == 1 and txt.startswith(expect) and all(n in txt for n in names) and "14" not in txt and ("免費試用" in txt or "free trial" in txt)
           and "無 Blave 資料權限(no_data_access)" in pack.describe() and "不要因此不產報告" in pack.describe(),
           f"{name}(access=0,{'有判讀' if nar else '純數據包'},{lang}):仍 publish、missing={list(names)}、尾註列缺的資料;describe 叫 agent 照樣發")
     return b
@@ -537,7 +537,9 @@ txt = [i for i in doc["blocks"][-1]["items"] if i["id"] == "blave"][0]["text"]
 check("綁卡" not in txt and "登入" not in txt and "讀不到資料狀態" in txt, "unknown:不叫人綁卡也不叫人登入,講讀不到資料狀態")
 os.environ["BLAVE_DATA_ACCESS_WHY"] = "no_card"
 doc = json.load(open(tpub(T.crypto_market_brief("2026-09-02", H), NAR)))
-check("綁卡送 14 天" in [i for i in doc["blocks"][-1]["items"] if i["id"] == "blave"][0]["text"], "no_card:才講綁卡")
+txt = [i for i in doc["blocks"][-1]["items"] if i["id"] == "blave"][0]["text"]
+check("綁卡開始免費試用" in txt and "14" not in txt, "no_card:才講綁卡;不寫試用天數(KOL 推薦碼帳號是 30 天,spec kol-referral-trial §7)")
+check(all("14" not in v for lang in T._MISSING_FOOT.values() for v in lang[1].values()), "尾註每一句都不寫死試用天數(中英)")
 for why in ("no_plan", "plan_failed"):
     os.environ["BLAVE_DATA_ACCESS_WHY"] = why
     doc = json.load(open(tpub(T.crypto_market_brief("2026-09-02", H), NAR)))

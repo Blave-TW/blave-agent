@@ -47,3 +47,12 @@
 .p3-ticks li span { margin-left: var(--space-6); font-size: 12px; color: var(--ink-3); }
 /* Pro 那一句跟主鈕正上方那一句是同一組事實:間距 4 */
 .del-body.lines:has(.p3-ticks, .p3-hw) > p.p3-pro { margin-top: calc(var(--space-4) - var(--space-16)); }
+/* KOL 推薦碼試用(spec kol-referral-trial §8.5;設計 kol-trial-2026-11-23 v2 方向 D):原值刪除線＋「推薦碼加碼」小標,只在綁卡前。
+   小標 = canon Mini tag 中性填色款(外殼沒有全域 .mini_tag;同 trade.css .pf-wallet-row .mini_tag 的配方),不上橘、不跟主鈕搶 */
+.trial-was { color: var(--ink-3); text-decoration: line-through; text-decoration-thickness: 1px; font-weight: 400; margin-right: 0.3em; }
+.trial-tag { position: relative; top: -1px; display: inline-flex; align-items: center; height: 18px; padding: 0 var(--space-6); margin-left: var(--space-4); border-radius: var(--radius-micro);
+  background: var(--tag-neutral-bg); color: var(--tag-neutral-text); font-size: 11px; font-weight: 600; letter-spacing: 0.04em; line-height: 1; white-space: nowrap; vertical-align: middle; }
+/* 方案框大字前:原值退到內文字級,焦點仍是 26 的新值;放不下時小標整顆換行 */
+.p3-price:has(.trial-tag) { flex-wrap: wrap; }
+.p3-price .trial-was { font: 400 15px/1.2 var(--font-mono); margin-right: var(--space-2); }
+.p3-price .trial-tag { top: 0; align-self: center; margin-left: var(--space-2); }

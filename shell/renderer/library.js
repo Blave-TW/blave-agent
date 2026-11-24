@@ -234,7 +234,8 @@ function libBbBox(status, body) {
   // 帶 accept_plan 的方案單報價(框 ③)要排在 trial／plain 前面:它的 trial 也是 false,漏判會出框 2、只刷策略價、方案沒開
   if (code === "PRICE_CONFIRM_REQUIRED" && b.plan === true) return libPlanTerms(b, "planpay");
   if (code === "PRICE_CONFIRM_REQUIRED" && pos(b.price_twd))
-    return { kind: b.trial === true ? "trial" : "plain", price: pos(b.price_twd), trialDays: pos(b.trial_days), planMonthly: pos(b.plan_monthly_twd), due: libBbDue(b), renew: b.plan_renews_card === true };
+    return { kind: b.trial === true ? "trial" : "plain", price: pos(b.price_twd), trialDays: pos(b.trial_days), planMonthly: pos(b.plan_monthly_twd), due: libBbDue(b), renew: b.plan_renews_card === true,
+      trialWas: libTrialWas(pos(b.trial_days), pos(b.trial_days_standard)), boost: b.trial_ai_credit_boost === true };
   if (code === "PLAN_REQUIRED" && pos(b.plan_monthly_twd)) return { kind: "plan", planMonthly: pos(b.plan_monthly_twd) };
   if (LIB_PLAN_BLOCKS.includes(code)) return { kind: "block", block: code };
   if (code === "PLAN_ALREADY_ACTIVE" || code === "USE_TRIAL" || code === "NOTHING_TO_PAY") return { kind: "refresh" };
@@ -344,6 +345,8 @@ function libSparkPath(sp, w, h, pad) {
   return { pts: lg.map((v, i) => [(i * w) / (lg.length - 1), y(v)]), base: y(lg[0]) };
 }
 function libNoteTitle(s, lang) { const m = s && s.success_note_titles; const v = m && typeof m === "object" ? m[lang] : null; return typeof v === "string" && v.trim() ? v.trim() : null; }
+/* KOL 推薦碼試用(spec kol-referral-trial §5、§8.5;同 planv3.js p3TrialWas):個人天數比同一份回應的公開天數長才回公開天數,其餘 null */
+function libTrialWas(days, std) { return Number.isInteger(days) && Number.isInteger(std) && std > 0 && days > std ? std : null; }
 /* ── 一步開通(spec library-free-data-one-step;api 契約 output/backend/library-one-step-api)── */
 // 方案報價的金額與來源:合計對不上分項就不出框(鈕上的數字一定等於實刷)。kind = planpay(框 ③,付款頁)/ cardplan(框 ②,有卡或錢包夠)
 function libPlanTerms(b, kind) {
@@ -1182,7 +1185,7 @@ function libPaintCta(s) {
       const pb = btn("btn-fill", buyLabel(), (b) => c.short ? libBindBuy(s, b, ok ? { direct: s.price, trial: tr || undefined } : undefined) : libBuyBox(s, "confirm", b, {}));
       if (LIB.buyRead === s.id) { const sp = libEl("span", "spin16"); sp.setAttribute("aria-hidden", "true"); pb.prepend(sp); pb.disabled = true; }   // 開框前讀餘額:鈕字不換
       row.appendChild(pb);
-      if (tr) under.push(libEl("p", "note", t("lib.bb.trialRenewNote", { t: String(tr.t), p: libTwd(tr.p) })));
+      if (tr) under.push(libEl("p", "note", t("lib.bb.trialRenewNote", { t: String(tr.t), p: libTwd(tr.p) })));   // KOL 也只換天數:刪除線與小標只在報價框(稽核 11-24)
       break;
     }
     case "owned": row.appendChild(btn("btn-fill", t("lib.use"), (b) => libAsk(s, b))); break;
@@ -1505,9 +1508,9 @@ function libBindBuyBox(s, q, opener) {
   } else if ((q.kind === "trial" || q.kind === "plain") && !tu) { libBuyBox(s, "noCard", opener, {}); return;   // 自動儲值的數字讀不到:不在沒講清楚的情況下讓人綁卡,退回舊框(同網頁)
   } else if (q.kind === "trial" || q.kind === "plain") {
     if (q.kind === "trial") {   // 決定 1:這支要資料、現在沒資料權限、有試用資格 → 順便開試用
-      const dl = libEl("dl", "cf-rows bb"), row = (k, v, cls, ddCls) => { const r = libEl("div", "cf-row" + (cls ? " " + cls : "")); r.append(libEl("dt", "", k), libEl("dd", ddCls || "", v)); dl.appendChild(r); };
+      const dl = libEl("dl", "cf-rows bb"), row = (k, v, cls, ddCls) => { const r = libEl("div", "cf-row" + (cls ? " " + cls : "")), dt = libEl("dt"); dt.append(k); r.append(dt, libEl("dd", ddCls || "", v)); dl.appendChild(r); };
       row(t("lib.bb.today"), libTwd(q.price), "lead");
-      if (q.trialDays) row(t("lib.bb.trialRow", { d: String(q.trialDays) }), t("lib.free"), "", "sans");
+      if (q.trialDays) row(libTrialRow(q), t("lib.free"), "", "sans");
       if (q.planMonthly) row(t("lib.bb.after"), libTwd(q.planMonthly));
       extra.appendChild(dl);
     } else extra.appendChild(lede("lib.bb.plain", q.price));
@@ -1521,6 +1524,16 @@ function libBindBuyBox(s, q, opener) {
     confirmBox({ title, lines: [], extra, ok: t("lib.bb.ok"), opener, onOk: () => libBindBuyGo(s, q, LIB.bbRestart.has(s.id)) });
   } else { libBuyBox(s, "noCard", opener, {}); return; }   // 報價拿不到(舊 api、網路):照舊叫他去綁卡
   $("del-title").title = $("del-title").textContent;
+}
+/* KOL 推薦碼試用(設計 kol-trial-2026-11-23 v2 D):天數那處畫「原值刪除線 新值」、後接「推薦碼加碼」小標;看得到的字 aria-hidden,讀屏念 sr-only 那一句。
+   加碼字只看 boost(不寫額度數字),跟刪除線各自判 */
+function libTrialDays(was, d) { const w = libEl("span", "nw"); w.append(libEl("span", "trial-was", String(was)), String(d)); return w; }
+function libKolTag() { const g = libEl("span", "trial-tag", t("trial.kol.tag")); g.setAttribute("aria-hidden", "true"); return g; }
+function libStruck(seen, sr) { const f = document.createDocumentFragment(), v = libEl("span"); v.setAttribute("aria-hidden", "true"); v.append(seen); f.append(v, libKolTag(), libEl("span", "sr-only", sr)); return f; }
+function libTrialRow(q) {
+  const key = q.boost ? "lib.bb.trialRowBoost" : "lib.bb.trialRow";
+  if (!q.trialWas) return t(key, { d: String(q.trialDays) });
+  return libStruck(libRich(key, { d: libTrialDays(q.trialWas, q.trialDays) }), t(key + "Sr", { s: String(q.trialWas), d: String(q.trialDays), tag: t("trial.kol.tag") }));
 }
 async function libBindBuyGo(s, q, restart) {
   if (LIB.buying !== null) return;

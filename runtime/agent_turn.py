@@ -5223,7 +5223,7 @@ DATA_ACCESS_CARD = "<blave-card:data-access/>"
 # 事實不是文案:寫「用戶登入著」而不是「請登入」,模型才不會對餘額不夠的人叫他去登入。認不得的值當沒帶。
 DATA_ACCESS_WHY = {
     "signed_out": "the user is not signed in to Blave in this app",
-    "no_card": "the user is signed in; there is no card on file (a card starts the 14-day trial)",
+    "no_card": "the user is signed in; there is no card on file (a card starts the free trial; its length is on the account page)",
     "no_balance": "the user is signed in; the balance does not cover this hour's data fee",
     # 方案制(api MONTHLY_BILLING_FROM 之後):沒有按小時買資料,資料只在雲端方案／API 方案裡
     "no_plan": "the user is signed in; the account has no plan that includes Blave data",

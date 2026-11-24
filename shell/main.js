@@ -3059,6 +3059,7 @@ function libBindBuyBody(b) {
   if (!b || typeof b !== "object") return null;
   const s = (v) => (typeof v === "string" ? v.slice(0, 200) : null), n = (v) => (typeof v === "number" && isFinite(v) ? v : null);
   return { error: s(b.error), error_code: s(b.error_code), price_twd: n(b.price_twd), trial: b.trial === true, trial_days: n(b.trial_days),
+    trial_days_standard: n(b.trial_days_standard), trial_ai_credit_boost: b.trial_ai_credit_boost === true,
     plan_monthly_twd: n(b.plan_monthly_twd), plan_due_twd: n(b.plan_due_twd), plan_renews_card: b.plan_renews_card === true,
     // 0.1.50 帶 accept_plan 的報價(spec library-free-data-one-step §5.1):方案第一期＋策略一筆刷
     plan: b.plan === true, plan_twd: n(b.plan_twd), total_twd: n(b.total_twd), plan_renews_on: libDay(typeof b.plan_renews_on === "string" ? b.plan_renews_on.slice(0, 10) : null) };
@@ -3157,6 +3158,7 @@ function libCheckoutBody(b) {
     plan_required: b.plan_required === true, data_included: b.data_included === true, needs_data: b.needs_data !== false,
     plan_blocked: code(b.plan_blocked), has_card: b.has_card === true, card_last4: typeof b.card_last4 === "string" && /^\d{4}$/.test(b.card_last4) ? b.card_last4 : null,
     balance: n(b.balance), trial_eligible: b.trial_eligible === true, trial_days: n(b.trial_days),
+    trial_days_standard: n(b.trial_days_standard), trial_ai_credit_boost: b.trial_ai_credit_boost === true,
     plan_renews_on: libDay(typeof b.plan_renews_on === "string" ? b.plan_renews_on.slice(0, 10) : null),
     plan_source: src(b.plan_source), price_source: src(b.price_source),
     plan_status: ["ok", "active", "none", "failed"].includes(b.plan_status) ? b.plan_status : null,

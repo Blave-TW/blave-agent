@@ -478,6 +478,40 @@ const PV = { agent: { monthly_twd: 888, annual_twd: 8880, period_days: 30, ai_cr
       ok("④ A 試用框、報價帶齊(公開價目讀不到也照畫):頭「14 天免費試用」＋「11/30 起每 30 天 888 TWD,之前取消不扣」;勾不寫額度數字(Wei 11-20,api 照給 150／300 也不印);鈕上一句驗證 10＋自動儲值;主鈕〔綁卡試用〕不帶天數;框腳〔用加密貨幣轉帳〕",
         mt.kind === "trial" && /14\|p3\.a\.trialUnit/.test(tt) && /p3\.a\.trialSub\{"at":"11\/30","d":"30","p":"888"\}/.test(tt) && /p3\.tick\.aiTrial(?!\{)/.test(tt) && !/p3\.tick\.ai(Trial|Period)\{/.test(tt)
         && /p3\.a\.oncePerCard\|p3\.a\.verifyLine\{"v":"10"\}/.test(tt) && /p3\.topup/.test(tt) && tb.ok === "p3.a.okTrialNoNum" && tb.link.label === "p3.crypto" && !tb.link.stay && !/p3\.tl\.|p3\.a\.cancelBy/.test(tt));
+      { // KOL 推薦碼試用(spec kol-referral-trial §7;設計 kol-trial-2026-11-23 v2 方向 D):報價自己的 days > days_standard 才畫「14 30」＋小標,勾副字只看 ai_credit_boost
+        const kq = full(); Object.assign(kq.trial, { days: 30, days_standard: 14, ai_credit_boost: true }); Object.assign(kq.agent_offer.monthly, { period_days: 30, ai_credit_twd: 300 });
+        reset(); const km = C.p3AgentModel(kq, PV); C.p3AgentBox(km, null); const kb = boxes[boxes.length - 1], pr = walk(kb.extra, (n) => n.className === "p3-price")[0];
+        const kids = (pr && pr.children) || [], cls = kids.map((n) => n.className);
+        ok("KOL 方案框:大字列「14(刪除線)30 天免費試用」＋小標,看得到的四顆 aria-hidden、讀屏一整句;勾副字換加倍那句;大字與勾不印額度數字 300(自動儲值 300 TWD 那句是儲值金額,不算)",
+          km.kind === "trial" && km.trialDays === 30 && km.trialWas === 14 && km.aiBoost === true && J(cls) === '["trial-was num","big num","u","trial-tag","sr-only"]'
+          && kids[0].textContent === "14" && kids[1].textContent === "30" && kids.slice(0, 4).every((n) => n.attrs["aria-hidden"] === "true")
+          && kids[3].textContent === "trial.kol.tag" && kids[4].textContent === 'p3.a.trialWasSr{"s":14,"t":30,"tag":"trial.kol.tag"}'
+          && /p3\.tick\.aiTrialBoost/.test(txt(kb.extra)) && !/\b300\b/.test(txt(pr) + txt(walk(kb.extra, (n) => n.className === "p3-ticks")[0])) && kb.ok === "p3.a.okTrialNoNum", J(cls) + txt(kb.extra));
+        const plain = (tr) => { const q = full(); Object.assign(q.trial, tr); Object.assign(q.agent_offer.monthly, { period_days: 30, ai_credit_twd: 300 }); reset(); const mm = C.p3AgentModel(q, PV); C.p3AgentBox(mm, null); const b = boxes[boxes.length - 1]; return { m: mm, cls: J(walk(b.extra, (n) => n.className === "p3-price")[0].children.map((n) => n.className)), tx: txt(b.extra) }; };
+        const std = plain({ days: 14, days_standard: 14, ai_credit_boost: false }), old = plain({ days: 30 }), boostOnly = plain({ days: 14, days_standard: 14, ai_credit_boost: true });
+        const viaPub = (() => { const q = full(); Object.assign(q.trial, { days: null, days_standard: 14 }); Object.assign(q.agent_offer.monthly, { period_days: 30, ai_credit_twd: 300 }); return C.p3AgentModel(q, Object.assign({}, PV, { trial: Object.assign({}, PV.trial, { days: 30 }) })); })();
+        ok("一般用戶(days＝standard)、舊 api(沒有 days_standard)、天數退回公開價目:大字照舊兩顆、沒有刪除線與小標;勾副字只在 boost 時換",
+          [std, old, boostOnly].every((x) => x.cls === '["big num","u"]' && x.m.trialWas === null) && /p3\.tick\.aiTrial(?!Boost)/.test(std.tx) && /p3\.tick\.aiTrial(?!Boost)/.test(old.tx) && /p3\.tick\.aiTrialBoost/.test(boostOnly.tx)
+          && viaPub.trialDays === 30 && viaPub.trialWas === null
+          && C.p3TrialWas(30, 14) === 14 && C.p3TrialWas(14, 14) === null && C.p3TrialWas(10, 14) === null && C.p3TrialWas(30, null) === null && C.p3TrialWas(30, 0) === null, J([std.cls, old.cls, boostOnly.cls]));
+        ok("KOL 白名單:quote.trial 收 days_standard(整數)與 ai_credit_boost(只認 true);409 確認框收平鋪的 trial_days_standard／trial_ai_credit_boost(布林不走 amt);舊 api = null／false",
+          (() => { const b = rawQuote(); Object.assign(b.trial, { days: 30, days_standard: 14, ai_credit_boost: true }); const q = M.quoteBody(b), q0 = M.quoteBody(rawQuote()), b2 = rawQuote(); Object.assign(b2.trial, { days_standard: "14", ai_credit_boost: "true" }); const q2 = M.quoteBody(b2);
+            const e = M.errBody({ error_code: "PLAN_CONFIRM_REQUIRED", trial_days: 30, trial_days_standard: 14, trial_ai_credit_boost: true }), e0 = M.errBody({ error_code: "PLAN_CONFIRM_REQUIRED", trial_days: 14 });
+            return q.trial.days === 30 && q.trial.days_standard === 14 && q.trial.ai_credit_boost === true && q0.trial.days_standard === null && q0.trial.ai_credit_boost === false && q2.trial.days_standard === null && q2.trial.ai_credit_boost === false
+              && e.trial_days === 30 && e.trial_days_standard === 14 && e.trial_ai_credit_boost === true && e0.trial_days_standard === null && e0.trial_ai_credit_boost === false; })());
+        // 聊天欄額度用完那張卡:鈕上天數讀 account_status(公開價目永遠是公開值 14),標題加碼只看 trial_ai_credit_boost;鈕只寫 30、不畫刪除線
+        const fc = async (s) => { const card = { set(x) { this.last = x; } }; Object.assign(C, { acctOffer: () => true, acctClicked: () => {}, laiOpen: () => {}, stratSelect: () => {} }); C.acct = Object.assign({ v3_active: true }, s); C.RP = { list: [] };
+          await C.p3FreeCardPaint(card, "pre", Object.assign({ v3_active: true }, s)); const sub = card.last.sub; return { h: walk(sub, (n) => n.tag === "h4")[0].textContent, btn: walk(sub, (n) => n.tag === "button")[0].textContent }; };
+        const fk = await fc({ trial_eligible: true, trial_days: 30, trial_days_standard: 14, trial_ai_credit_boost: true }), fs0 = await fc({ trial_eligible: true, trial_days: 14, trial_days_standard: 14, trial_ai_credit_boost: false });
+        C.acct = { v3_active: true };
+        ok("KOL 聊天欄卡:標題「AI 額度加倍，加上 Blave 資料」、主鈕「綁卡試用 30 天」(不是公開價目的 14);一般用戶照舊",
+          fk.h === "p3.c.trialHBoost" && fk.btn === 'p3.a.okTrial{"t":30}' && fs0.h === "p3.c.trialHNoNum" && fs0.btn === 'p3.a.okTrial{"t":14}', J([fk, fs0]));
+        ok("KOL 字串兩語都在、不帶額度數字;小標字面照設計「推薦碼加碼」", ["trial.kol.tag", "p3.a.trialWasSr", "p3.tick.aiTrialBoost", "p3.c.trialHBoost", "lib.bb.trialRowBoost", "lib.bb.trialRowSr", "lib.bb.trialRowBoostSr"].every((k) => STR.zh[k] && STR.en[k] && !/\b(150|300)\b/.test(STR.zh[k] + STR.en[k])) && !("lib.bb.trialRenewNoteSr" in STR.zh)
+          && STR.zh["p3.a.trialWasSr"] === "{t} 天免費試用，原本 {s} 天，{tag}" && STR.en["p3.a.trialWasSr"] === "{t} days free, was {s} days, {tag}"
+          && STR.zh["lib.bb.trialRowSr"] === "方案試用 {d} 天，原本 {s} 天，{tag}" && STR.zh["lib.bb.trialRowBoostSr"] === "方案試用 {d} 天，AI 額度加倍，原本 {s} 天，{tag}"
+          && STR.en["lib.bb.trialRowSr"] === "Plan trial, {d} days, was {s} days, {tag}" && STR.en["lib.bb.trialRowBoostSr"] === "Plan trial, {d} days, double AI credit, was {s} days, {tag}"
+          && STR.en["trial.kol.tag"] === "Referral Bonus" && STR.en["p3.tick.aiTrialBoost"] === "Doubled in the trial, standard each period after"
+          && STR.zh["trial.kol.tag"] === "推薦碼加碼" && STR.zh["p3.tick.aiTrialBoost"] === "試用期加倍，之後每期都有" && STR.zh["p3.c.trialHBoost"] === "AI 額度加倍，加上 Blave 資料"); }
       const pq = Q({ trial: nt, has_card: true, card_last4: "4242", agent_offer: { kind: "pay", monthly: { today_twd: 888, today_is: "charge", first_charge_at: null, first_charge_twd: 888, source: "card", period_days: 30, ai_credit_twd: 300 } } });
       reset(); const mp = C.p3AgentModel(pq, null); C.p3AgentBox(mp, null); const pb = boxes[boxes.length - 1], pt = txt(pb.extra);
       // ── 設定 › 帳號與方案的 AI 額度列(spec agent-888-vague-ai-credit §3、設計 ai-credit-usage-bar §3–§6):用量條＋「已用 N%」,不印額度的 TWD 數字 ──

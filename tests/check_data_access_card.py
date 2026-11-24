@@ -9,7 +9,7 @@
 
 跑法:cd blave-agent && python3 tests/check_data_access_card.py
 """
-import ast, contextlib, io, json, os, sys, tempfile, types
+import ast, contextlib, io, json, os, re, sys, tempfile, types
 from types import SimpleNamespace
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -151,6 +151,8 @@ t("④ relogin:事實句在、回覆講重新登入、沒有「needs a plan」",
 os.environ["BLAVE_DATA_ACCESS_WHY"] = "no_plan"
 reply = (lambda r: r[r.index("your reply must:"):r.index("Say it once per conversation")])(at.data_access_rule())
 t("④ no_plan 照舊講要方案、不講重新登入", "needs a plan" in reply and "signing in again" not in reply)
+# KOL 推薦碼帳號的試用是 30 天(spec kol-referral-trial §7):給模型的事實句不寫死天數,Blave AI 才不會背 14
+t("④ DATA_ACCESS_WHY 每一句都不寫試用天數", not any(re.search(r"\b\d+-day\b|\b\d+ days?\b", v) for v in at.DATA_ACCESS_WHY.values()), at.DATA_ACCESS_WHY["no_card"])
 for k in ("BLAVE_DATA_ACCESS", "BLAVE_DATA_ACCESS_WHY"):
     os.environ.pop(k)
 

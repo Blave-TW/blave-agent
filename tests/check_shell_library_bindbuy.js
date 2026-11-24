@@ -31,6 +31,14 @@ ok("① 有方案的人(報價 plan_renews_card 為 true)才出續期那句;沒�
 ok("① 欠費那句:plan_due_twd 是正數才出(四捨五入成整數);0、null、負數、字串都不出", P.libBbBox(409, quote({ plan_due_twd: 1440 })).due === 1440
   && P.libBbBox(409, quote({ trial: true, plan_due_twd: 1439.6 })).due === 1440
   && [0, null, -5, "1440", undefined].every((v) => P.libBbBox(409, quote({ plan_due_twd: v })).due === null));
+{ // KOL 推薦碼試用(spec kol-referral-trial §5、§7):報價平鋪 trial_days_standard／trial_ai_credit_boost;刪除線只在天數比公開天數長時,加碼字只看 boost
+  const k = P.libBbBox(409, quote({ trial: true, trial_days: 30, trial_days_standard: 14, trial_ai_credit_boost: true, plan_monthly_twd: 1440 }));
+  const std = P.libBbBox(409, quote({ trial: true, trial_days: 14, trial_days_standard: 14, trial_ai_credit_boost: false, plan_monthly_twd: 1440 }));
+  const old = P.libBbBox(409, quote({ trial: true, trial_days: 30, plan_monthly_twd: 1440 })), boostOnly = P.libBbBox(409, quote({ trial: true, trial_days: 14, trial_days_standard: 14, trial_ai_credit_boost: true }));
+  ok("① KOL 報價:trialWas 14、boost;一般用戶／舊 api(沒有公開天數)不畫刪除線;boost 只認 true 本身",
+    k.trialDays === 30 && k.trialWas === 14 && k.boost === true && std.trialWas === null && std.boost === false && old.trialWas === null && old.boost === false
+    && boostOnly.trialWas === null && boostOnly.boost === true && P.libBbBox(409, quote({ trial: true, trial_days: 30, trial_days_standard: 14, trial_ai_credit_boost: "true" })).boost === false
+    && P.libTrialWas(30, 14) === 14 && P.libTrialWas(14, 14) === null && P.libTrialWas(10, 14) === null && P.libTrialWas(30, null) === null && P.libTrialWas(30, 0) === null && P.libTrialWas("30", 14) === null, J([k, std, old])); }
 { // 框裡真的有出那句:框 1 / 2 都看 q.due
   const body = cutFn(src, "libBindBuyBox");
   ok("① 續期那句只看 q.renew、排在腳注前;字面照 Wei 11-07", /if \(q\.renew\) extra\.appendChild\(libEl\("p", "", t\("lib\.bb\.renew"\)\)\);/.test(body) && body.indexOf("lib.bb.renew") < body.indexOf("lib.bb.topup")
@@ -92,6 +100,26 @@ ok("③ 其他原因(沒方案、欠費、查不到)與免費策略照舊是資�
   && P.libCta(S({ purchased: true }), C()).state === "noData");
 ok("③ 剛綁卡即購買成功、還沒重拉:已購買暫態(安裝並回測),不閃資料牆;別支不受影響", P.libCta(S({ purchased: true }), C({ bbOk: 7 })).state === "owned" && P.libCta(S({ id: 8, purchased: true }), C({ bbOk: 7 })).state === "noData");
 ok("③ 付款頁開著:這支是等待態,別支不受影響", P.libCta(S(), C({ bindWait: 7 })).state === "bindWait" && P.libCta(S({ id: 8 }), C({ bindWait: 7 })).state === "paid");
+
+{ // 報價框試用那列實畫(設計 kol-trial-2026-11-23 v2 D):「方案試用 14 30 天，AI 額度加倍」＋小標;看得到的字 aria-hidden、讀屏一整句
+  class E { constructor(tag, cls, text) { this.tag = tag; this.className = cls || ""; this.kids = []; this._t = text == null ? "" : String(text); }
+    get textContent() { return this._t + this.kids.map((k) => (typeof k === "string" ? k : k.textContent)).join(""); } set textContent(v) { this._t = String(v); this.kids = []; }
+    append(...cs) { cs.forEach((c) => this.kids.push(c)); } appendChild(c) { this.kids.push(c); return c; } setAttribute(k, v) { this[k] = v; } }
+  const run = (lang, q) => { const K = { STR, E, LANG: lang, Q: q }; vm.createContext(K);
+    vm.runInContext(`var Node = E, document = { createElement: (t) => new E(t), createDocumentFragment: () => new E("#frag") };
+      var t = (k, v) => String(STR[LANG][k] === undefined ? "?" + k : STR[LANG][k]).replace(/\\{(\\w+)\\}/g, (m, n) => (v && v[n] != null ? v[n] : m));
+      ${cutFn(src, "libEl")}\n${/const libMono = [^\n]*/.exec(src)[0].replace(/^const/, "var")}\n${["libRich", "libTrialDays", "libKolTag", "libStruck", "libTrialRow"].map((n) => cutFn(src, n)).join("\n")}
+      var out = libTrialRow(Q);`, K); return K.out; };
+  const flat = (x) => (x && x.kids ? x.kids.flatMap((k) => (k && k.tag === "#frag" ? flat(k) : [k])) : []);
+  const kol = run("zh", { trialDays: 30, trialWas: 14, boost: true }), [seen, tag, sr] = flat(kol);
+  ok("① KOL 試用那列:看得到「方案試用 1430 天，AI 額度加倍」(14 刪除線)＋小標;讀屏「方案試用 30 天，AI 額度加倍，原本 14 天，推薦碼加碼」",
+    seen && seen["aria-hidden"] === "true" && seen.textContent === "方案試用 1430 天，AI 額度加倍" && JSON.stringify(seen).indexOf('"className":"trial-was","kids":[],"_t":"14"') >= 0
+    && tag.className === "trial-tag" && tag["aria-hidden"] === "true" && tag.textContent === "推薦碼加碼" && sr.className === "sr-only" && sr.textContent === "方案試用 30 天，AI 額度加倍，原本 14 天，推薦碼加碼", J(kol));
+  const enK = flat(run("en", { trialDays: 30, trialWas: 14, boost: true }));
+  ok("① 一般用戶照舊純字;只有 boost 時句尾加「，AI 額度加倍」不畫刪除線;en 同",
+    run("zh", { trialDays: 14, trialWas: null, boost: false }) === "方案試用 14 天" && run("zh", { trialDays: 14, trialWas: null, boost: true }) === "方案試用 14 天，AI 額度加倍"
+    && run("en", { trialDays: 14, trialWas: null, boost: false }) === "Plan trial, 14 days" && enK[2].textContent === "Plan trial, 30 days, double AI credit, was 14 days, Referral Bonus"
+    && flat(run("zh", { trialDays: 30, trialWas: 14, boost: false }))[2].textContent === "方案試用 30 天，原本 14 天，推薦碼加碼", J(enK)); }
 
 // ── ④ 主行程 ──
 const M = { URL, Buffer }; vm.createContext(M);
@@ -233,10 +261,11 @@ ok("④ IPC:綁卡即購買只收自家頁面;記號拿到這支終態才清,並
     const K = { calls: [], STR, E, O: o, LANG: o.lang || "zh" };
     vm.createContext(K);
     vm.runInContext(src.slice(src.indexOf("/* ── 純邏輯("), src.indexOf("/* ── 純邏輯到此")).replace(/^const /gm, "var ") + `
-      var LIB_PLAN_BLOCKS = [], LIB_GATE_STATES = ["noData"], document = { activeElement: null, createElement: (tag) => new E(tag) };
+      var LIB_PLAN_BLOCKS = [], LIB_GATE_STATES = ["noData"], document = { activeElement: null, createElement: (tag) => new E(tag), createDocumentFragment: () => new E("#frag") };
+      var Node = E, acct = O.acct;
       var t = (k, v) => String(STR[LANG][k] === undefined ? "?" + k : STR[LANG][k]).replace(/\\{(\\w+)\\}/g, (m, n) => (v && v[n] != null ? v[n] : m));
       var box = new E("div"), $ = (id) => (id === "lib-cta" ? box : null), pub = O.pub === undefined ? { trial: { auto_topup_min: 50, auto_topup_amount: 300 } } : O.pub;
-      var LIB = { dlFail: null, buyRead: O.buyRead, bbRes: new Map(O.bb ? [[7, O.bb]] : []) }, libPlanMo = () => true, planVars = () => ({ t: 14, pr: 1440 });
+      var LIB = { dlFail: null, buyRead: O.buyRead, bbRes: new Map(O.bb ? [[7, O.bb]] : []) }, libPlanMo = () => true, planVars = () => O.pv || { t: 14, pr: 1440 };
       var libCtx = () => O.ctx, libCtaOf = (s) => libCta(s, O.ctx), libGateBtn = () => new E("button", "btn-fill", "gate");
       var libSignInBtn = (k, c, label, direct) => { const b = new E("button", "btn-fill", label); b.on.click = () => calls.push("signin:" + direct); return b; };
       var libPlanBuy = (s, b, x) => calls.push("plan:" + J(x)), libBindBuy = (s, b, x) => calls.push("bind:" + J(x)), libBuyBox = (s, st) => calls.push("buybox:" + st), libAsk = () => calls.push("ask");
@@ -256,7 +285,8 @@ ok("④ IPC:綁卡即購買只收自家頁面;記號拿到這支終態才清,並
     const lines = kids.filter((k) => k !== row && k.tag === "p" && !k.hidden && k.id !== "lib-cta-topup" && !/err/.test(k.className)).map((k) => k.textContent);
     const top = kids.filter((k) => k.id === "lib-cta-topup").map((k) => k.textContent);
     const paidP = kids.find((k) => k.tag === "p" && k.className === "note up lib-res" && k.role === "status") || null;
-    return { btn: b ? b.textContent : null, lines, top, click: K.calls.join(), errs: kids.filter((k) => /err/.test(k.className)).length,
+    const notes = kids.filter((k) => k !== row && k.tag === "p" && !k.hidden && k.id !== "lib-cta-topup" && !/err/.test(k.className));
+    return { notes, btn: b ? b.textContent : null, lines, top, click: K.calls.join(), errs: kids.filter((k) => /err/.test(k.className)).length,
       dis: b ? !!b.disabled : null, spin: !!(b && b.kids[0] && b.kids[0].className === "spin16"), paid: paidP ? paidP.textContent : null, kept: K.LIB.bbRes.has(7) };
   };
   { const base = { running: false, env: "local", signedIn: true, cloud: null, pending: null, noNew: null, buying: null, installedName: null, bindWait: null, bbOk: null, planMo: true, planTwd: 1440, planBlock: null };
@@ -292,6 +322,13 @@ ok("④ IPC:綁卡即購買只收自家頁面;記號拿到這支終態才清,並
       || (want[k].errs !== undefined && r[k].errs !== want[k].errs));
     ok("⑥ 詳情主鈕實畫:D／B／有卡 D 鈕下一行續扣、有試用的 D 一行試用後續扣(不放自動儲值);C、訪客 C、en 鈕下空白;刷卡失敗只出結果句;直接付款只在沒卡錢包不夠、鈕上是 TWD;付款頁回來綁了卡才講自動儲值",
       bad.length === 0 && Object.values(r).every((x) => x.lines.length <= 1), bad.map((k) => k + "=" + J(r[k])).join(" ; ")); }
+  // KOL 推薦碼試用(spec kol-referral-trial §7;稽核 11-24):詳情鈕下那句只把天數換成個人值,不畫刪除線、不出小標(那兩樣只在報價框)
+  { const trial = Object.assign({ running: false, env: "local", signedIn: true, cloud: null, pending: null, noNew: null, buying: null, installedName: null, bindWait: null, bbOk: null, planMo: true, planTwd: 1440, planBlock: null },
+      { dataAccess: "plan_required", why: "no_card", noCard: true, bal: 0 });
+    const kol = paintRun({ ctx: trial, acct: { trial_days: 30, trial_days_standard: 14 }, pv: { t: 30, pr: 1440 } });
+    ok("KOL 詳情鈕下那句:純字「試用 30 天後每 30 天 1,440 TWD，可隨時取消。」、沒有子節點(沒刪除線、沒小標);直接付款帶 30 天",
+      kol.notes.length === 1 && kol.notes[0].kids.length === 0 && kol.lines[0] === "試用 30 天後每 30 天 1,440 TWD，可隨時取消。" && kol.click === 'bind:{"direct":600,"trial":{"t":30,"p":1440}}',
+      J({ lines: kol.lines, click: kol.click })); }
   // 一鍵購買(設計稽核 purchase-box-audit 第 4、7 條):付完那句無記號 note up＋role=status、只此一行;裝好就收掉;讀餘額時主鈕 disabled＋鈕內轉圈、鈕字不換
   { const base = { running: false, env: "local", signedIn: true, cloud: null, pending: null, noNew: null, buying: null, installedName: null, bindWait: null, bbOk: null, planMo: true, planTwd: 1440, planBlock: null, dataAccess: "included", why: null, noCard: false, bal: 1000 };
     const paidBb = { kind: "paid", key: "lib.pb.doneCard", p: 600 };
@@ -412,6 +449,11 @@ ok("④ IPC:綁卡即購買只收自家頁面;記號拿到這支終態才清,並
     && cb.plan_renews_on === "2026-12-08" && cb.plan_blocked === "HAS_SERVER" && !("extra" in cb) && cb.balance === null && M.libCheckoutBody(null) === null);
   const bb = M.libBindBuyBody({ error_code: "PRICE_CONFIRM_REQUIRED", plan: true, price_twd: 600, plan_twd: 1440, total_twd: 2040, plan_renews_on: "2026-12-08", plan_renews_card: true });
   ok("④ 付款頁報價多留 plan／plan_twd／total_twd／續扣日／plan_renews_card(0.1.49 沒留這格,續期那句其實出不來)", bb.plan === true && bb.total_twd === 2040 && bb.plan_twd === 1440 && bb.plan_renews_on === "2026-12-08" && bb.plan_renews_card === true);
+  const kb = M.libBindBuyBody({ error_code: "PRICE_CONFIRM_REQUIRED", trial: true, price_twd: 600, trial_days: 30, trial_days_standard: 14, trial_ai_credit_boost: true }), kc = M.libCheckoutBody({ trial_eligible: true, trial_days: 30, trial_days_standard: 14, trial_ai_credit_boost: true });
+  ok("④ KOL 試用兩個欄位(報價、checkout_quote 都收):公開天數只收數字、加碼旗標只認 true 本身;舊 api 沒有 = null／false",
+    kb.trial_days === 30 && kb.trial_days_standard === 14 && kb.trial_ai_credit_boost === true && kc.trial_days_standard === 14 && kc.trial_ai_credit_boost === true
+    && M.libBindBuyBody({ trial_days_standard: "14", trial_ai_credit_boost: "yes" }).trial_days_standard === null && M.libBindBuyBody({ trial_ai_credit_boost: 1 }).trial_ai_credit_boost === false
+    && M.libCheckoutBody({}).trial_days_standard === null && M.libCheckoutBody({}).trial_ai_credit_boost === false);
   const rr = M.libBindResultOut({ bind_purchase: { status: "wallet", strategy_id: 7, amount_twd: 2040, plan: true, plan_twd: 1440, price_twd: 600, wallet_twd: 2040, plan_status: "failed", plan_reason: "HAS_SERVER", reason: "plan_failed" } });
   ok("④ 方案單結果多留 plan／wallet_twd／plan_status／plan_reason;一般單不多帶", rr.plan === true && rr.wallet_twd === 2040 && rr.plan_status === "failed" && rr.plan_reason === "HAS_SERVER" && rr.price_twd === 600
     && !("plan" in M.libBindResultOut({ bind_purchase: { status: "ok", strategy_id: 7 } })));

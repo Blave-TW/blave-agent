@@ -1042,6 +1042,11 @@ for (const lang of ["zh", "en"]) {
       ok(`策略改名 ${lang} 兩邊逐字一致(${d} ↔ ${w})`, typeof dp[d] === "string" && dp[d] === wp[w], d + "「" + dp[d] + "」 vs " + w + "「" + wp[w] + "」");
   }
 }
+// KOL 推薦碼試用(spec kol-referral-trial-2026-11-23 §8.5):天數旁那顆小標兩邊同一句(zh／en);報價列那句由下面 BB_PAIRS 的 trialRowBoost 比
+for (const lang of ["zh", "en"]) {
+  const dp = poMap(path.join(__dirname, "..", "shell", "i18n", lang + ".po")), wp = poMap(path.join(webDir, "app", "translations", lang, "LC_MESSAGES", "messages.po"));
+  ok(`KOL 試用小標 ${lang} 兩邊逐字一致(trial.kol.tag ↔ bc_trial_promo_tag)`, typeof dp["trial.kol.tag"] === "string" && dp["trial.kol.tag"] === wp["bc_trial_promo_tag"], dp["trial.kol.tag"] + " vs " + wp["bc_trial_promo_tag"]);
+}
 // 策略庫綁卡即購買(spec library-buy-with-bind-2026-11-06;設計複審 ⑧、程式稽核 B2):lib.bb.* 與網頁 bc_bindbuy_* 逐字同(zh／en)。
 // 網頁 {p} 後面自帶「 TWD」,電腦版 {p} 已含 TWD,比之前把網頁的「{p} TWD」收成「{p}」。列舉:兩邊任一個新鍵沒進配對表或豁免表就紅。
 // 「上一筆付款頁還開著」網頁有自己的 bc_bindbuy_open 就比它,還沒有就比共用的 bc_bind_plan_pending(兩條流程講同一個事實)
@@ -1051,15 +1056,18 @@ for (const lang of ["zh", "en"]) {
     planToday: "plan_today", planRenew: "plan_renew", planTail: "plan_tail", planOk: "plan_ok", planPart: "plan_part", planPartNoAmt: "plan_part_noamt", planFail: "plan_fail",
     planFailNoAmt: "plan_fail_noamt", planActive: "plan_active", hasServer: "has_server", loginBuy: "-bc_mp_login_buy", loginUse: "-bc_mp_login_use",
     // 直接開付款頁的鈕下一行(mockup-23-like-others,Wei 11-09):續扣、試用後續扣
-    renewNote: "renew_short", trialRenewNote: "trial_short" };
+    renewNote: "renew_short", trialRenewNote: "trial_short",
+    // KOL 推薦碼試用(spec kol-referral-trial §8.5):加碼那列整句
+    trialRowBoost: "trial_boost" };
   // 刻意不配對(設計稽核 review-desktop-one-step-0150):〔恢復方案〕電腦版用設定頁的 plan.resumeWeb〔到網站恢復方案〕(離開 app 要講「到網站」),不設 lib.bb.resume
   // 刻意不同(設計複審 ⑧):電腦版付款頁還開著才有的三句與逾時句;網頁回程才有的「確認扣款中…」。
+  // KOL 推薦碼試用的讀屏整句(spec kol-referral-trial §8.5):兩邊都是新值在前、「原本 N 天」後綴(設計複審 11-24);電腦版把看得到的整段 aria-hidden、另念一整句,網頁只在原值旁補 bc_trial_promo_was_sr,key 切法不同不逐字比
   // 0.1.50 只有電腦版的情境(spec §7 表面表:web 沒有擋免費要資料策略的牆、沒有框 ②):B 型開通鈕、框 ② 的列、來源句與付款中、訪客安裝鈕與試用句、partial 沒扣那句、
   // 錢包變了那句;扣款還在確認(unsettled:電腦版沒有「重新整理這頁」,寫「稍後再回來看」)。web 第二批補框 ②-D 時,planD、pay、paying、src*、partNoCharge、srcChanged 從這裡移回配對表
   const BB_DESK_ONLY = ["waiting", "waitNote", "reopen", "expired", "planB", "planD", "planTitle", "todayCard", "todayPay", "pay", "paying", "srcCard", "srcCardAny", "srcWallet",
     "srcMixWc", "srcMixWcAny", "srcMixCw", "srcMixCwAny", "partNoCharge", "srcChanged", "loginInstall", "unsettled",
     // B 型直接開付款頁的鈕下「可隨時取消。」:web 沒有 B 型開通(同 planB)
-    "cancelNote"], BB_WEB_ONLY = ["confirming", "desktop_title", "desktop_lede",   // desktop_*:電腦版的單回到網頁時那一頁(稽核 W3),電腦版沒有這一頁
+    "cancelNote", "trialRowSr", "trialRowBoostSr"], BB_WEB_ONLY = ["confirming", "desktop_title", "desktop_lede",   // desktop_*:電腦版的單回到網頁時那一頁(稽核 W3),電腦版沒有這一頁
     // 網頁 0.1.51 直接付的鈕與付完結果句:plan_buy 跟電腦版 planD 同義,但鈕字格式各照自己表面(電腦版 en「Start Plan & Buy · {p}」帶中點,網頁不帶),不逐字比;
     // paid(「已付款，這支策略已加到你的帳號。」)電腦版付完直接自動安裝,主鈕換成安裝中,沒有這句
     "plan_buy", "paid"];

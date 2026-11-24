@@ -69,7 +69,9 @@ function quoteBody(b) {
   return {
     has_card: b.has_card === true, card_last4: last4(b.card_last4), balance_twd: num(b.balance_twd),
     trial: { eligible: tr.eligible === true, active: tr.active === true, gen: pick(tr.gen, ["v1", "v2", "v3"]), ends_at: iso(tr.ends_at), cancel_at_end: tr.cancel_at_end === true,
-      days: amt(tr.days) || null, ai_credit_twd: amt(tr.ai_credit_twd) || null },
+      days: amt(tr.days) || null, ai_credit_twd: amt(tr.ai_credit_twd) || null,
+      // KOL 推薦碼試用(spec kol-referral-trial §5):公開天數與加碼旗標;舊 api 沒有 = null／false,畫面不畫刪除線與加碼字
+      days_standard: amt(tr.days_standard) || null, ai_credit_boost: tr.ai_credit_boost === true },
     plan: { state: pick(pl.state, ["none", "trial", "active", "failing", "lapsed"]) || "none", paid_tier: pick(pl.paid_tier, TIERS), cycle: pick(pl.cycle, CYCLES),
       paid_until: iso(pl.paid_until), remaining_days: amt(pl.remaining_days), unlaunched_tier: pick(pl.unlaunched_tier, HOST_TIERS) },
     machine: { state: pick(mc.state, ["none", "starting", "running", "stopped"]) || "none", tier: pick(mc.tier, HOST_TIERS) },
@@ -101,7 +103,8 @@ function errBody(b) {
     source: pick(b.source, SRC), use: pick(b.use, ["bind_pay", "bind_trial"]), tier: pick(b.tier, TIERS), cycle: pick(b.cycle, CYCLES),
     today_kind: pick(b.today_kind, ["full", "prorated", "reopen_free"]), machine_state: typeof b.machine_state === "string" && /^[a-z_]{1,20}$/.test(b.machine_state) ? b.machine_state : null,
     limit: amt(b.limit), resets_at: iso(b.resets_at), charged_twd: amt(b.charged_twd), lines: linesOf(b.lines) };
-  for (const k of ["today_twd", "next_twd", "total_twd", "price_twd", "first_charge_twd", "verify_twd", "trial_days", "trial_ai_credit_twd", "remaining_days", "auto_topup_min", "auto_topup_amount"]) out[k] = amt(b[k]);
+  for (const k of ["today_twd", "next_twd", "total_twd", "price_twd", "first_charge_twd", "verify_twd", "trial_days", "trial_days_standard", "trial_ai_credit_twd", "remaining_days", "auto_topup_min", "auto_topup_amount"]) out[k] = amt(b[k]);
+  out.trial_ai_credit_boost = b.trial_ai_credit_boost === true;
   for (const k of ["next_at", "first_charge_at"]) out[k] = iso(b[k]);
   return out;
 }

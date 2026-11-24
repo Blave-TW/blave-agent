@@ -12257,3 +12257,26 @@ msgstr "Keep It Local"
 msgid "cx.macTwGo"
 msgstr "Use a Cloud Machine"
 
+
+# KOL referral extended trial (spec kol-referral-trial-2026-11-23 §8.5; design kol-trial-2026-11-23 v2, direction D).
+# Pre-bind only, when the api's personal trial days exceed the standard days.
+msgid "trial.kol.tag"
+msgstr "Referral Bonus"
+
+msgid "p3.a.trialWasSr"
+msgstr "{t} days free, was {s} days, {tag}"
+
+msgid "p3.tick.aiTrialBoost"
+msgstr "Doubled in the trial, standard each period after"
+
+msgid "p3.c.trialHBoost"
+msgstr "Double AI credit, plus Blave data"
+
+msgid "lib.bb.trialRowBoost"
+msgstr "Plan trial, {d} days, double AI credit"
+
+msgid "lib.bb.trialRowSr"
+msgstr "Plan trial, {d} days, was {s} days, {tag}"
+
+msgid "lib.bb.trialRowBoostSr"
+msgstr "Plan trial, {d} days, double AI credit, was {s} days, {tag}"

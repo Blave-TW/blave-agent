@@ -29,7 +29,8 @@ function p3AgentModel(q, pv) {
   const ag = (pv && pv.agent) || {}, tr = (pv && pv.trial) || {}, ao = q && q.agent_offer, m = ao && ao.monthly, qt = (q && q.trial) || {};
   const days = (m && m.period_days) || ag.period_days || null, aiPeriod = (m && m.ai_credit_twd) || ag.ai_credit_per_period_twd || null;
   const trialDays = qt.days || tr.days || null, aiTrial = qt.ai_credit_twd || tr.ai_credit_twd || null;
-  const base = { days, aiPeriod, aiTrial: null, trialDays, pro: null };
+  // 刪除線只認報價自己的天數對它自己的公開天數;退回公開價目 v3 的天數(匿名、永遠是公開值)不畫
+  const base = { days, aiPeriod, aiTrial: null, trialDays, trialWas: qt.days ? p3TrialWas(qt.days, qt.days_standard) : null, aiBoost: qt.ai_credit_boost === true, pro: null };
   if (!q) return Object.assign(base, { kind: !ag.monthly_twd ? "none" : days && aiPeriod && trialDays ? "out" : "incomplete", price: ag.monthly_twd || null });
   if (!m) return Object.assign(base, { kind: "none" });
   base.pro = p3ProLine(q.studio);
@@ -47,6 +48,8 @@ function p3AgentModel(q, pv) {
   if (!q.has_card) return Object.assign(base, { kind: "bindPay", price: m.first_charge_twd, wallet: typeof q.balance_twd === "number" && q.balance_twd >= m.first_charge_twd });
   return Object.assign(base, { kind: "pay", price: m.today_twd, src: m.source === "wallet" || m.source === "free" ? m.source : "card", last4: q.card_last4 });
 }
+/* KOL 推薦碼試用(spec kol-referral-trial §5、§8.5):個人天數比同一份回應的公開天數長才回公開天數(畫刪除線＋小標),其餘 null */
+function p3TrialWas(days, std) { return Number.isInteger(days) && Number.isInteger(std) && std > 0 && days > std ? std : null; }
 /* 已綁卡那一態主鈕正上方「今天從哪扣」那一句(spec §3):每個 src 各一句,free(內部帳號、這期不收錢)不能落到刷卡那句 */
 function p3PaySentence(src, last4) {
   if (src === "free") return ["p3.a.free", null];
@@ -241,6 +244,8 @@ function p3SaidGet() { try { const a = JSON.parse(localStorage.getItem(P3_SAID_K
 function p3SaidAdd(id) { const s = [...p3SaidGet(), id].slice(-30); try { localStorage.setItem(P3_SAID_KEY, JSON.stringify(s)); } catch (_) { } }
 function p3BalSet(r) { P3.bal = r || null; if (r && P3.topSeen === undefined) P3.topSeen = r.topup ? r.topup.at : null; }
 
+// 「推薦碼加碼」小標(Mini tag 中性款):不露 KOL 名字;讀屏由旁邊那句 sr-only 念
+function p3KolTag() { const g = p3El("span", "trial-tag", t("trial.kol.tag")); g.setAttribute("aria-hidden", "true"); return g; }
 // 框內錯誤句(紅記號;calm = 灰):放在 body 最後,讀屏念一次
 function p3BoxMsg(key, vars, calm) {
   const body = $("del-body"); if (!body) return;
@@ -317,7 +322,13 @@ function p3AgentBox(m, opener, note) {
   if (note) x.appendChild(p3El("p", "p3-t p3-ink", t(note)));
   const head = p3El("div", "p3-head");
   if (m.kind === "trial") {
-    const pr = p3El("div", "p3-price"); pr.append(p3El("span", "big num", p3Num(m.trialDays)), p3El("span", "u", t("p3.a.trialUnit"))); head.appendChild(pr);
+    const pr = p3El("div", "p3-price"), seen = [p3El("span", "big num", p3Num(m.trialDays)), p3El("span", "u", t("p3.a.trialUnit"))];
+    if (m.trialWas) {   // 設計 kol-trial-2026-11-23 v2 D:原值退到內文字級＋小標;看得到的字 aria-hidden,讀屏念一整句
+      seen.unshift(p3El("span", "trial-was num", p3Num(m.trialWas)));
+      seen.forEach((e) => e.setAttribute("aria-hidden", "true"));
+      seen.push(p3KolTag(), p3El("span", "sr-only", t("p3.a.trialWasSr", { s: m.trialWas, t: m.trialDays, tag: t("trial.kol.tag") })));
+    }
+    pr.append(...seen); head.appendChild(pr);
     head.appendChild(p3El("p", "p3-sub", p3T("p3.a.trialSub", { at: m.firstAt, d, p: m.first })));
   } else {
     head.appendChild(p3Price(m.price, d));
@@ -325,7 +336,7 @@ function p3AgentBox(m, opener, note) {
   }
   x.appendChild(head);
   const ul = p3El("ul", "p3-ticks"), ai = p3El("li", "", t("p3.tick.ai"));
-  ai.appendChild(p3El("span", "", t(m.kind === "trial" ? "p3.tick.aiTrial" : "p3.tick.aiPeriod")));   // 不寫額度的 TWD 數字(Wei 11-20)
+  ai.appendChild(p3El("span", "", t(m.kind === "trial" ? (m.aiBoost ? "p3.tick.aiTrialBoost" : "p3.tick.aiTrial") : "p3.tick.aiPeriod")));   // 不寫額度的 TWD 數字(Wei 11-20)
   ul.append(p3El("li", "", t("p3.tick.data")), ai, p3El("li", "", t("p3.tick.pro")));
   x.appendChild(ul);
   if (m.kind === "out") {
@@ -628,13 +639,13 @@ async function p3FreeCardPaint(card, where, s) {
   const v = p3FreeCard({ eligible, hasBt: !!bt, isRunning: live, need }), pv = p3Pv() || {};
   card._p3 = v.paper ? "paper" : live ? "running" : "none";
   if (!card._p3sent) { card._p3sent = true; trackEvent("acct_card_alt", { alt: card._p3 }); }
-  const days = (pv.trial && pv.trial.days) || s.trial_days;
+  const days = s.trial_days || (pv.trial && pv.trial.days);   // 個人天數(account_status)優先:公開價目永遠是公開值,KOL 會被寫成 14
   const trialBtn = () => ({ label: days ? p3T("p3.a.okTrial", { t: days }) : t("p3.a.okTrialNoNum"), on: () => { acctClicked(where, s); p3OpenAgent(null, null, "free"); } });
   const planBtn = () => ({ label: t("p3.c.plan"), on: () => { acctClicked(where, s); p3OpenAgent(null, null, "free"); } });
   card.set(sysLz(() => {
     const offer = p3El("div", "p3-offer"), act = p3El("div", "p3-act"), mk = (o, cls) => { const b = p3El("button", cls, o.label); b.type = "button"; b.addEventListener("click", o.on); return b; };
     if (v.head === "paper") { offer.append(p3El("h4", "", t("p3.c.paperH")), p3El("p", "", p3T("p3.c.recent", { name: bt.displayName || bt.name }))); }
-    else offer.appendChild(p3El("h4", "", t(v.head === "trial" ? "p3.c.trialHNoNum" : "p3.c.planHNoNum")));   // 不寫額度的 TWD 數字(Wei 11-20)
+    else offer.appendChild(p3El("h4", "", t(v.head === "trial" ? (s.trial_ai_credit_boost === true ? "p3.c.trialHBoost" : "p3.c.trialHNoNum") : "p3.c.planHNoNum")));   // 不寫額度的 TWD 數字(Wei 11-20)
     const main = v.main === "see" ? { label: t("p3.c.see"), on: () => { trackEvent("acct_card_alt_click", { card: where === "pre" ? "pre_free" : "turn_free" }); stratSelect(bt.name); } } : v.main === "trial" ? trialBtn() : planBtn();
     const second = v.second === "trial" ? trialBtn() : v.second === "plan" ? planBtn() : v.second === "local" ? { label: t("acct.useLocal"), on: () => laiOpen(card) } : null;
     act.append(mk(main, "btn-fill")); if (second) act.append(mk(second, "btn-quiet")); offer.appendChild(act);

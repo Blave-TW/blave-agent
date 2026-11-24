@@ -8,6 +8,8 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **KOL 推薦碼延長試用(spec kol-referral-trial-2026-11-23 §7)**:`DATA_ACCESS_WHY["no_card"]` 不再寫死「14-day trial」,改成試用天數以帳戶頁為準——推薦碼帳號的試用是 30 天,Blave AI 不能背 14。
+
 ## 1.1.170 — 2026-11-23(desktop 0.1.60:報告框搜尋驗證不等人、更新雲端主機改走直接指令、永豐期貨翻開關前的實測修正(閘門仍關著))
 
 - **新增報告框的回合撞到搜尋驗證不等人(`agent_turn.TURN_NOTES` 兩條都接 `_REPORT_NO_VERIFY`;QA 0.1.59 R3-14)**:電腦版外殼同批讓這種回合的 `browser_search` 遇到驗證頁不交給用戶(`shell/main.js` `noVerify`、`shell/browser/index.js` `present()`),當場退到 DuckDuckGo、再不行回 `search_unavailable`(`no_user`)。指示告訴 agent:不等、不重搜,用 lib 資料、`describe()` 候選與已知列表頁,報告裡一句(`few_sources` 或註腳)講這次沒搜到。之前回合停在「等你操作」最多 4.5 分鐘,報告頁一直是「agent 寫作中…」。`references/reports.md`(電腦版那一列)、`references/browser.md`(驗證那一節)同批。測試 `tests/check_local_mcp_config.py`、`tests/check_shell_browser_verify.js`。

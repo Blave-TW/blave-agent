@@ -12321,3 +12321,31 @@ msgstr "留在這台電腦"
 msgid "cx.macTwGo"
 msgstr "改用雲端主機"
 
+
+# KOL 推薦碼延長試用(spec kol-referral-trial-2026-11-23 §8.5;設計 kol-trial-2026-11-23 v2 方向 D)。
+# 只在綁卡前、api 回的個人天數比公開天數長時出現:天數畫「原值刪除線 新值」,後面接這個 Mini tag。不露 KOL 名字。
+msgid "trial.kol.tag"
+msgstr "推薦碼加碼"
+
+# 方案框大字那列的讀屏整句(看得到的「14 30 天免費試用」與小標都 aria-hidden)
+msgid "p3.a.trialWasSr"
+msgstr "{t} 天免費試用，原本 {s} 天，{tag}"
+
+# 方案框 AI 額度那個勾的副字,api trial.ai_credit_boost 為真時取代 p3.tick.aiTrial;不寫額度數字
+msgid "p3.tick.aiTrialBoost"
+msgstr "試用期加倍，之後每期都有"
+
+# 聊天欄額度用完那張卡的標題,account_status trial_ai_credit_boost 為真時取代 p3.c.trialHNoNum
+msgid "p3.c.trialHBoost"
+msgstr "AI 額度加倍，加上 Blave 資料"
+
+# 策略庫綁卡即購買報價框試用那列,api trial_ai_credit_boost 為真時取代 lib.bb.trialRow;同網頁 bc_bindbuy_trial_boost
+msgid "lib.bb.trialRowBoost"
+msgstr "方案試用 {d} 天，AI 額度加倍"
+
+# 試用那列畫刪除線時的讀屏整句(看得到的那段與小標 aria-hidden);Boost 那句配 lib.bb.trialRowBoost
+msgid "lib.bb.trialRowSr"
+msgstr "方案試用 {d} 天，原本 {s} 天，{tag}"
+
+msgid "lib.bb.trialRowBoostSr"
+msgstr "方案試用 {d} 天，AI 額度加倍，原本 {s} 天，{tag}"
