@@ -242,7 +242,7 @@ SP_LIVE = "".join(f"{k}={v}\n" for k, v in sinopac_service.bound_env("k", "s", W
 SP_ODDLOT = "sinopac_api_key=plainkey\nsinopac_secret_key=plainsecret\nsinopac_ca_passwd=pw\nsinopac_person_id=A123456789\n"
 real_modes = cl.venue_traits.verified_modes
 gate = {"open": True}
-cl.venue_traits.verified_modes = lambda v: ("futures",) if gate["open"] and v == "sinopac" else real_modes(v)
+cl.venue_traits.verified_modes = lambda v: (("futures",) if gate["open"] else ()) if v == "sinopac" else real_modes(v)
 bind(SP_LIVE)
 err = save({"txf_sma": 1})
 check(err is None and json.load(open(CONFIG))["exchanges"] == {"txf_sma": "sinopac"},

@@ -4,9 +4,9 @@ Use this document when a user asks to connect their SinoPac account to Blave Age
 
 - **Blave never places TW stock orders — not automatically, not on request (Step 5).** Never
   hand-write Shioaji stock order calls either.
-- **SinoPac futures (TXF / MXF / TMF) are not available yet.** The lib is written but not
-  live-verified: every futures call raises `SinopacError` with `code == "unverified"` and sends
-  nothing. Tell the user it is not available yet; never work around it with raw Shioaji calls.
+- **SinoPac futures (TXF / MXF / TMF) trade only after the user connects through the platform's
+  connect page** (Step 3). Where that page does not list SinoPac yet, it is not open for this user:
+  say so, never work around it with raw Shioaji calls or `.env` lines.
 - **Credentials never pass through the chat** (Step 3). Never ask for, accept or write the API key,
   the secret, the national ID, the certificate password or the `.pfx`.
 - **Never log in to SinoPac yourself** — no `sj.Shioaji().login(...)` in a script, not even in
@@ -19,7 +19,7 @@ Use this document when a user asks to connect their SinoPac account to Blave Age
 
 | Product | Symbol | Notes |
 |---------|--------|-------|
-| 台指期 TXF / 小台 MXF / 微台 TMF | `TXF` / `MXF` / `TMF` | 1 口 = 200 / 50 / 10 × index points (TWD). Not live-verified — refused by the lib. |
+| 台指期 TXF / 小台 MXF / 微台 TMF | `TXF` / `MXF` / `TMF` | 1 口 = 200 / 50 / 10 × index points (TWD). Market IOC through the worker (Order Placement). |
 | 台灣股票 Stocks | `2330` | Never ordered by Blave (Step 5). `lib/` has no SinoPac stock path. |
 
 ---
@@ -130,7 +130,9 @@ pause-and-close):
     real lag is not measured. `ORDER_SETTLE_S` stays 20 s (the runbook's 30 s is void). Since then
     the worker reads the position every 2 s after an entry's fill, counting from the send, up to
     60 s, and writes when it showed to `state/sinopac_settle_lag.json` (and one log line); closes
-    are not timed (an early empty read looks like flat). The next live entry times it.
+    are not timed (an early empty read looks like flat). The second live entry (desktop on macOS,
+    night session) timed it: 3.2 s from the send to the position showing (n = 1;
+    `ORDER_SETTLE_MEASURED_S`). `ORDER_SETTLE_S` (20 s) stays at least twice the largest sample.
 23. **`update_status(account, trade=…)` is refused.** Every fill logged `ShioajiValueError: Cannot
     specify both account and trade`: 1.7.11 takes one or the other. The worker refreshes one order
     with `update_status(trade=trade)`.
@@ -155,7 +157,7 @@ out on exit, `SIGTERM` and `SIGBREAK`.
 
 ## Step 0 — Which account
 
-- Futures account (期貨) → what Blave will trade once SinoPac futures are verified.
+- Futures account (期貨) → what Blave trades.
 - Stock account (證券) → Blave never orders TW stocks (Step 5).
 - Most users have both under one login; the API key decides which accounts it reaches (Step 1).
 
@@ -199,8 +201,9 @@ password.
 - The key, secret, certificate, certificate password and national ID go through the platform's
   encrypted connect page, never through the chat. A key pasted into the chat is refused
   (`lib/venue.py`).
-- The connect page for SinoPac futures is not available yet. Until it is, tell the user SinoPac
-  futures are not available yet — never write `.env` lines for them.
+- The connect page is the app's 連接帳戶 (desktop app, or the cloud machine's page in it). Where
+  it does not list SinoPac yet, tell the user SinoPac futures are not open for them yet — never
+  write `.env` lines for them.
 - Never read, print or echo these values, and never open the `.pfx`.
 - The values never sit in `.env`. The connect flow stores them like 統一's (`lib/sinopac_vault`):
   `.env` holds `vault:` placeholders under the locked names `sinopac_api_key`,
@@ -248,11 +251,12 @@ document says SinoPac futures are available.
 
 See Step 5. `lib/order_sinopac.py` has no stock functions.
 
-### Futures — through the lib, NOT live-verified
+### Futures — through the lib
 
 `place_futures_market_order(env, root, 'buy'|'sell', lots, intent)` and `close_position_partial`
-in `lib/order_sinopac.py` (full API in `references/lib.md`) refuse with `code == "unverified"` and
-send nothing until a real-account order run passes. Once verified:
+in `lib/order_sinopac.py` (full API in `references/lib.md`), real-account runs 2026-11-23. A
+workspace whose `lib/venue_traits.py` lacks `"futures"` for SinoPac refuses with
+`code == "unverified"` and sends nothing (an older workspace: update it).
 
 - Orders do not log in: they are request files for `lib/sinopac_worker.py`, the machine's one
   Shioaji login. The platform starts and stops it while SinoPac is bound (cloud:
@@ -294,13 +298,12 @@ send nothing until a real-account order run passes. Once verified:
 
 ## Account reads
 
-`lib/sinopac_futures_account.py` reads the worker's snapshot (`state/sinopac_account.json`) and
+`lib/account_sinopac.py` reads the worker's snapshot (`state/sinopac_account.json`) and
 never logs in: equity (`margin().equity`, TWD), positions in lots per root with their month, the
 broker's listed months. There is **no `get_flows`**: Shioaji has no deposit / withdrawal history
 query (`margin()` carries only the day's total), so the platform flags an equity jump as 資金異動,
 as for 群益 and 統一. Position reads raise `SnapshotLag` while the snapshot's read started less than
-`ORDER_SETTLE_S` after this machine's last send (lesson 16): the position is unknown, not flat. Like
-the order functions, every read refuses until futures are verified.
+`ORDER_SETTLE_S` after this machine's last send (lesson 16): the position is unknown, not flat.
 
 ---
 
@@ -332,9 +335,8 @@ Sources: https://sinotrade.github.io/tutor/limit/ and https://sinotrade.github.i
 
 ## Verification Checklist for Agent
 
-There is nothing to verify by logging in yourself. Once SinoPac futures are available and the user
-has connected on the platform:
-1. Read the account through `lib/sinopac_futures_account.py` (equity, positions) — no login.
+There is nothing to verify by logging in yourself. Once the user has connected on the platform:
+1. Read the account through `lib/account_sinopac.py` (equity, positions) — no login.
 2. A read error saying the login is being retried: it retries by itself — wait, never start the
    worker. Not running, stale or stopped: tell the user to confirm the login on
    the platform. Never start the worker.

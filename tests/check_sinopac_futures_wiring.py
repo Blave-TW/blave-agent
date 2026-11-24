@@ -1,14 +1,15 @@
 """永豐期貨 wired into the reconciler, flatten and the account reader — no broker, no network.
 
-0. Gate off (the shipped row has no verified mode; the odd-lot path is gone): hand_wired /
-   native_units stay off; the reconciler has no 永豐 block; the six lowercase env names are 永豐's
-   own (cred_env) and still pair as a bound venue, so the keys can be unbound.
+0. The shipped row verifies futures (hand_wired / native_units follow it). Gate off in this
+   process: the reconciler has no 永豐 block; the six lowercase env names are 永豐's own
+   (cred_env) and still pair as a bound venue, so the keys can be unbound.
 S6 (Wei 11-17). Old odd-lot-era keys on a machine that never had futures (no bound_marker),
    gate off and gate on: runtime/account_reader and flatten leave 永豐 out and the report says
-   account false — no read failure. A machine that has had futures (the worker's durable marker)
+   account false — no read failure; its bind-manifest id and old routing do not make 永豐 the
+   hand-wired venue (lib.venue_wiring.hand_wired_venue). A machine that has had futures (the worker's durable marker)
    with its snapshot gone: account_reader reports the read failure and close-all reports 永豐
    failed, never skipped.
-The rest flips the gate in this process (the trait row + the libs' VERIFIED):
+The rest runs with the gate on (the trait row + the libs' VERIFIED):
 1. Reconciler lag: a snapshot read inside the last send's settle window raises
    SinopacCacheLagError (TRANSIENT: the round is skipped, never read as flat), also when the
    file turned lagging between the check and the read. 1b: the same with the real account lib and
@@ -86,20 +87,19 @@ sys.modules["shioaji"] = _sj
 
 from lib import venue_traits  # noqa: E402
 
-# ── 0. gate off ──────────────────────────────────────────────────────────────
+# ── 0. the shipped row; then the gate off in this process ───────────────────
 SJ = venue_traits.SINOPAC
-check("futures" not in venue_traits.verified_modes(SJ), "shipped row: futures not verified")
-check(not venue_traits.has(SJ, "hand_wired") and not venue_traits.has(SJ, "native_units"),
-      "gate off: hand_wired / native_units off — nothing routes or sizes 永豐 futures")
+ROW = venue_traits.TRAITS[SJ]
+check(venue_traits.verified_modes(SJ) == ("futures",), "shipped row: futures verified (real-account runs 2026-11-23)")
+check(venue_traits.has(SJ, "hand_wired") and venue_traits.has(SJ, "native_units"),
+      "shipped row: hand_wired / native_units follow the verified futures mode")
+ROW.update(hand_wired=False, native_units=False, verified_modes=())
 from manager import reconciler  # noqa: E402
 
 check(SJ not in reconciler._HAND_WIRED, "gate off: the reconciler routes no 永豐 block")
-# audit S6: the gate-flip commit renames the account lib; the reconciler's import must follow it
-_want_acct = ("lib.account_sinopac" if "futures" in venue_traits.verified_modes(SJ)
-              else "lib.sinopac_futures_account")
-check(reconciler._sinopac_acct().__name__ == _want_acct,
-      f"the reconciler reads 永豐 through the account lib the gate state names ({_want_acct})",
-      reconciler._sinopac_acct().__name__)
+# audit S6: the gate-flip commit renamed the account lib; the reconciler's import follows it
+check(reconciler._sinopac_acct().__name__ == "lib.account_sinopac",
+      "the reconciler reads 永豐 through lib/account_sinopac", reconciler._sinopac_acct().__name__)
 names = ("sinopac_api_key", "sinopac_secret_key", "sinopac_ca_path", "sinopac_ca_passwd",
          "sinopac_person_id", "SINOPAC_LIVE")
 check([venue_traits.cred_env(n) for n in names]
@@ -112,24 +112,32 @@ check(reconciler._env_venue_ids() == {"sinopac"}, "the lowercase pair still read
       reconciler._env_venue_ids())
 vw.read_env = _real_read_env
 
-# ── flip the gate in this process ────────────────────────────────────────────
-ROW = venue_traits.TRAITS[SJ]
+# ── the gate back on ─────────────────────────────────────────────────────────
+# a machine that has had futures (the worker's bound_marker): S6 takes it away and back
+os.makedirs(os.path.join(TMP, "state"), exist_ok=True)
+with open(os.path.join(TMP, venue_traits.get(SJ, "bound_marker")), "w") as f:
+    f.write("{}")
 ROW.update(hand_wired=True, native_units=True, verified_modes=("futures",))
 reconciler = importlib.reload(reconciler)
 check(reconciler._HAND_WIRED.get(SJ) == (reconciler._sinopac_get_positions, reconciler._sinopac_place_order),
       "gate on: _HAND_WIRED routes 永豐 to its block")
-from lib import order_sinopac as osj, sinopac_futures_account as acct_mod, sinopac_vault as vault  # noqa: E402
+from lib import order_sinopac as osj, account_sinopac as acct_mod, sinopac_vault as vault  # noqa: E402
 from lib import guard, tw_clock  # noqa: E402
 import lib.portfolio as lp  # noqa: E402
 
 osj.FUTURES_VERIFIED = acct_mod.VERIFIED = True
+# the real account lib's own read takes only a snapshot of the key .env binds now (audit M1)
+_KEY = vault.bound_env("k", "s")["sinopac_api_key"]
+acct_mod._ENV = os.path.join(TMP, "acct.env")
+with open(acct_mod._ENV, "w") as f:
+    f.write(f"sinopac_api_key={_KEY}\n")
 vault.LAST_ORDER_PATH = os.path.join(TMP, "state", "sinopac_last_order_at")
 vault.LOGIN_STOPPED_PATH = os.path.join(TMP, "state", "sinopac_login_stopped.json")
 reconciler.SINOPAC_PENDING_PATH = os.path.join(TMP, "state", "sinopac_pending_sent.json")
 
 
 class FakeAcct:
-    """lib/sinopac_futures_account as the reconciler reads it."""
+    """lib/account_sinopac as the reconciler reads it."""
     SnapshotLag = acct_mod.SnapshotLag
     contract_month = staticmethod(acct_mod.contract_month)
 
@@ -236,7 +244,7 @@ lp.book_months = lambda venue=None, config=None: {"TXF": {"2026-12"}}  # the boo
 def _snap_at(q, sent):
     with open(acct_mod._SNAPSHOT, "w") as f:
         json.dump({"ok": True, "equity": 1.0, "positions": [], "read_at": time.time(), "query_started_at": q,
-                   "listed": {"TXF": ["TXFL6"]}, "account_fp": "abc"}, f)
+                   "listed": {"TXF": ["TXFL6"]}, "account_fp": "abc", "key_fp": _KEY}, f)
     with open(vault.LAST_ORDER_PATH, "w") as f:
         f.write(repr(sent))
     vault._last_order_mem = 0.0
@@ -537,12 +545,34 @@ check(account_reader._venues(_old) == [] and flatten._venues(_old) == []
       "S6, gate on: odd-lot-era keys on a machine that never had futures — not read, not flattened, the report lists the "
       "keys (so they can be unbound) with account false: no read failure",
       (account_reader._venues(_old), flatten._venues(_old), _rep))
+# the bind manifest an odd-lot bind left, a strategy still routed there, a crypto venue beside it
+_ui_manifest = os.path.join(TMP, "manager", "credentials.ui.json")
+with open(_ui_manifest, "w") as f:
+    json.dump({"ids": ["binance", SJ]}, f)
+with open(os.path.join(TMP, "manager", "portfolio_config.json"), "w") as f:
+    json.dump({"exchanges": {"odd_lot_era": SJ, "btc": "binance"}}, f)
+check(_vw.hand_wired_venue() is None,
+      "S6, gate on: odd-lot-era 永豐 in the bind manifest and the routing is not the venue the reconciler "
+      "trades (the crypto venue stays wired)", _vw.hand_wired_venue())
+_hw_calls = []
+_real_hwi = reconciler._hand_wired_impl
+reconciler._hand_wired_impl = lambda v: (None, lambda *a, **k: _hw_calls.append((v, a)) or {"status": "filled"})
+_sent = reconciler.place_order("TXF", 1, exchange=SJ)
+check(_sent is False and not _hw_calls, "S6, gate on: an order routed to that dormant 永豐 is not sent", (_sent, _hw_calls))
 with open(_marker, "w") as f:
     f.write("{}")
 check(account_reader._venues(_old) == [SJ] and flatten._venues(_old) == [SJ]
       and portfolio_reporter.venues()[SJ]["account"] is True,
       "…once the futures worker has started there (its marker), both read and flatten 永豐",
       (account_reader._venues(_old), flatten._venues(_old)))
+check(_vw.hand_wired_venue() == SJ, "…once the futures worker has started there, 永豐 is the hand-wired venue",
+      _vw.hand_wired_venue())
+_sent = reconciler.place_order("TXF", 1, exchange=SJ)
+check(_hw_calls and _hw_calls[0][0] == SJ, "…and its orders go to the 永豐 block", (_sent, _hw_calls))
+reconciler._hand_wired_impl = _real_hwi
+os.remove(_ui_manifest)
+with open(os.path.join(TMP, "manager", "portfolio_config.json"), "w") as f:
+    f.write("{}")
 rt_traits.TRAITS[SJ].update(hand_wired=False, native_units=False, verified_modes=())
 check(account_reader._venues(_old) == [] and portfolio_reporter.venues()[SJ]["account"] is False,
       "S6, gate off: unverified — not read even with the marker there")
@@ -630,13 +660,15 @@ check(parks and parks[0][0] == "TXF" and parks[0][2] == -2 and parks[0][3] == {"
 
 # ── 5. account reader ────────────────────────────────────────────────────────
 os.chdir(TMP)
+sys.modules["lib.account_sinopac"] = acct_mod   # flatten's stand-in took that name above
 acct_mod = importlib.reload(acct_mod)
 acct_mod.VERIFIED = True
 acct_mod._SNAPSHOT = os.path.join(TMP, "state", "sinopac_account.json")
+acct_mod._ENV = os.path.join(TMP, "acct.env")
 now = time.time()
 with open(acct_mod._SNAPSHOT, "w") as f:
     json.dump({"ok": True, "equity": 50010.0, "positions": [], "read_at": now, "query_started_at": now - 1,
-               "listed": {}, "account_fp": "abc"}, f)
+               "listed": {}, "account_fp": "abc", "key_fp": _KEY}, f)
 with open(vault.LAST_ORDER_PATH, "w") as f:
     f.write(repr(now - 5))
 vault._last_order_mem = 0.0

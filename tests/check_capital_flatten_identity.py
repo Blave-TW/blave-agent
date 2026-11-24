@@ -409,14 +409,18 @@ check("ETHUSDT" in zeroed and not any(e[1] == "fooex" for e in errors),
       f"key without any lib → sweep still runs ({sorted(zeroed)})")
 EXTRA_ENV.clear()
 # a venue that can trade (order lib) but can't be read (no account lib): 永豐 as if bound for
-# futures (verified, its bound_marker not asked) on a lib that lacks lib/account_sinopac.py
+# futures (verified, its bound_marker not asked) on a workspace whose lib lacks
+# lib/account_sinopac.py (one updated half-way across the rename from sinopac_futures_account)
 EXTRA_ENV.update(SINOPAC_API_KEY="x", SINOPAC_SECRET_KEY="x")
 _sj_row = dict(flatten.venue_traits.TRAITS["sinopac"])
 flatten.venue_traits.TRAITS["sinopac"].update(verified_modes=("futures",))
 flatten.venue_traits.TRAITS["sinopac"].pop("bound_marker", None)
+_isfile = os.path.isfile
+os.path.isfile = lambda p: False if os.path.normpath(str(p)) == os.path.join("lib", "account_sinopac.py") else _isfile(p)
 try:
     run_flatten(True, BOOK)
 finally:
+    os.path.isfile = _isfile
     flatten.venue_traits.TRAITS["sinopac"].clear()
     flatten.venue_traits.TRAITS["sinopac"].update(_sj_row)
 check("ETHUSDT" not in zeroed and ("*", "sinopac") in [e[:2] for e in errors],

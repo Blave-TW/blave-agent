@@ -18,7 +18,9 @@ let red = 0; const ok = (n, c, got) => { console.log((c ? "PASS  " : "FAIL  ") +
   const mainSrc = fs.readFileSync(path.join(SHELL, "main.js"), "utf8"), tradeSrc = fs.readFileSync(path.join(SHELL, "renderer", "trade.js"), "utf8");
   const mf = /^const SINOPAC_LOCAL_ON = (true|false);$/m.exec(mainSrc), tf = /^const SINOPAC_LOCAL_ON = (true|false);$/m.exec(tradeSrc);
   ok("0 main.js 與 trade.js 都有 SINOPAC_LOCAL_ON,值相同", !!mf && !!tf && mf[1] === tf[1]);
-  ok("0 這一版旗標關著(翻開跟 runtime 期貨閘門同一版)", !!mf && mf[1] === "false");
+  { const gm = /^_SINOPAC_MODES = (.*)$/m.exec(fs.readFileSync(path.join(SHELL, "..", "runtime", "venue_traits.py"), "utf8"));
+    const gateOpen = !!gm && /["']futures["']/.test(gm[1]);
+    ok("0 旗標跟 runtime 期貨閘門(venue_traits _SINOPAC_MODES)同開同關", !!gm && !!mf && (mf[1] === "true") === gateOpen, gm && gm[1]); }
   { const i = mainSrc.indexOf("  if (SINOPAC_LOCAL_ON) {\n    const spDenied"), j = mainSrc.indexOf("\n  }\n", i);
     const inside = i >= 0 && j > i ? mainSrc.slice(i, j) : "", all = [...mainSrc.matchAll(/handle\("(sinopac-[a-z-]+)"/g)].map((m) => m[1]);
     ok("0 sinopac-* IPC 除了解除連接都在旗標裡註冊", all.length === 9 && all.filter((n) => n !== "sinopac-unbind").every((n) => inside.includes('handle("' + n + '"'))

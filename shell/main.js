@@ -3613,7 +3613,7 @@ function capitalLocal() {
    送給 daemon 時用它這次啟動的 secret 封裝(daemon.sealSinopac),機器端只放記憶體、經 stdin 交給下單程式。Mac 與 Windows 都走得到。
    旗標關 = IPC 不註冊、補交不跑(解除連接除外);翻開要跟 runtime 的期貨閘門(venue_traits verified_modes)同一版 */
 // = renderer/trade.js SINOPAC_LOCAL_ON(tests/check_shell_sinopac_local.js 釘兩處相同)
-const SINOPAC_LOCAL_ON = false;
+const SINOPAC_LOCAL_ON = true;
 let _sinopac = null, _spCloud = null;
 function sinopac() {
   if (!_sinopac) _sinopac = require("./sinopac_local").createSinopac({

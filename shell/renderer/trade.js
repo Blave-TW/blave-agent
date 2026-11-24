@@ -1877,7 +1877,7 @@ const CAPL_LOCAL_ON = true;
 const cxCaplListed = () => CAPL_LOCAL_ON || CXF.venue === CAPITAL;
 /* 永豐期貨入口(renderer/sinopac.js:表單、開通清單、帳戶列、頁首、事件列)。= main.js SINOPAC_LOCAL_ON(tests/check_shell_sinopac_local.js 釘兩處相同);
    翻開要跟 runtime 的期貨閘門(venue_traits verified_modes)同一版。關著 = 磚不列永豐,永豐的開通、登入停止、重試那幾態一律不出 */
-const SINOPAC_LOCAL_ON = false;
+const SINOPAC_LOCAL_ON = true;
 // 不在 CX_VENUES 裡的帳戶(lib/account_paper.py、account_capital.py、account_president.py;永豐旗標開才算)
 const TR_VENUE_CCY_OTHER = Object.assign({ paper: "USDT", capital: "TWD", president: "TWD" }, SINOPAC_LOCAL_ON ? { sinopac: "TWD" } : {});
 // 讀不到帳戶幣時的退路:那家的固定幣別;自訂交易所查不到 = null(畫面不帶幣別、不出倍數,改講 tr.ccyUnknown)

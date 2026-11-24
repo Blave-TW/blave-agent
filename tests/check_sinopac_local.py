@@ -1,7 +1,7 @@
 """永豐 worker lifecycle: the cloud shim (runtime/sinopac_service.py) and the desktop supervisor
 (runtime/sinopac_local.py) — real child processes running a stand-in worker, no shioaji, no login.
 
-  1. wanted(): the futures gate shut → never, whatever .env says; open → the four connect-flow
+  1. wanted(): the shipped gate is open; shut → never, whatever .env says; open → the four connect-flow
      sentinels under the worker's exact names (plain values, as a 零股 bind left them, never),
      no STOP record. The shim exits 0 without exec'ing when not wanted.
   2. desktop, gate shut: ticks never start anything.
@@ -134,12 +134,12 @@ def wait_exit(p, s=5.0):
 
 real_modes = svc.venue_traits.verified_modes
 gate = {"open": False}
-svc.venue_traits.verified_modes = lambda v: ("futures",) if gate["open"] and v == "sinopac" else real_modes(v)
+svc.venue_traits.verified_modes = lambda v: (("futures",) if gate["open"] else ()) if v == "sinopac" else real_modes(v)
 
 # ── 1. wanted() ──
 bind()
-check(svc.wanted(WS)[0] is False and "futures" not in real_modes("sinopac"),
-      "1 the shipped gate is shut: not wanted even when bound")
+check(real_modes("sinopac") == ("futures",), "1 the shipped gate is open")
+check(svc.wanted(WS)[0] is False, "1 gate shut: not wanted even when bound")
 gate["open"] = True
 check(svc.wanted(WS) == (True, None), "1 gate open + bound through the connect flow + finished + no STOP → wanted")
 bind(wanted=False)
@@ -162,14 +162,23 @@ bind()
 open(STOP, "w").close()
 check(svc.wanted(WS)[0] is False, "1 not wanted: a STOP record (the user has to confirm a login)")
 os.remove(STOP)
-# the shim as systemd runs it (its own process, the shipped gate): exits 0 without exec'ing — a
-# stand-in that exits 7 would show
+# the shim as systemd runs it (its own process, the shipped gate open; the connect flow not
+# finished): exits 0 without exec'ing — a stand-in that exits 7 would show
 mode("exit:7")
 gate["open"] = False
+bind(wanted=False)
 r = subprocess.run([sys.executable, os.path.join(ROOT, "runtime", "sinopac_service.py")], capture_output=True,
                    timeout=30, env=dict(os.environ, BLAVE_AGENT_WORKSPACE=WS))
 check(r.returncode == 0 and not lines(), "1 shim: not wanted → exit 0, worker never started",
       (r.returncode, lines(), r.stderr.decode()[-200:]))
+check(b"not started" in r.stdout, "1 shim: a bound machine's reason is logged", r.stdout[-200:])
+os.remove(ENV)
+r = subprocess.run([sys.executable, os.path.join(ROOT, "runtime", "sinopac_service.py")], capture_output=True,
+                   timeout=30, env=dict(os.environ, BLAVE_AGENT_WORKSPACE=WS))
+check(r.returncode == 0 and not r.stdout and not r.stderr and not lines(),
+      "1 shim: never bound (most machines, the timer every 2 minutes) → exit 0 without a log line",
+      (r.returncode, r.stdout[-200:], r.stderr[-200:]))
+bind()
 
 # ── 2. desktop, gate shut ──
 w = sl._Worker()
@@ -636,10 +645,13 @@ w.check_at = 0.0
 w.tick(time.time())
 old = w.proc
 check(old is not None and old.poll() is None, "8b setup: the worker of the finished connect runs")
-with open(SNAP, "w") as f:  # what the restarted worker would write (read_at after run_finish starts)
-    json.dump({"ok": True, "equity": 1, "read_at": time.time() + 120}, f)
+with open(SNAP, "w") as f:  # the old key's account, fresh
+    json.dump({"ok": True, "equity": 1, "read_at": time.time()}, f)
 answers[:] = [None]
 out = sl.local_dispatch({"op": "bind", "sealed": seal(B3)}, _D)
+check(not os.path.exists(SNAP), "8b key change: the store drops the old key's snapshot (audit M1)")
+with open(SNAP, "w") as f:  # what the restarted worker would write (read_at after run_finish starts)
+    json.dump({"ok": True, "equity": 1, "read_at": time.time() + 120}, f)
 st = sc.read_status() or {}
 during = {"probe": refusal({"op": "probe", "expect": seal(B3)}), "start": refusal({"op": "start", "expect": seal(B3)}),
           "bind": refusal({"op": "bind", "sealed": seal(B3)})}
@@ -740,8 +752,14 @@ mode("eof")
 real_retry, real_451 = sl.RESUME_RETRY_S, sc.LOGIN_451_WAIT_S
 sl.RESUME_RETRY_S, sc.LOGIN_451_WAIT_S = 0.3, 2
 answers[:] = ["TIMEOUT", None]
-with open(SNAP, "w") as f:
-    json.dump({"ok": True, "equity": 1, "read_at": time.time() + 120}, f)
+
+
+def _new_key_snapshot():  # the restarted worker's first read (the store dropped the old key's)
+    with open(SNAP, "w") as f:
+        json.dump({"ok": True, "equity": 1, "read_at": time.time() + 120}, f)
+
+
+on_probe.append(_new_key_snapshot)
 rekey(7)
 check(wait_unlocked(), "8b TIMEOUT: the resume ends")
 st = sc.read_status() or {}
@@ -808,6 +826,32 @@ check(st.get("worker", {}).get("status") == "ok" and not st.get("busy"),
       "8c …and the worker reads ok once its snapshot is there (not stuck at 開通中)", st)
 sc._run_worker = _real_run
 os.environ.pop("BLAVE_AGENT_LOCAL", None)
+
+# ── 8d the cloud steps check the workspace's own lib gate too (audit S4): a runtime newer than the
+#       workspace refuses before the setup and the certificate, with nothing written and no HALT ──
+gate["open"] = True
+_ws_vt = os.path.join(WS, "lib", "venue_traits.py")
+_real_vt = open(os.path.join(ROOT, "lib", "venue_traits.py"), encoding="utf-8").read()
+check(_real_vt.count('\n_SINOPAC_MODES = ("futures",)\n') == 1, "8d the shipped lib gate line is the one sinopac_connect reads")
+with open(_ws_vt, "w", encoding="utf-8") as f:
+    f.write(_real_vt.replace('_SINOPAC_MODES = ("futures",)', "_SINOPAC_MODES = ()"))
+_key_path = sc._paths()["key"]
+for _p in (_key_path, os.path.join(WS, "state", "HALT")):
+    if os.path.exists(_p):
+        os.remove(_p)
+_st_before = sc.read_status()
+_codes = [code_of(lambda c=c: sc.dispatch(c, {}, None)) for c in ("sinopac_setup", "sinopac_pfx_key", "sinopac_pfx", "sinopac_probe")]
+check(_codes == ["WORKSPACE_OLD"] * 4 and not os.path.exists(_key_path) and not os.path.exists(os.path.join(WS, "state", "HALT"))
+      and sc.read_status() == _st_before,
+      "8d workspace lib shut: setup / pfx_key / pfx / probe refused WORKSPACE_OLD, no key, no status change, no HALT", _codes)
+os.remove(_ws_vt)
+check(code_of(sc.gate) == "WORKSPACE_OLD", "8d no lib/venue_traits.py in the workspace: refused the same")
+with open(_ws_vt, "w", encoding="utf-8") as f:
+    f.write(_real_vt)
+check(sc.workspace_open() and code_of(sc.gate) is None, "8d the shipped lib in the workspace: the gate passes")
+gate["open"] = False
+check(code_of(sc.gate) == "NOT_OPEN", "8d this runtime's own gate shut: NOT_OPEN first")
+os.remove(_ws_vt)
 
 svc.venue_traits.verified_modes = real_modes
 

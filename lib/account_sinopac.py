@@ -1,15 +1,11 @@
 # SinoPac (永豐期貨) domestic futures account reads.
 #
-# NOT live-verified (tests/check_sinopac_futures.py fakes the SDK): every read
-# raises until lib/venue_traits' sinopac row lists "futures" in verified_modes.
-# Deliberately not named lib/account_sinopac.py: runtime/account_reader and
-# manager/flatten pick up any lib/account_<venue>.py. Becoming the venue's
-# account lib is part of the futures verification commit; even then a machine
-# with only the odd-lot era's sinopac_* keys is not read (venue_traits
-# bound_marker: the worker never started there, no read). Never talks
-# to the broker: lib/sinopac_worker.py holds the machine's one Shioaji login and
-# writes state/sinopac_account.json; this module only reads that snapshot, so a
-# platform reader never opens a second connection against the person's 5.
+# Real-account runs 2026-11-23 (tests/check_sinopac_futures.py fakes the SDK). Every read
+# raises while lib/venue_traits' sinopac row lacks "futures" in verified_modes. A machine
+# with only the odd-lot era's sinopac_* keys is not read (venue_traits bound_marker: the
+# worker never started there). Never talks to the broker: lib/sinopac_worker.py holds the
+# machine's one Shioaji login and writes state/sinopac_account.json; this module only reads
+# that snapshot, so a platform reader never opens a second connection against the person's 5.
 #
 # No get_flows, as lib/account_capital: the 1.7.11 stub has no deposit /
 # withdrawal history query (margin() carries only the day's deposit_withdrawal
@@ -39,8 +35,9 @@ try:
 except ImportError:
     venue_errors = None
 
-_SNAPSHOT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                         "state", "sinopac_account.json")
+_WS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_SNAPSHOT = os.path.join(_WS, "state", "sinopac_account.json")
+_ENV = os.path.join(_WS, ".env")
 _STALE_S = 300  # worker cadence is 60 s; 5 misses = stale
 WORKER_DOWN = "[sinopac_worker_down]"
 ROOTS = _contracts.ROOTS
@@ -62,7 +59,28 @@ def _read_snapshot():
         raise RuntimeError(f"{WORKER_DOWN} sinopac snapshot stale ({int(age)}s old) — 永豐 worker down?")
     if not snap.get("ok"):
         raise RuntimeError(f"sinopac worker error: {snap.get('error')}")
+    # a rekey (sinopac_vault.fingerprint changes) leaves the old account's snapshot fresh for up to
+    # _STALE_S: read under the new key it would pass the account identity check (audit M1)
+    if not snap.get("key_fp") or snap.get("key_fp") != _bound_key():
+        raise RuntimeError("sinopac snapshot is not from the key bound now (rebound, or a worker older "
+                           "than this lib) — waiting for the worker's first read")
     return snap
+
+
+def _bound_key():
+    """.env's sinopac_api_key sentinel (vault:<fingerprint>), None when there is none."""
+    try:
+        lines = _vault.read_retry(_vault._read_text, _ENV).splitlines()  # the runtime replaces .env on every bind
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError) as e:
+        raise RuntimeError(f"sinopac: .env unreadable ({type(e).__name__}) — not read")
+    for line in lines:
+        k, sep, v = line.strip().partition("=")
+        if sep and k.strip().casefold() == "sinopac_api_key":
+            v = v.strip().strip("'\"")
+            return v if v.startswith(_vault.PW_PREFIX) else None
+    return None
 
 
 def waiting():
@@ -78,6 +96,11 @@ def waiting():
     if not isinstance(snap, dict) or snap.get("ok") or not snap.get("waiting"):
         return None
     if time.time() - float(snap.get("read_at") or 0) > _STALE_S:
+        return None
+    try:
+        if snap.get("key_fp") != _bound_key():
+            return None
+    except RuntimeError:
         return None
     return str(snap["waiting"])
 

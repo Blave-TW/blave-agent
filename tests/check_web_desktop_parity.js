@@ -26,7 +26,7 @@ ok("電腦版 TR_VENUE_CCY_OTHER 讀得到(旗標寫法的旗標也讀得到)", 
 const wa = web.indexOf("const CX_VENUES = ["), wb = web.indexOf("\n        ];\n", wa), wt = {};
 if (wa >= 0 && wb > wa) for (const m of web.slice(wa, wb).matchAll(/\{\s*id: "(\w+)"[^{}]*?ccy: "(\w+)"/g)) wt[m[1]] = m[2];
 const sorted = (o) => JSON.stringify(Object.keys(o).sort().map((k) => [k, o[k]]));
-ok("幣別對照表兩邊同一份(十個帳戶)", Object.keys(dt).length === 10 && sorted(dt) === sorted(wt), sorted(dt) + " vs " + sorted(wt));
+ok("幣別對照表兩邊同一份(十一個帳戶)", Object.keys(dt).length === 11 && sorted(dt) === sorted(wt), sorted(dt) + " vs " + sorted(wt));
 // 連接框案一(spec connect-account-plan1 §3、§2-1):「到 X 建金鑰」的網址(keyUrl)兩邊同值、沒有的那家兩邊都沒有;交易所磚的順序兩邊一樣
 { const dk = {}, wk = {}, dOrd = cx ? [...cx[1].matchAll(/(\w+): \{([^}]*)\}/g)].map((m) => m[1]) : [];
   if (cx) for (const m of cx[1].matchAll(/(\w+): \{([^}]*)\}/g)) { const u = /keyUrl: "([^"]+)"/.exec(m[2]); dk[m[1]] = u ? u[1] : null; }

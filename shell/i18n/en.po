@@ -12054,6 +12054,26 @@ msgstr "Turn on automatic time in system settings."
 msgid "sp.err.unknown"
 msgstr "SinoPac refused the sign-in without a reason."
 
+# 雲端主機的 runtime 已開永豐、workspace 還沒更新:整框(WORKSPACE_OLD,上傳前就擋)與登入那一列(probe.state not_open)。鈕名 = up.cloud.go
+msgid "sp.err.hostOld"
+msgstr "Your cloud machine is out of date. Press Update Cloud Machine, then try again."
+
+# 整框:主機回 NOT_OPEN／NOT_CAPABLE(runtime 還沒到開永豐那一版,發版後約 6 分鐘內自己換)
+msgid "sp.err.notOpen"
+msgstr "SinoPac futures isn’t open yet. Try again in a few minutes."
+
+# 整框:主機回 WORKER_RUNNING(下單程式已登入或在重試,同一組身分證一次只登入一個)
+msgid "sp.err.workerOn"
+msgstr "The SinoPac order program is connecting. Wait a minute, then try again."
+
+# 整框、回表單:主機回 NOT_BOUND(金鑰或憑證不在主機上)
+msgid "sp.err.notBound"
+msgstr "Your machine has no SinoPac key or certificate. Fill them in again and press Connect Account."
+
+# 整框:雲端那一包沒送到或主機拆不開(KEY_TIMEOUT／KEY_EXPIRED／KEY_INVALID／ENVELOPE_INVALID)
+msgid "sp.err.sendAgain"
+msgstr "Your details didn’t reach your cloud machine. Press Connect Account again."
+
 # 設定 › 帳戶 永豐那一列讀帳失敗(不是登入停了、不是重試中)的那一行,取代 lib 的工程英文。下單程式沒寫快照(lib [sinopac_worker_down])用 down,其他用 readFail
 msgid "sp.acct.down"
 msgstr "SinoPac’s order engine isn’t responding. Try reopening Blave."

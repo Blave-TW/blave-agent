@@ -119,18 +119,20 @@ STRAT = "txf_trend"
 
 
 def sinopac_world(fakes, tmp):
-    """永豐 with the gate flipped in this process: the reconciler's block, an account the test
-    owns (rows keyed by month code, as the worker snapshot) and an order lib that fills it."""
+    """永豐 on a machine that has had futures (the worker's bound_marker): the reconciler's block, an
+    account the test owns (rows keyed by month code, as the worker snapshot) and an order lib that
+    fills it."""
     sj = types.ModuleType("shioaji")
     sj.__version__ = "1.7.11"
     sys.modules["shioaji"] = sj
     from lib import venue_traits
-    venue_traits.TRAITS[venue_traits.SINOPAC].update(hand_wired=True, native_units=True,
-                                                     verified_modes=("futures",))
     w = fakes.World(venue_traits.SINOPAC, tmp)
+    marker = os.path.join(tmp, venue_traits.get(venue_traits.SINOPAC, "bound_marker"))
+    os.makedirs(os.path.dirname(marker), exist_ok=True)
+    with open(marker, "w") as f:
+        f.write("{}")
     fakes._pin_session()
-    from lib import order_sinopac as osj, sinopac_futures_account as acct_mod, sinopac_vault as vault
-    osj.FUTURES_VERIFIED = acct_mod.VERIFIED = True
+    from lib import order_sinopac as osj, account_sinopac as acct_mod, sinopac_vault as vault
     vault.LAST_ORDER_PATH = os.path.join(tmp, "state", "sinopac_last_order_at")
     vault.LOGIN_STOPPED_PATH = os.path.join(tmp, "state", "sinopac_login_stopped.json")
 

@@ -182,7 +182,7 @@ def bot_rows(rows, listed_by_root=None, now=None, book_months=None, broker="統�
     holds; a root absent from it holds none (every row of it is manual), None
     for a root = its months are not known (the calendar decides that root).
     None altogether = no book: the calendar decides every row. `broker`: the name ListUnknown
-    gives the user (lib/sinopac_worker and lib/sinopac_futures_account pass 永豐)."""
+    gives the user (lib/sinopac_worker and lib/account_sinopac pass 永豐)."""
     keep, residue, manual = [], [], []
     for r in rows:
         if not r.get("net"):

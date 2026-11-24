@@ -46,12 +46,11 @@ class OrderNotConfirmed(Exception):
 
 # ── domestic futures (TXF / MXF / TMF) — relayed through lib/sinopac_worker.py ─
 #
-# NOT live-verified: tested with a faked SDK only (tests/check_sinopac_futures.py);
-# M0-b (2026-11-16) ran the raw SDK calls it uses once on a real account
-# (references/sinopac-broker.md, lessons 15-21). Shut until then: the sinopac
-# row of lib/venue_traits has no verified mode, and every futures order is
-# refused before anything is written (FUTURES_VERIFIED). The commit that merges
-# the real-account run sets that row's verified_modes to ("futures",).
+# Tested with a faked SDK (tests/check_sinopac_futures.py); M0-b (2026-11-16) ran
+# the raw SDK calls once and the 2026-11-23 desktop runs placed and closed a TMF
+# lot twice (references/sinopac-broker.md). While the sinopac row of
+# lib/venue_traits has no "futures" mode every order is refused before anything
+# is written (FUTURES_VERIFIED).
 #
 # One login per national id is shared by every Shioaji client of that person
 # (5 connections), so the futures login lives in lib/sinopac_worker.py and

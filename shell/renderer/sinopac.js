@@ -16,19 +16,24 @@ const SP_STUCK_MS = 25 * 60 * 1000;
 const SP_NO_MOVE_MS = 90000;
 const SP_SIM_OPEN = 8, SP_SIM_CLOSE = 20, SP_SIM_CLOSE_CLOUD = 18;   // = runtime sinopac_connect.SIM_OPEN / SIM_CLOSE_LOCAL / SIM_CLOSE_CLOUD(台北時間,週一到五)
 // runtime sinopac_connect.LOGIN_STATES 的值(probe.state)→ 登入那一列的態(spec §3、§4)
+// not_open = 主機的 runtime 開了、workspace 的 lib 還是關的(下單程式 UNVERIFIED_EXIT):只有沒更新的雲端主機會這樣 → r-old;本機隨包不會
 const SP_PROBE_VIEW = { key: "r-key", no_futures: "r-nofut", cert: "r-cert", too_many: "r-451", timeout: "r-net", clock: "r-clock",
-  version: "r-setup-fail", unknown: "r-unknown", not_open: "r-unknown", no_credentials: "r-unknown" };
+  version: "r-setup-fail", unknown: "r-unknown", not_open: "r-old", no_credentials: "r-unknown" };
 // 下單程式登入停了(login_stop.reason = lib/sinopac_worker._login_reason;TOO_MANY／TIMEOUT 只重試、不停)→ 同一組畫面
 const SP_STOP_VIEW = { KEY: "r-key", NO_FUTURES: "r-nofut", CERT: "r-cert", CLOCK: "r-clock", VERSION: "r-setup-fail", NOT_SIGNED: "s-notyet", UNKNOWN: "r-unknown" };
 const SP_ERR_KEY = { "r-key": "sp.err.key", "r-nofut": "sp.err.noFut", "r-cert": "sp.err.cert", "r-451": "sp.err.full", "r-net": "sp.err.net",
-  "r-clock": "sp.err.clock", "r-unknown": "sp.err.unknown" };
+  "r-clock": "sp.err.clock", "r-unknown": "sp.err.unknown", "r-old": "sp.err.hostOld" };
 // 表單送出後主行程／機器回的錯:憑證檔那一格、身分證那一格、第五格、或整框
 const SP_PFX_FILE = ["PFX_INVALID", "PFX_TOO_LARGE", "READ_FAILED"];
 // 還沒選檔／機器上沒有那張:不是選錯,憑證卡換回〔選憑證檔〕＋提示句,不出錯誤句(設計稽核 S5)
 const SP_PFX_NONE = ["NO_PFX", "NO_CERT"];
-const SP_FRAME_ERR = { NO_SEAL: "sp.err.noSeal", REBOUND: "sp.err.rebound", NO_SECRETS: "sp.err.rebound", SECRETS_STALE: "sp.err.rebound", NO_CREDS: "sp.err.rebound", DAEMON_DOWN: "side.stopped", TIMEOUT: "side.stopped", BUSY: "cap.err.busy" };
-// 存著的那組對不上:回表單整份重填,出口是腳的〔連接帳戶〕(設計稽核 M2)
-const SP_REFILL = ["REBOUND", "NO_SECRETS", "SECRETS_STALE", "NO_CREDS"];
+// NOT_OPEN／NOT_CAPABLE:主機的 runtime 還沒到開永豐那一版(發版後約 6 分鐘內自己換);WORKSPACE_OLD:runtime 開了、workspace 還沒更新(要用戶按更新);
+// KEY_*／ENVELOPE_INVALID:雲端那一包沒送到或主機拆不開
+const SP_FRAME_ERR = { NO_SEAL: "sp.err.noSeal", REBOUND: "sp.err.rebound", NO_SECRETS: "sp.err.rebound", SECRETS_STALE: "sp.err.rebound", NO_CREDS: "sp.err.rebound", DAEMON_DOWN: "side.stopped", TIMEOUT: "side.stopped", BUSY: "cap.err.busy",
+  NOT_OPEN: "sp.err.notOpen", NOT_CAPABLE: "sp.err.notOpen", WORKSPACE_OLD: "sp.err.hostOld", WORKER_RUNNING: "sp.err.workerOn", NOT_BOUND: "sp.err.notBound",
+  KEY_TIMEOUT: "sp.err.sendAgain", KEY_EXPIRED: "sp.err.sendAgain", KEY_INVALID: "sp.err.sendAgain", ENVELOPE_INVALID: "sp.err.sendAgain" };
+// 存著的那組對不上或不在了:回表單整份重填,出口是腳的〔連接帳戶〕(設計稽核 M2)
+const SP_REFILL = ["REBOUND", "NO_SECRETS", "SECRETS_STALE", "NO_CREDS", "NOT_BOUND"];
 // 每開一次框每個名字最多一次;失敗不埋、不帶內容(spec §12;按〔到永豐建金鑰〕沿用 cx_key_page)
 const SP_FEATURE = { form: "sinf_form_saved", sign: "sinf_sign_open", sim: "sinf_sim_sent", signed: "sinf_signed", ready: "sinf_ready", relogin: "sinf_relogin" };
 
@@ -97,7 +102,7 @@ function spcView(sc, ui, ctx) {
   if (worker.status === "ok") return "done";
   if (worker.status === "failed") return "w-fail";
   if (probe.status === "failed") {
-    if (probe.state !== "not_signed") { const v = SP_PROBE_VIEW[String(probe.state || "")] || "r-unknown"; return v === "r-clock" && ctx.cloud ? "r-unknown" : v; }
+    if (probe.state !== "not_signed") { const v = SP_PROBE_VIEW[String(probe.state || "")] || "r-unknown"; return (v === "r-clock" && ctx.cloud) || (v === "r-old" && !ctx.cloud) ? "r-unknown" : v; }
     if (sim.status === "failed") return sim.state === "not_yet" ? "s-notyet" : sim.state === "tw_ip" ? "s-twip" : "s-rej";
     const nxo = sim.next_open_at, shut = typeof nxo === "number" && nxo * 1000 > ctx.now;   // 機器說的下一次開窗還沒到
     return ui.simClosed || shut || !spSimOpen(ctx.now, ctx.cloud ? SP_SIM_CLOSE_CLOUD : SP_SIM_CLOSE) ? "s-closed" : "s-ask";

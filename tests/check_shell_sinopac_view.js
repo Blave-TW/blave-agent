@@ -12,7 +12,7 @@ if (a < 0 || b < 0) { console.log("FAIL  sinopac.js 找不到純邏輯段的記�
 const head = src.slice(0, src.indexOf("let SP = spBlank();"));
 const ctx = {}; vm.createContext(ctx);
 vm.runInContext(head + "\n" + src.slice(a, b) + "\nthis.spcView = spcView; this.spBlank = spBlank; this.spRunning = spRunning; this.spSimOpen = spSimOpen; this.spSimNext = spSimNext;"
-  + " this.spMsgPlace = spMsgPlace; this.spFormReady = spFormReady; this.spHm = spHm; this.spSimRow = spSimRow; this.SP_PROBE_VIEW = SP_PROBE_VIEW; this.SP_STOP_VIEW = SP_STOP_VIEW; this.SP_ERR_KEY = SP_ERR_KEY; this.spAcctErrKey = spAcctErrKey;"
+  + " this.spMsgPlace = spMsgPlace; this.spFormReady = spFormReady; this.spHm = spHm; this.spSimRow = spSimRow; this.SP_PROBE_VIEW = SP_PROBE_VIEW; this.SP_STOP_VIEW = SP_STOP_VIEW; this.SP_ERR_KEY = SP_ERR_KEY; this.spAcctErrKey = spAcctErrKey; this.SP_FRAME_ERR = SP_FRAME_ERR; this.SP_REFILL = SP_REFILL;"
   + " this.spEqView = typeof spEqView === \"function\" ? spEqView : null; this.spBusy = typeof spBusy === \"function\" ? spBusy : null; this.SP_EQ_WAIT_MS = typeof SP_EQ_WAIT_MS === \"number\" ? SP_EQ_WAIT_MS : null;", ctx);
 const { spcView: spView, spRunning, spSimOpen, spSimNext, spMsgPlace, spFormReady, spHm, spSimRow } = ctx;
 
@@ -39,6 +39,8 @@ ok("剛送、回報還沒動 → 那一步在跑", view(sc(), ui({ sent: { step:
 const PF = (state, extra) => sc({ probe: Object.assign({ status: "failed", state, at: S - 3 }, extra || {}) });
 ok("probe.state 每一類 → 對的態", JSON.stringify(["key", "no_futures", "cert", "too_many", "timeout", "clock", "version", "unknown", "not_open", "no_credentials", "weird"].map((s) => view(PF(s))))
   === JSON.stringify(["r-key", "r-nofut", "r-cert", "r-451", "r-net", "r-clock", "r-setup-fail", "r-unknown", "r-unknown", "r-unknown", "r-unknown"]));
+ok("not_open 在雲端 → r-old(主機 runtime 開了、workspace 沒更新);本機照舊 r-unknown",
+  spView(PF("not_open"), ui(), { now: NOW, cloud: true }) === "r-old" && view(PF("not_open")) === "r-unknown" && ctx.SP_ERR_KEY["r-old"] === "sp.err.hostOld");
 ok("每個登入失敗態都有錯誤句(r-setup-fail 走 sp.s.setupFail)", Object.values(ctx.SP_PROBE_VIEW).every((v) => v === "r-setup-fail" || ctx.SP_ERR_KEY[v]));
 // 簽署那一列只在 NOT_SIGNED
 ok("not_signed、時段內 → s-ask;時段外(週六)→ s-closed", view(PF("not_signed")) === "s-ask" && view(PF("not_signed"), null, Date.UTC(2026, 10, 21, 2)) === "s-closed");
@@ -71,6 +73,11 @@ ok("錯誤掛在哪:檔案類 → 憑證卡;過期 → 憑證卡;打不開 → �
   spMsgPlace({ code: "PFX_INVALID" }) === "pfx" && spMsgPlace({ code: "READ_FAILED" }) === "pfx" && spMsgPlace({ code: "PFX_EXPIRED" }) === "pfx"
   && spMsgPlace({ code: "PFX_PASSWORD" }, false) === "id" && spMsgPlace({ code: "PFX_PASSWORD" }, true) === "capw" && spMsgPlace({ code: "BAD_ID" }) === "id"
   && spMsgPlace({ code: "DAEMON_DOWN" }) === "frame" && spMsgPlace({ code: "REBOUND" }) === "frame");
+// sinopac_connect／sinopac_local 同步拒收、畫面原本講不出原因的代號:各有一句、掛整框;NOT_BOUND 回表單重填
+const FRAME = { NOT_OPEN: "sp.err.notOpen", NOT_CAPABLE: "sp.err.notOpen", WORKSPACE_OLD: "sp.err.hostOld", WORKER_RUNNING: "sp.err.workerOn", NOT_BOUND: "sp.err.notBound",
+  KEY_TIMEOUT: "sp.err.sendAgain", KEY_EXPIRED: "sp.err.sendAgain", KEY_INVALID: "sp.err.sendAgain", ENVELOPE_INVALID: "sp.err.sendAgain" };
+ok("NOT_OPEN 等同步拒收代號:各有自己那一句、掛整框;NOT_BOUND 回表單", Object.entries(FRAME).every(([c, k]) => ctx.SP_FRAME_ERR[c] === k && spMsgPlace({ code: c }) === "frame")
+  && ctx.SP_REFILL.indexOf("NOT_BOUND") >= 0, Object.keys(FRAME).filter((c) => ctx.SP_FRAME_ERR[c] !== FRAME[c]));
 const f = (o) => Object.assign(ctx.spBlank(), { apiKey: "k", secret: "s", id: "a123456789", picked: true }, o || {});
 ok("主鈕:四格填滿、身分證格式對才能按(小寫自動轉大寫算對)", spFormReady(f(), null) && !spFormReady(f({ id: "A12" }), null) && !spFormReady(f({ secret: "" }), null) && !spFormReady(f({ picked: false }), null)
   && spFormReady(f({ picked: false }), { picked: true }));
@@ -81,7 +88,7 @@ ok("〔改金鑰〕只看金鑰與憑證檔;〔換憑證〕只看憑證檔", spF
 
 // 字串兩語都有(畫面用到的每個 sp.* key)
 const strings = fs.readFileSync(path.join(R, "strings.js"), "utf8");
-const used = new Set([...src.matchAll(/t\("(sp\.[A-Za-z0-9.]+)"/g)].map((m) => m[1]).concat(Object.values(ctx.SP_ERR_KEY)));
+const used = new Set([...src.matchAll(/t\("(sp\.[A-Za-z0-9.]+)"/g)].map((m) => m[1]).concat(Object.values(ctx.SP_ERR_KEY), Object.values(ctx.SP_FRAME_ERR).filter((k) => k.indexOf("sp.") === 0)));
 const trade = fs.readFileSync(path.join(R, "trade.js"), "utf8");
 [...trade.matchAll(/"(sp\.[A-Za-z0-9.]+)"/g)].forEach((m) => used.add(m[1]));
 const zi = strings.indexOf("\n  zh: {"), zhBlock = strings.slice(zi), enBlock = strings.slice(0, zi);
@@ -107,7 +114,7 @@ else { const py = fs.readFileSync(apiPy, "utf8"), m = /_TW_UNREADABLE_VENUES = f
   ok("api level_for 的 venue 與門檻 = 外殼這份(api 先上)", !!m && !!n && JSON.stringify([...m[1].matchAll(/"([a-z]+)"/g)].map((x) => x[1]).sort()) === JSON.stringify(["capital", "sinopac"]) && n[1] === "150"); }
 
 // 11-23 實測:重開 app、worker 還沒寫新快照那幾秒,帳戶列寫「串接失敗」＋「sinopac snapshot stale (3182s old) — 永豐 worker down?(get_equity)」
-const libAcct = fs.readFileSync(path.join(__dirname, "..", "lib", "sinopac_futures_account.py"), "utf8");
+const libAcct = fs.readFileSync(path.join(__dirname, "..", "lib", "account_sinopac.py"), "utf8");
 const downTok = (/^WORKER_DOWN = "([^"]+)"$/m.exec(libAcct) || [])[1];
 ok("讀帳失敗那一行:lib 標 worker 沒在跑(WORKER_DOWN)→ sp.acct.down,其他一律 sp.acct.readFail,不出原文",
   !!downTok && ctx.spAcctErrKey(downTok + " sinopac snapshot stale (3182s old) — 永豐 worker down?") === "sp.acct.down"

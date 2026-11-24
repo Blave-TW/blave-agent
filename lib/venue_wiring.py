@@ -187,10 +187,17 @@ def hand_wired_venue():
     `exchanges`): get_positions fell through to the crypto auto-wire, which
     skips _NON_AUTO, and every round raised "no venue bound" — and the empty
     amounts are exactly what closes the broker's positions, so the read must
-    keep going to that broker's snapshot while the manifest still binds it."""
+    keep going to that broker's snapshot while the manifest still binds it.
+
+    A dormant venue (venue_traits.dormant: 永豐's odd-lot-era keys, no futures bind here) is
+    neither: its old manifest id or routing would pull the reconciler off the crypto venue."""
+    # getattr: a half-updated workspace's venue_traits has no dormant()
+    dormant = getattr(venue_traits, "dormant", None)
+    asleep = dormant(os.getcwd()) if dormant else frozenset()
     routed = venue_traits.hand_wired_routed(
-        (load_portfolio_config().get("exchanges") or {}).values())
-    bound = sorted(v for v in (_ui_bound_ids() or ()) if venue_traits.has(v, "hand_wired"))
+        v for v in (load_portfolio_config().get("exchanges") or {}).values() if v not in asleep)
+    bound = sorted(v for v in (_ui_bound_ids() or ())
+                   if venue_traits.has(v, "hand_wired") and v not in asleep)
     if not bound or routed in bound:
         return routed
     if len(bound) > 1 and tuple(bound) not in _hand_wired_multi_warned:

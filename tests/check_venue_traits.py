@@ -40,7 +40,7 @@ TABLES = {"lib/venue_traits.py", "runtime/venue_traits.py"}
 OWN = {
     "capital": {"lib/order_capital.py", "lib/account_capital.py", "lib/capital_worker.py",
                 "lib/capital_vault.py", "lib/capital_quote.py", "runtime/capital_connect.py", "runtime/capital_local.py"},
-    "sinopac": {"lib/order_sinopac.py", "lib/sinopac_futures_account.py", "lib/sinopac_worker.py",
+    "sinopac": {"lib/order_sinopac.py", "lib/account_sinopac.py", "lib/sinopac_worker.py",
                 "runtime/sinopac_service.py", "runtime/sinopac_local.py"},
     "president": {"lib/order_president.py", "lib/account_president.py", "lib/president_worker.py",
                   "lib/president_vault.py"},
@@ -97,8 +97,8 @@ check(venue_wiring._NON_AUTO == {"sinopac", "president", "capital"}, "venue_wiri
       venue_wiring._NON_AUTO)
 check(close_symbol._NOT_PERP == {"capital", "sinopac", "president"}, "close_symbol._NOT_PERP",
       close_symbol._NOT_PERP)
-check(venue_traits.venues("hand_wired") == {"capital", "president"}, "hand_wired venues")
-check(venue_traits.venues("native_units") == {"capital", "president"}, "native_units venues")
+check(venue_traits.venues("hand_wired") == {"capital", "sinopac", "president"}, "hand_wired venues")
+check(venue_traits.venues("native_units") == {"capital", "sinopac", "president"}, "native_units venues")
 check(venue_traits.venues("windows_identity") == {"capital"}, "windows_identity venues")
 check(all(venue_traits.get(v, "label") for v in venue_traits.venues("auto_wire", False)),
       "every TW broker has a label for user-facing messages (flatten never says 群益 for another broker)")
@@ -120,7 +120,7 @@ except RuntimeError:
 import importlib, json, subprocess  # noqa: E401,E402
 
 SHIPPED = {"binance", "bingx", "bitget", "bybit", "capital", "gateio", "okx", "paper", "president",
-           "stockcoin"}
+           "sinopac", "stockcoin"}
 tracked = subprocess.run(["git", "-C", ROOT, "ls-files", "lib/order_*.py"], capture_output=True,
                          text=True, check=True).stdout.split()
 order_ids = {os.path.basename(f)[len("order_"):-3] for f in tracked} - {"TEMPLATE"}
@@ -130,16 +130,14 @@ check(order_ids and order_ids == SHIPPED | unverified and not SHIPPED & unverifi
       (sorted(order_ids - SHIPPED - unverified), sorted(SHIPPED & unverified)))
 check(venue_traits.verified_modes("bitget") == ("classic", "uta") and "bitget" not in unverified,
       "bitget ships verified for classic and UTA accounts")
-# futures only (the odd-lot path is gone, Wei 2026-11-17): unverified until the real-account run
-check(venue_traits.verified_modes("sinopac") == () and "sinopac" in unverified
-      and "verified_modes" in venue_traits.TRAITS["sinopac"],
-      "sinopac ships unverified (no stock mode; the futures run sets ('futures',))",
-      venue_traits.verified_modes("sinopac"))
-# runtime/account_reader and manager/flatten pick up any lib/account_<venue>.py: until futures are
-# verified the futures reader keeps another name
-check("futures" in venue_traits.verified_modes("sinopac")
-      or not os.path.exists(os.path.join(ROOT, "lib", "account_sinopac.py")),
-      "no lib/account_sinopac.py while sinopac futures are unverified")
+# futures only (the odd-lot path is gone, Wei 2026-11-17); real-account runs 2026-11-23
+check(venue_traits.verified_modes("sinopac") == ("futures",) and "sinopac" not in unverified,
+      "sinopac ships verified for futures only (no stock mode)", venue_traits.verified_modes("sinopac"))
+# runtime/account_reader and manager/flatten pick up any lib/account_<venue>.py: the futures reader
+# carries the venue's name once verified, and the pre-verification name is gone
+check(os.path.exists(os.path.join(ROOT, "lib", "account_sinopac.py"))
+      and not os.path.exists(os.path.join(ROOT, "lib", "sinopac_futures_account.py")),
+      "lib/account_sinopac.py is the 永豐 futures reader (lib/sinopac_futures_account.py renamed)")
 # a synthetic row keeps the mechanism itself under test, whatever the real rows say
 sys.path.insert(0, os.path.join(ROOT, "runtime"))
 rt_traits = importlib.import_module("venue_traits")

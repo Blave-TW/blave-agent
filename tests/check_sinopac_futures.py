@@ -1,9 +1,9 @@
 """永豐期貨 futures path without a broker — Shioaji is faked, nothing logs in.
 
-0. Not live-verified yet (lib/venue_traits sinopac row has no verified mode):
-   the lib refuses before writing a request, the worker exits without a login
-   (daemon and --once), sinopac_futures_account refuses every read. The rest of this
-   file flips the three modules' VERIFIED on to test what runs after the gate.
+0. The shipped row verifies futures. With the three modules' VERIFIED off (an older
+   workspace): the lib refuses before writing a request, the worker exits without a login
+   (daemon and --once), account_sinopac refuses every read. The rest of this file runs
+   with VERIFIED on.
    lib/order_sinopac carries no odd-lot path and never imports shioaji.
 1. Contract pick (worker): an entry goes to the computed near month when it is
    listed, adds to the book's held month, is refused when unlisted or when the
@@ -52,7 +52,7 @@
    streak, then every 2 h, none under HALT; any credential / certificate /
    signing / unidentified failure stops with one P1. A start past the gate
    writes the durable futures-enabled marker (venue_traits bound_marker).
-6. sinopac_futures_account: missing / stale / error snapshots raise; two months of one
+6. account_sinopac: missing / stale / error snapshots raise; two months of one
    root raise; positions in lots.
 7. flatten's TW-broker names (format_qty, close_position_partial) exist.
 Also: the MKP retry (once, after a Failed MKT with no fill only), the TAIFEX
@@ -62,7 +62,7 @@ month-aware reads, and the refusing stubs.
 
 Run: cd blave-agent && .venv/bin/python tests/check_sinopac_futures.py
 """
-import json, os, sys, tempfile, threading, time, types
+import inspect, json, os, sys, tempfile, threading, time, types
 from datetime import datetime
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -293,7 +293,7 @@ holder = {"api": None}
 sj.Shioaji = lambda simulation=None: holder["api"]
 sys.modules["shioaji"] = sj
 
-from lib import guard, order_sinopac as osj, sinopac_futures_account as account_sinopac, sinopac_worker as w  # noqa: E402
+from lib import guard, order_sinopac as osj, account_sinopac as account_sinopac, sinopac_worker as w  # noqa: E402
 
 # the credential store, inside this test's temp dir — never <repo parent>/credentials
 w.sinopac_vault.VAULT = os.path.join(TMP, "_cred", "sinopac_vault.json")
@@ -317,6 +317,16 @@ for mod in (osj, w):
     mod.REFRESH_FLAG = os.path.join(TMP, "state", "sinopac_refresh")
 osj.WORKER_HEARTBEAT = w.HEARTBEAT_PATH = os.path.join(TMP, "state", "heartbeat", "sinopac_worker")
 w.OUT_PATH = account_sinopac._SNAPSHOT = os.path.join(TMP, "state", "sinopac_account.json")
+# the key the account lib takes as bound now (its own .env, so the worker sections' binds do not
+# move it) and the key this "worker" logged in with: every snapshot below carries it
+account_sinopac._ENV = os.path.join(TMP, "acct.env")
+_KEY_A = w.sinopac_vault.bound_env("ka", "sa")["sinopac_api_key"]
+with open(account_sinopac._ENV, "w") as f:
+    f.write(f"sinopac_api_key={_KEY_A}\n")
+w._KEY_FP = _KEY_A
+# until section 6 checks the key itself: the bound key is whatever this "worker" last logged in with
+_real_bound_key = account_sinopac._bound_key
+account_sinopac._bound_key = lambda: w._KEY_FP
 w.PROBE_PATH = os.path.join(TMP, "state", "sinopac_probe.json")
 w.STOP_PATH = os.path.join(TMP, "state", "sinopac_login_stopped.json")
 w.TAGS_PATH = os.path.join(TMP, "state", "sinopac_order_tags.json")
@@ -333,9 +343,9 @@ TPE = w.contracts.TAIPEI
 from lib import tw_clock  # noqa: E402
 real_entry_hold = tw_clock.entry_hold
 
-# ── 0. the not-yet-verified gate ─────────────────────────────────────────────
-check(not osj.FUTURES_VERIFIED and not w.VERIFIED and not account_sinopac.VERIFIED,
-      "the shipped trait row keeps all three modules shut")
+# ── 0. the shipped row, then the gate off (an older workspace) ───────────────
+check(osj.FUTURES_VERIFIED and w.VERIFIED and account_sinopac.VERIFIED,
+      "the shipped trait row opens all three modules")
 from lib import venue_traits  # noqa: E402
 check(venue_traits.has("sinopac", "snapshot_settle_wait") and vault.ORDER_SETTLE_S >= 20
       and callable(vault.last_order_at),
@@ -345,6 +355,7 @@ check("futures" not in venue_traits.verified_modes("sinopac")
       or (isinstance(_measured, (int, float)) and _measured > 0 and vault.ORDER_SETTLE_S >= 2 * _measured),
       "the gate flips only with 永豐's own fill → list_positions lag timed (audit M3): ORDER_SETTLE_S "
       "is at least twice ORDER_SETTLE_MEASURED_S", (vault.ORDER_SETTLE_S, _measured))
+osj.FUTURES_VERIFIED = w.VERIFIED = account_sinopac.VERIFIED = False
 _src = open(os.path.join(ROOT, "lib", "order_sinopac.py"), encoding="utf-8").read()
 _wsrc = open(os.path.join(ROOT, "lib", "sinopac_worker.py"), encoding="utf-8").read()
 _login_src = _wsrc[_wsrc.index("def login("):]
@@ -380,7 +391,7 @@ check(rc_daemon == rc_once == w.UNVERIFIED_EXIT and "login" not in holder["api"]
 check(not os.path.exists(w.ENABLED_PATH), "…and leaves no futures-enabled marker")
 w._write_snapshot({"ok": True, "equity": 1.0, "positions": []})
 check(raises(RuntimeError, lambda: account_sinopac.get_equity({})) is not None,
-      "sinopac_futures_account: unverified → a fresh snapshot is still not read")
+      "account_sinopac: unverified → a fresh snapshot is still not read")
 os.remove(w.OUT_PATH)
 os.remove(w.HEARTBEAT_PATH)
 osj.FUTURES_VERIFIED = w.VERIFIED = account_sinopac.VERIFIED = True
@@ -717,7 +728,7 @@ w._write_snapshot(snap)
 check(snap["positions"] == [], "the worker's own read inside the window is empty (the lag)")
 e = raises(account_sinopac.SnapshotLag, lambda: account_sinopac.get_positions({}))
 check(e is not None and account_sinopac.classify(e) == __import__("lib.venue_errors").venue_errors.TRANSIENT,
-      "sinopac_futures_account: that empty read is SnapshotLag (TRANSIENT, skip the round), never flat", e)
+      "account_sinopac: that empty read is SnapshotLag (TRANSIENT, skip the round), never flat", e)
 real_q = account_sinopac.get_query_started_at
 account_sinopac.get_query_started_at = lambda: time.time() + 3600  # a newer file, read a second time
 e2 = raises(account_sinopac.SnapshotLag, lambda: account_sinopac.get_positions({}))
@@ -1414,7 +1425,7 @@ try:
           "…while waiting, a not-ok `waiting: login_retry` snapshot (restamped), no national id", waits[:1])
     # the account lib reads that snapshot as waiting (the reconciler's ReadSkipped), not as a failed read
     real_write({"ok": False, "waiting": "login_retry", "retry_at": time.time() + 60, "error": "x"})
-    check(account_sinopac.waiting() == "login_retry", "sinopac_futures_account.waiting() names the retry")
+    check(account_sinopac.waiting() == "login_retry", "account_sinopac.waiting() names the retry")
     real_write({"ok": False, "error": "x"})
     check(account_sinopac.waiting() is None, "…and a plain failed snapshot is not waiting")
     # Wei 11-17: unanswered logins are retried for good, never a STOP; the P1 is exchange_unreachable
@@ -1749,7 +1760,7 @@ check(w._sanitize(RuntimeError("acct 7654321 at F009000 key kkkkkkkk")) == "Runt
 w._SECRETS.clear()
 w._SECRETS.update(_saved_secrets)
 
-# ── 6. sinopac_futures_account ───────────────────────────────────────────────────────
+# ── 6. account_sinopac ───────────────────────────────────────────────────────
 if os.path.exists(w.OUT_PATH):
     os.remove(w.OUT_PATH)
 check(raises(RuntimeError, lambda: account_sinopac.get_equity({})) is not None, "missing snapshot raises")
@@ -1781,6 +1792,37 @@ s = json.load(open(w.OUT_PATH))
 s.update(ok=True, read_at=time.time() - 3600)
 json.dump(s, open(w.OUT_PATH, "w"))
 check(raises(RuntimeError, lambda: account_sinopac.get_equity({})) is not None, "stale snapshot raises")
+# audit M1: a rekey leaves the old account's snapshot fresh for up to _STALE_S — never read under the new key
+account_sinopac._bound_key = _real_bound_key
+w._KEY_FP = _KEY_A
+w._write_snapshot(w.read_account(FakeApi(positions=[(computed_near("TXF"), 2)]), acct))
+check(json.load(open(w.OUT_PATH)).get("key_fp") == _KEY_A and account_sinopac.get_account_id({}).startswith("sinopac:"),
+      "the worker's snapshot carries the key it logged in with; read while that key is bound")
+_KEY_B = w.sinopac_vault.bound_env("kb", "sb")["sinopac_api_key"]
+with open(account_sinopac._ENV, "w") as f:
+    f.write(f"sinopac_api_key={_KEY_B}\n")
+check(all(raises(RuntimeError, fn) is not None for fn in (lambda: account_sinopac.get_account_id({}),
+                                                         lambda: account_sinopac.get_equity({}),
+                                                         lambda: account_sinopac.get_positions({}))),
+      "rekeyed to another account: the old key's fresh snapshot is refused (identity, equity, positions)")
+w._write_snapshot({"ok": False, "waiting": "login_retry", "retry_at": time.time() + 60})
+check(account_sinopac.waiting() is None, "…and its login-retry snapshot is not the new key's wait")
+with open(account_sinopac._ENV, "w") as f:
+    f.write("")
+w._write_snapshot(w.read_account(FakeApi(positions=[]), acct))
+check(raises(RuntimeError, lambda: account_sinopac.get_equity({})) is not None, "unbound (no sentinel): not read")
+with open(account_sinopac._ENV, "w") as f:
+    f.write(f"sinopac_api_key={_KEY_A}\n")
+s = json.load(open(w.OUT_PATH))
+s.pop("key_fp")
+json.dump(s, open(w.OUT_PATH, "w"))
+check(raises(RuntimeError, lambda: account_sinopac.get_equity({})) is not None,
+      "a snapshot without the key (a worker older than this lib) is refused")
+w._drop_snapshot()
+check(not os.path.exists(w.OUT_PATH), "_drop_snapshot removes the old account's snapshot")
+_serve_src = inspect.getsource(w._serve) + inspect.getsource(w._login_with_retry)
+check(_serve_src.count("_drop_snapshot()") == 2 and "_KEY_FP = bound_key" in _serve_src,
+      "a rebind seen in the worker (logged in, or waiting to) drops the snapshot; _serve stamps its key")
 check(account_sinopac.contract_month("TXFK6") is not None and account_sinopac.contract_month("2330") is None,
       "contract_month")
 near = computed_near("TXF")

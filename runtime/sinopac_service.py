@@ -49,6 +49,7 @@ LOGIN_STOPPED = os.path.join("state", "sinopac_login_stopped.json")  # = lib/sin
 # a bound machine runs no worker until its login passed, so a not-yet-signed account mid-connect never
 # turns into a worker's login STOP and its P1
 WANTED = os.path.join("state", "sinopac_worker_wanted.json")
+SNAPSHOT = "sinopac_account.json"  # in state/; = lib/sinopac_worker.OUT_PATH
 # = lib/sinopac_vault.SECRETS / PW_PREFIX (names locked, lowercase; the worker reads exactly these)
 SECRETS = ("sinopac_api_key", "sinopac_secret_key", "sinopac_ca_passwd", "sinopac_person_id")
 PW_PREFIX = "vault:"
@@ -129,10 +130,13 @@ def store(bundle, pfx, local=False, workspace=None):
     a cloud box the vault) first, then .env through _cmd_credentials; a failure there drops the
     files again, leaving the machine unbound."""
     p = paths(workspace)
-    try:  # a rebind starts the connect flow over: no worker until its login passed again
-        os.remove(os.path.join(os.path.dirname(p["state"]), WANTED))
-    except FileNotFoundError:
-        pass
+    # a rebind starts the connect flow over: no worker until its login passed again, and the old
+    # account's snapshot (= lib/sinopac_worker.OUT_PATH) is not read as the new key's (audit M1)
+    for path in (os.path.join(os.path.dirname(p["state"]), WANTED), os.path.join(p["state"], SNAPSHOT)):
+        try:
+            os.remove(path)
+        except FileNotFoundError:
+            pass
     _write_private(p["pfx"], pfx)
     try:
         if not local:
@@ -189,6 +193,9 @@ def drop(names=None, workspace=None):
             print(f"[sinopac_service] worker uninstall not started ({type(e).__name__})", file=sys.stderr)
 
 
+NOT_BOUND = "永豐 not bound through the connect flow"
+
+
 def wanted(workspace):
     """(wanted, why not) — the one rule both platforms start the worker by. None = .env
     unreadable this time: neither start nor stop."""
@@ -198,7 +205,7 @@ def wanted(workspace):
     if keys is None:
         return None, ".env unreadable"
     if not keys:
-        return False, "永豐 not bound through the connect flow"
+        return False, NOT_BOUND
     if not os.path.exists(os.path.join(workspace, WANTED)):
         return False, "永豐 connect flow not finished"
     if os.path.exists(os.path.join(workspace, LOGIN_STOPPED)):
@@ -209,7 +216,8 @@ def wanted(workspace):
 def main():
     ok, why = wanted(WORKSPACE)
     if not ok:
-        print(f"[sinopac_service] not started: {why}", flush=True)
+        if why != NOT_BOUND:  # the timer ticks every 2 minutes on every Linux machine: most never bind
+            print(f"[sinopac_service] not started: {why}", flush=True)
         return 0
     os.chdir(WORKSPACE)
     os.environ["SJ_LOG_PATH"] = os.devnull  # the worker forces it too; set before anything else runs

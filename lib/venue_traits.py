@@ -67,12 +67,11 @@ PRESIDENT = "president"
 SINOPAC = "sinopac"
 
 # Futures only: the odd-lot stock path was removed (Wei 2026-11-17; Blave orders no TW stock).
-# lib/sinopac_worker, lib/order_sinopac and the reconciler's _sinopac_* block stay shut until
-# their real-account run passes; the commit that merges it sets ("futures",) here and renames
-# lib/sinopac_futures_account.py to lib/account_sinopac.py. Empty = unverified(): account_reader,
-# flatten and chat binding leave 永豐 alone, so a machine still holding the odd-lot era's
-# sinopac_* keys shows no read failure; hand_wired / native_units follow it.
-_SINOPAC_MODES = ()
+# Real-account runs 2026-11-23 (desktop, two buy/close round trips). The runtime's copy is what
+# opens the connect flow and starts the worker; this copy opens the worker, order and account libs.
+# A machine holding only the odd-lot era's sinopac_* keys stays dormant() (no bound_marker):
+# not read, not flattened, not routed (lib.venue_wiring.hand_wired_venue).
+_SINOPAC_MODES = ("futures",)
 _SINOPAC_FUTURES = "futures" in _SINOPAC_MODES
 
 TRAITS = {

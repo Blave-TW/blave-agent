@@ -1,8 +1,8 @@
 """SinoPac (永豐期貨) futures worker — the machine's one Shioaji login.
 
-NOT live-verified as a whole: tested with a faked SDK (tests/check_sinopac_futures.py).
-M0-b (2026-11-16, real account, 1.7.11) ran the raw calls once: a TMF market IOC buy and its
-close both Filled. Until lib/venue_traits' sinopac row lists "futures" in verified_modes this
+Tested with a faked SDK (tests/check_sinopac_futures.py). M0-b (2026-11-16, real account,
+1.7.11) ran the raw calls once; the desktop runs of 2026-11-23 placed and closed a TMF lot twice
+through this worker. While lib/venue_traits' sinopac row lacks "futures" in verified_modes this
 worker does not log in at all.
 
 M0-b, 1.7.11:
@@ -23,7 +23,7 @@ Why one process holds the login: every Shioaji client of one national id
 counts against the same 5-connection cap, and a 451 Too Many Connections can
 lock out the person's other sessions. So this worker is the only login on the
 machine — it reads margin + positions every POLL_S into
-state/sinopac_account.json (lib/sinopac_futures_account.py only reads that file) and
+state/sinopac_account.json (lib/account_sinopac.py only reads that file) and
 places the futures orders lib/order_sinopac.py hands it as request files in
 state/sinopac_orders/.
 
@@ -650,9 +650,26 @@ def mask_account(account_id):
     return "****" + a[-4:] if len(a) > 4 else ("****" if a else "")
 
 
+# .env's sinopac_api_key sentinel this process logged in with: every snapshot carries it, and
+# lib/account_sinopac refuses one whose key is not the bound one (a rekey's old account)
+_KEY_FP = None
+
+
 def _write_snapshot(snap):
     snap["read_at"] = time.time()
+    if _KEY_FP:
+        snap["key_fp"] = _KEY_FP
     _atomic_write(OUT_PATH, snap)
+
+
+def _drop_snapshot():
+    """A rebind seen: the old account's snapshot goes with this login."""
+    try:
+        os.remove(OUT_PATH)
+    except FileNotFoundError:
+        pass
+    except OSError as e:
+        _log(f"old snapshot not removed ({type(e).__name__})")
 
 
 # ── orders ───────────────────────────────────────────────────────────────────
@@ -1078,7 +1095,7 @@ def _last_positions():
 
 
 def _wait_retry(retry_at, failures, err, positions, st=None):
-    """Logged out until retry_at, the snapshot restamped every POLL_S (lib/sinopac_futures_account
+    """Logged out until retry_at, the snapshot restamped every POLL_S (lib/account_sinopac
     reads it as `waiting`: the reconciler skips the round instead of counting a failed read). It
     carries the last read's rows, never read as positions (ok false), for a later stop's P1. No
     heartbeat meanwhile: lib/order_sinopac refuses an order before writing its request.
@@ -1208,6 +1225,7 @@ def _login_with_retry(c, bound_key=None):
             sys.exit(0)  # nothing held: no session yet
         if bound_key is not None and _bound_key() not in (None, bound_key):
             _log("永豐 unbound or rebound while waiting to log in — not logging in")
+            _drop_snapshot()
             sys.exit(NOT_BOUND_EXIT)
         try:
             st = _note_attempt(st)
@@ -1423,7 +1441,9 @@ def _serve(c=None):
         sys.exit(NOT_BOUND_EXIT)
     except Exception as e:
         _login_stopped(_sanitize(e), _login_reason(e))
+    global _KEY_FP
     bound_key = sinopac_vault.bound_env(c["sinopac_api_key"], c["sinopac_secret_key"])["sinopac_api_key"]
+    _KEY_FP = bound_key
     api, acct = _login_with_retry(c, bound_key)
     login_at = time.time()
     on_request = False
@@ -1439,6 +1459,7 @@ def _serve(c=None):
                 # unbound or bound to another key: the cloud's unbind cannot stop this service, so
                 # it leaves by itself (its shim / NSSM start the next one only if still wanted)
                 _log("永豐 unbound or rebound — logging out")
+                _drop_snapshot()
                 return NOT_BOUND_EXIT  # no logout record: drop() just removed the retry file
             if login_at is not None and time.time() - login_at >= LOGIN_STABLE_S:
                 _clear_retry()

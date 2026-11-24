@@ -325,8 +325,8 @@ check(all(old_lib_resolve([{"strategy": n, "contribution": 1}], c) == ex.resolve
 import venue_traits  # noqa: E402  (runtime copy — same table as lib/venue_traits)
 from lib import venue_traits as lvt  # noqa: E402
 hw = lvt.venues("hand_wired")
-check(hw == {"capital", "president"} and venue_traits.venues("hand_wired") == hw,
-      f"6 hand_wired 的券商剛好是群益、統一({sorted(hw)})")
+check(hw == {"capital", "president", "sinopac"} and venue_traits.venues("hand_wired") == hw,
+      f"6 hand_wired 的券商剛好是群益、統一、永豐({sorted(hw)})")
 src = open(os.path.join(ROOT, "manager", "reconciler.py"), encoding="utf-8").read()
 po = src[src.index("def place_order("):]
 po = po[:po.index("\ndef ", 1)]

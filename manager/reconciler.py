@@ -2020,9 +2020,9 @@ def _president_place_order(symbol, signed_diff, asset_spec=None, reduce_only=Fal
 
 
 # ── SinoPac (永豐期貨) hand-wired path ───────────────────────────────────────
-# Routed only once lib/venue_traits lists "futures" for 永豐 (hand_wired follows it). Lots end to
-# end, positions from lib/sinopac_worker's snapshot (read through lib/sinopac_futures_account,
-# lib/account_sinopac from the gate flip on), the snapshot keyed by month code like 統一's.
+# Routed only while lib/venue_traits lists "futures" for 永豐 (hand_wired follows it). Lots end to
+# end, positions from lib/sinopac_worker's snapshot (read through lib/account_sinopac), the
+# snapshot keyed by month code like 統一's.
 # The read-your-writes marker is machine-wide (lib/sinopac_vault): one worker sends every order
 # and one list_positions reads every month, and M0-b's lag was the whole account reading [].
 # Its account held one position, so whether the lag is per row or the whole list is not known; a
@@ -2043,8 +2043,8 @@ class SinopacCacheLagError(CapitalCacheLagError):
 
 
 def _sinopac_acct():
-    from lib import sinopac_futures_account   # the gate flip renames it lib/account_sinopac
-    return sinopac_futures_account
+    from lib import account_sinopac
+    return account_sinopac
 
 
 def _sinopac_login_stopped():
@@ -2541,6 +2541,12 @@ def _test_hang_park(symbol):
     return bool(callable(getattr(ex, 'stopping', None)) and ex.stopping())
 
 
+def _dormant_venues():
+    # getattr: a half-updated workspace's venue_traits has no dormant()
+    dormant = getattr(venue_traits, "dormant", None)
+    return dormant(os.getcwd()) if dormant else frozenset()
+
+
 def place_order(symbol, signed_diff, asset_spec=None, reduce_only=False,
                 exchange=None, contributors=None):
     """
@@ -2604,6 +2610,11 @@ def place_order(symbol, signed_diff, asset_spec=None, reduce_only=False,
         return False
     _progress()
     if _TEST_HANG_S is not None and _test_hang_park(symbol):
+        return False
+    if venue_traits.has(exchange, 'hand_wired') and exchange in _dormant_venues():
+        # keys from before the venue's own bind (永豐's odd-lot era): nothing reads it, so nothing
+        # is sent to it either (= lib.venue_wiring.hand_wired_venue)
+        logging.warning(f"[reconciler] {symbol}: {exchange} was never bound for trading here — not sent")
         return False
     try:
         if venue_traits.has(exchange, 'hand_wired'):

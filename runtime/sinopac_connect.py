@@ -32,8 +32,10 @@ window runs to SIM_CLOSE_LOCAL.
 Never put a secret, a pfx byte, a certificate subject or a broker message into a return value,
 an exception, the status or a log: probe and simulation results leave as classes.
 """
+import ast
 import json
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -417,10 +419,25 @@ def run_finish(local=False, push=None):
 
 # ── dispatch ─────────────────────────────────────────────────────────────────
 
+def workspace_open():
+    """The workspace's own lib/venue_traits.py lists "futures" for 永豐: its worker logs in only then.
+    Read as text, never imported (workspace code stays out of this process)."""
+    try:
+        src = atomic_file.read_bytes(os.path.join(WORKSPACE, "lib", "venue_traits.py")).decode("utf-8")
+        m = re.search(r"^_SINOPAC_MODES = (.+)$", src, re.M)
+        return m is not None and "futures" in ast.literal_eval(m.group(1).strip())
+    except (OSError, ValueError, SyntaxError, TypeError):  # UnicodeDecodeError is a ValueError
+        return False
+
+
 def gate():
-    """Refusals every step shares: the futures gate, then (login steps) the binding."""
+    """Refusals every step shares: the futures gate (this runtime's, then the workspace's: a runtime
+    newer than the workspace would take the certificate and then fail the login), then (login steps)
+    the binding."""
     if "futures" not in venue_traits.verified_modes(sinopac_service.VENUE):
         _refuse("NOT_OPEN", "永豐 futures is not open yet")
+    if not workspace_open():
+        _refuse("WORKSPACE_OLD", "this machine's workspace predates 永豐 futures — update it first")
 
 
 def need_bound(cmd):
