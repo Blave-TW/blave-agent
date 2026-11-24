@@ -620,8 +620,11 @@ app.whenReady().then(async () => {
   r = await js(`(() => { window.__render(${D(SAMPLE)}, false, null, "local", true); window.__sync(false, null, "local", false); return ${PAGE}; })()`);
   ok("② 閘門翻成 false:整片重畫,重跑列多一行「先更新主機程式」、鈕換成立即更新(同 web:「共 N 輪」那行留著)", r.behind === (await tf("wf.behind")) && r.btn === (await tf("rp.btnUpdate")) && !r.btnDis);
 
-  r = await js(`(() => { window.__render(${D({ ...SAMPLE, row_param: "<img src=x onerror=1>" })}, false); return { img: window.__box.querySelectorAll("img").length, corner: window.__box.querySelector(".wf-grid th.corner").textContent }; })()`);
-  ok("② 參數名是 agent / 雲端來的字串:只進 textContent,不變成元素", r.img === 0 && r.corner.includes("<img src=x onerror=1>"));
+  // 0.1.60 軸名拆出合併格(spec p3-0160 R3-2):直軸名在 .rob-ax-r、橫軸名在網格上方 .rob-ax-c,兩條都要驗
+  r = await js(`(() => { window.__render(${D({ ...SAMPLE, row_param: "<img src=x onerror=1>", col_param: "<svg onload=1>" })}, false); const b = window.__box, ar = b.querySelector(".rob-ax-r"), ac = b.querySelector(".wf-grid .rob-ax-c span");
+    return { bad: b.querySelectorAll("img, [onerror], [onload]").length, ar: ar && ar.textContent, arT: ar && ar.title, ac: ac && ac.textContent, acT: ac && ac.title }; })()`);
+  ok("② 參數名是 agent / 雲端來的字串:只進 textContent,不變成元素(直軸、橫軸名與 title 都是原字)", r.bad === 0 && r.ar === "<img src=x onerror=1> →" && r.arT === "<img src=x onerror=1>"
+    && r.ac === "<svg onload=1> →" && r.acT === "<svg onload=1>", JSON.stringify(r));
   r = await js(`(() => { window.__render(${D(SAMPLE)}, false); const td = window.__box.querySelector(".wf-grid td[tabindex='0']"); td.focus(); td.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
     const tip = document.getElementById("wf-tip"), on = tip && tip.classList.contains("is-on") && tip.textContent; document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
     return { on, off: tip && !tip.classList.contains("is-on"), aria: td.getAttribute("aria-label") }; })()`);

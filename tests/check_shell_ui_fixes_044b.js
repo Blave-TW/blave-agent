@@ -45,8 +45,12 @@ window.blave = new Proxy({}, { get: (_, k) => typeof k !== "string" ? undefined
     ok("§3 送出鈕停用:不用 opacity,同 .btn-fill:disabled 的灰階;尺寸不變(稽核 B5)", v.dis && v.op === "1" && v.bg && v.fg && v.bd && v.cur === "not-allowed" && v.w === 32, J(v));
     v = await js(`(() => { ENV.cur = "local"; envPaint(); return ${look}; })()`);
     ok("§3 切回這台電腦:恢復、字還在、placeholder 回本機", !v.dis && !v.send && v.val === "還沒打完" && v.ph === (await T("ws.placeholder")) && v.desc === null, J(v));
-    v = await js(`(() => { ENV.cur = "cloud"; ${setCloud(STATES.none)} envPaint(); running = true; sendBtnSync(); const o = ${look}; running = false; sendBtnSync(); o.after = $("btn-send").disabled; return o; })()`);
-    ok("§3 這台電腦有回合在跑時切到雲端:輸入框停用,停止鈕能按", v.dis && !v.send && v.after, J(v));
+    // 0.1.60 改(spec p3-0160-decisions #7、QA 0158 P2-5):雲端視角看不出停的是哪一邊,不出本機的停止鈕;切回這台電腦才停得了
+    v = await js(`(() => { ENV.cur = "cloud"; ${setCloud(STATES.none)} envPaint(); running = true; sendBtnSync(); const b = $("btn-send"), o = ${look}; o.stop = b.classList.contains("is-stop"); o.aria = b.dataset.i18nAria;
+      ENV.cur = "local"; envPaint(); sendBtnSync(); o.lStop = b.classList.contains("is-stop"); o.lSend = b.disabled; o.lAria = b.dataset.i18nAria;
+      running = false; sendBtnSync(); o.after = b.disabled; o.afterStop = b.classList.contains("is-stop"); return o; })()`);
+    ok("§3 這台電腦有回合在跑時切到雲端:輸入框與送出鈕都真停用、不出停止鈕;切回這台電腦停止鈕能按;回合結束回送出鈕",
+      v.dis && v.send && !v.stop && v.aria === "ws.send" && v.lStop && !v.lSend && v.lAria === "ws.stop" && !v.after && !v.afterStop, J(v));
     for (const st of ["running", "stopped"]) {
       v = await js(`(() => { ENV.cur = "cloud"; ${setCloud({ code: "OK", machine: { state: st } })} envPaint(); return ${look}; })()`);
       ok("§3 主機 " + st + ":輸入框恢復、placeholder 回 chat.ph.cloud", !v.dis && !v.send && v.ph === (await T("chat.ph.cloud")) && v.desc === null, J(v));
@@ -71,8 +75,10 @@ window.blave = new Proxy({}, { get: (_, k) => typeof k !== "string" ? undefined
 
     // ── §4 ──
     const libS = `(() => ({ open: libBag().open, detail: libBag().detail, lib: !$("lib").hidden, main: !$("main-empty").hidden, focus: document.activeElement && document.activeElement.dataset.id }))()`;
-    v = await js(`(async () => { const leave = window.__l = []; envCanSwitch = () => true; envShowMain(); const B = libBag(); B.open = true; B.detail = "7"; B.row = "7"; libPaint = () => leave.push("paint"); const nav = $("lib-nav"); nav.click(); const a = { detail: B.detail, open: B.open, paint: leave.length }; nav.click(); const b = { open: B.open }; B.detail = "7"; await libOpen(); const c = { detail: B.detail, open: B.open }; B.detail = "7"; B.open = false; await libOpen({ silent: true }); const d = { detail: B.detail }; libLeave(); return { a, b, c, d }; })()`);
-    ok("§4 策略庫:詳情點側欄 = 回列表、還開著;列表再點 = 回歡迎頁;再進來落列表;歡迎頁卡(silent)照舊留詳情", v.a.detail === null && v.a.open === true && v.a.paint === 1 && v.b.open === false && v.c.detail === null && v.c.open === true && v.d.detail === "7", J(v));
+    v = await js(`(async () => { const leave = window.__l = []; envCanSwitch = () => true; envShowMain(); const B = libBag(); B.open = true; B.detail = "7"; B.row = "7"; libPaint = () => leave.push("paint"); const nav = $("lib-nav"); nav.click(); const a = { detail: B.detail, open: B.open, paint: leave.length }; let left = 0; const keepLeave = libLeave; libLeave = () => { left++; keepLeave(); }; nav.click(); libLeave = keepLeave; const b = { open: B.open, detail: B.detail, paint: leave.length, left }; B.detail = "7"; await libOpen(); const c = { detail: B.detail, open: B.open }; B.detail = "7"; B.open = false; await libOpen({ silent: true }); const d = { detail: B.detail }; libLeave(); return { a, b, c, d }; })()`);
+    // 0.1.60 改(sidebar-reclick-0160 R5-11):已在列表再點什麼都不做(回首頁改走 #tr-home,check_shell_side_reclick 驗)
+    ok("§4 策略庫:詳情點側欄 = 回列表、還開著;列表再點 = 不動(不收、不重畫、不回歡迎頁);再進來落列表;歡迎頁卡(silent)照舊留詳情", v.a.detail === null && v.a.open === true && v.a.paint === 1
+      && v.b.open === true && v.b.detail === null && v.b.paint === 1 && v.b.left === 0 && v.c.detail === null && v.c.open === true && v.d.detail === "7", J(v));
     v = await js(`(async () => { const B = rptBag(); B.open = true; B.reading = "r1"; B.row = "r1"; RPT.data.local = [{ id: "r1", title: "A", created_at: 1 }]; rptFetch = async () => {}; const nav = { click: () => rptMenuGo() }; nav.click(); const a = { reading: B.reading, open: B.open }; nav.click(); const b = { open: B.open }; B.reading = "r1"; await rptOpen(); const c = { reading: B.reading, open: B.open }; rptLeave(); return { a, b, c }; })()`);
     ok("§4 報告:閱讀層點側欄 = 回清單;清單再點 = 回歡迎頁;再進來落清單", v.a.reading === null && v.a.open === true && v.b.open === false && v.c.reading === null && v.c.open === true, J(v));
     v = await js(`(() => { const B = libBag(); B.open = true; B.detail = "7"; const keep = BR.exp, kb = BR.bw; let col = 0; brCollapse = () => col++; BR.exp = { mode: "one" }; BR.bw = { hidden: false }; $("lib-nav").click(); const o = { col, detail: B.detail, open: B.open }; BR.exp = keep; BR.bw = kb; B.detail = null; libLeave(); return o; })()`);

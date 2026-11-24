@@ -232,7 +232,7 @@ app.whenReady().then(async () => {
   const reset = () => run(`window.__calls.length = 0; window.__feats.length = 0; window.__spy.length = 0; window.__send = null; trGoClick = window.__realGo;
     if (!$("del-scrim").hidden) delClose(false); if (!$("cx-scrim").hidden) cxModalClose(false); for (const k of ["local", "cloud"]) { const S = TR_BAGS[k]; S.spCx = null; S.spGo = null; S.spErr = null; S.edits = {}; S.raw = {}; S.bad = {}; S.picked = null; S.ct.edits = {}; S.pending = null; S.save = null; S.saveErr = null; }`);
   const st = async (name, r, o) => { await reset(); await setRep(r, o); await sel(name); await poll(); return head(); };
-  const tx = {}; for (const k of ["sp.btn", "po.add", "po.addGo", "sp.cx", "sp.noAcct", "sp.connecting", "sp.unsaved", "tr.routeSave", "tr.save", "tr.start", "tr.acct.btn", "cap.pending", "cap.continue", "tr.mkt.noAuto", "tr.cf.title", "tr.cf.titleFire", "tr.mode.paper", "tr.mode.real", "ho.up.btn", "ho.down.aria"]) tx[k] = await T(k);
+  const tx = {}; for (const k of ["sp.btn", "po.add", "po.addGo", "sp.cx", "sp.noAcct", "sp.connecting", "sp.unsaved", "tr.routeSave", "tr.save", "tr.start", "tr.acct.btn", "cap.pending", "cap.continue", "tr.mkt.noAuto", "tr.cf.title", "tr.cf.titleFire", "sp.cf.addFire", "tr.mode.paper", "tr.mode.real", "ho.up.btn", "ho.down.aria"]) tx[k] = await T(k);
 
   // ── §4 每一態(本機視角)
   await run(`envSwitch("local")`);
@@ -321,13 +321,14 @@ app.whenReady().then(async () => {
   ok("③ 金鑰被拒(Binance 重查不過)、這一支還沒配:一樣是 fail,不給〔自動下單〕開框", h.st === "fail" && h.dis === true && h.note === (await T("cx.failStopped")), J(h));
   await run(`CXF.bn = null`);
 
-  // ── 金額框:加密不在跑(儲存金額)、模擬在跑(儲存並下單)、台指期口數
+  // ── 金額框:加密不在跑(加到策略組合)、模擬在跑(加入並下單)、台指期口數
+  //    0.1.60 這支還沒在策略組合裡時標題＝主鈕換字(spec p3-0160-decisions #17、add-then-start-0160 A-1 表);已在組合裡才是「儲存金額」「儲存並下單」
   h = await st("btc", rep({ pv: { btc: { symbol: "BTCUSDT", position: 1, close: 50000, bar_at: now - 3600, latest: true } } }));
   await run(`$("rp-go").click()`); await wait(400);
   let b = await box();
   ok("③ 金額框剛打開、輸入格空著:表下沒有「名字 0 加入」那一列(設計稽核 §1 可刪 1)", (await js(`document.querySelectorAll("#del-body .cf-strat .cf-row").length`)) === 0 && !b.body.includes(await T("tr.cfTagAdd")), J(b));
-  ok("③ 金額框(加密、沒在跑):標題「儲存金額」、主鈕「儲存」停用(空白)、焦點在輸入格、框腳「到策略組合」、沒記號;記 sp_auto_open",
-    b.open && b.title === tx["tr.cf.title"] && b.ok === tx["tr.save"] && b.dis && b.focus === "cf-in" && b.link === tx["po.addGo"] && !b.mark && (await js("window.__feats")).includes("sp_auto_open"), J(b));
+  ok("③ 金額框(加密、沒在跑、沒帳戶、還沒在組合):標題＝主鈕「加到策略組合」停用(空白)、焦點在輸入格、框腳「到策略組合」、沒記號;記 sp_auto_open",
+    b.open && b.title === tx["po.add"] && b.ok === tx["po.add"] && b.dis && b.focus === "cf-in" && b.link === tx["po.addGo"] && !b.mark && (await js("window.__feats")).includes("sp_auto_open"), J(b));
   await type("1000"); b = await box();
   ok("③ …打 1,000:主鈕可按、輸入格下面寫換算量 0.02 BTC", !b.dis && /0\.02/.test(await js(`$("cf-body") ? "" : (document.querySelector(".cf-in-ref") || {}).textContent || ""`)), J(b));
   ok("③ …換算量的數字是 mono(同框裡的下單列、同 web)", (await js(`(() => { const m = document.querySelector(".cf-in-ref .mono"); return !!m && m.textContent === "0.02" && /mono/i.test(getComputedStyle(m).fontFamily); })()`)) === true);
@@ -341,9 +342,9 @@ app.whenReady().then(async () => {
   }
   h = await st("btc", rep({ venue: "paper", amounts: { eth: 300 }, running: true, pv: { btc: { symbol: "BTCUSDT", position: 1, close: 50000, bar_at: now - 3600, latest: true } } }));
   await run(`$("rp-go").click()`); await wait(400); await type("1000"); await wait(100); b = await box();
-  ok("③ 金額框(模擬在跑):標題與主鈕「儲存並下單」、記號「模擬」", b.title === tx["tr.cf.titleFire"] && b.ok === tx["tr.cf.titleFire"] && b.mark === tx["tr.mode.paper"], J(b));
+  ok("③ 金額框(模擬在跑、還沒在組合):標題與主鈕「加入並下單」、記號「模擬」", b.title === tx["sp.cf.addFire"] && b.ok === tx["sp.cf.addFire"] && b.mark === tx["tr.mode.paper"], J(b));
   await run(`$("cf-in").dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))`); await wait(150);
-  ok("③ …儲存並下單型:Enter 不送", (await box()).open && !(await sentCmds()).includes("amounts"));
+  ok("③ …加入並下單型:Enter 不送", (await box()).open && !(await sentCmds()).includes("amounts"));
   await run(`$("del-cancel").click()`); await wait(100);
   h = await st("txf", rep({}));
   await run(`$("rp-go").click()`); await wait(400); b = await box();
@@ -461,7 +462,7 @@ app.whenReady().then(async () => {
   await run(`$("rp-go").click()`); await wait(200); await run(`cxModalClose("handoff")`); await wait(100);
   ok("③ capHandoff 那種關法(交給 agent、什麼都沒綁):不進連接中", (await js("TR_BAGS.local.spCx")) === null && (await head()).st === "noAcct");
 
-  // ── 台股:不出連接框;綁模擬在跑存台股是儲存並下單型
+  // ── 台股:不出連接框;綁模擬在跑存台股(還沒在組合)是加入並下單型
   h = await st("tw", rep({ pv: { tw: { symbol: "2330", position: 1, close: 1000, bar_at: now - 86400, bar_date: "2026-10-30", latest: true, daily_tw: true, market: "spot" } } }));
   await run(`$("rp-go").click()`); await wait(400); b = await box();
   ok("③ 台股金額框:沒有框腳「到策略組合」;記 po_add(不是 sp_auto_open)", b.open && b.link === null && (await js("window.__feats")).includes("po_add") && !(await js("window.__feats")).includes("sp_auto_open"), J(b));
@@ -472,7 +473,7 @@ app.whenReady().then(async () => {
   ok("③ 台股沒帳戶存成功:到策略組合(不出連接框);記 po_add_saved", !(await head()).cx && (await js(`TR.view === "po" && TR.open`)) && (await js("window.__feats")).includes("po_add_saved"));
   h = await st("tw", rep({ venue: "paper", amounts: { btc: 500 }, running: true, pv: { tw: { symbol: "2330", position: 1, close: 1000, bar_at: now - 86400, bar_date: "2026-10-30", latest: true, daily_tw: true, market: "spot" } } }));
   await run(`$("rp-go").click()`); await wait(400); await type("200000"); await wait(150); b = await box();
-  ok("③ 綁模擬、引擎在跑、存台股:儲存並下單型＋模擬記號＋列股", b.title === tx["tr.cf.titleFire"] && b.mark === tx["tr.mode.paper"] && b.body.includes(await T("tr.cf.unitShares")), J(b));
+  ok("③ 綁模擬、引擎在跑、存台股:加入並下單型(標題＝主鈕)＋模擬記號＋列股", b.title === tx["sp.cf.addFire"] && b.ok === tx["sp.cf.addFire"] && b.mark === tx["tr.mode.paper"] && b.body.includes(await T("tr.cf.unitShares")), J(b));
   await run(`$("del-cancel").click()`); await wait(100);
 
   // ── 統一開通中沒配:存了落自動下單頁

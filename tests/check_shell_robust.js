@@ -7,6 +7,7 @@
 //   ③ 主行程:loadStrategy 帶出 scan.json、listStrategies 的 mtime 把 scan.json 算進去;cloud.js 白名單留 scan。
 //   單參數(spec single-param-scan-2026-10-12 §4):col_param "_" + 一格 col_vals → single;定位只讀第一個常數、文字不出現 _ / "/ 0" / N×1、
 //      確認框「範圍」列與 rob.msgRescan1;二維零變化靠 tests/fixtures/shell_robust_3x3.json(改前存的 innerHTML 快照)逐字比對。
+//      0.1.60 重錄快照(spec p3-0160 R3-2):12 份都只差軸名搬出角落格(左側直排 .rob-ax-r、上方 .rob-ax-c 列)與外包的 .rob-heat-body／.x-fade-host,其餘逐字未動。
 // 跑法:node tests/check_shell_robust.js(找不到 shell/node_modules 的 Electron 時 ② SKIP,①③ 照跑)
 const path = require("path"), fs = require("fs"), vm = require("vm");
 const SHELL = path.join(__dirname, "..", "shell");
@@ -422,22 +423,25 @@ app.whenReady().then(async () => {
   ok("② 訖日往後延 29 天:不過時 → 一般結論句、有 tag、鈕是文字鈕", r.tag && r.verdict === (await tf("rob.verdict.outside")) && r.cls === "btn-quiet rob-go");
   r = await stale(STATS, { ...SCAN, start: undefined, fee: undefined });
   ok("② 掃描缺起日 / 費率:meta 不畫期間與手續費那兩組(不拿回測的補),只剩 symbol / interval / 掃描 R×C", !r.meta.includes("→") && !r.meta.includes("%") && r.meta.includes("BTCUSDT") && r.meta.endsWith((await tf("rob.metaScan")) + "3×3"));
-  r = await js(`(() => { window.__render({ stats: ${JSON.stringify(STATS)}, scan: { row_param: "<img onerror=x>", col_param: "B", row_vals: [1], col_vals: [1], grid: [[1]] }, code: "", name: "s1" }, false);
-    return { img: window.__box.querySelectorAll("img").length, txt: window.__box.querySelector(".rob-tbl th.corner").textContent }; })()`);
-  ok("② 參數名是雲端 / agent 來的字串:只進 textContent,不變成元素", r.img === 0 && r.txt.includes("<img onerror=x>"));
+  // 0.1.60 軸名拆出角落格(spec p3-0160 R3-2):直軸名在 .rob-ax-r、橫軸名在熱圖上方 .rob-ax-c,兩條都灌
+  r = await js(`(() => { window.__render({ stats: ${JSON.stringify(STATS)}, scan: { row_param: "<img src=x onerror=1>", col_param: "<svg onload=1>", row_vals: [1], col_vals: [1], grid: [[1]] }, code: "", name: "s1" }, false);
+    const b = window.__box, ar = b.querySelector(".rob-ax-r"), ac = b.querySelector(".rob-tbl th.rob-ax-c span");
+    return { bad: b.querySelectorAll("img, [onerror], [onload]").length, ar: ar && ar.textContent, arT: ar && ar.title, ac: ac && ac.textContent, acT: ac && ac.title }; })()`);
+  ok("② 參數名是雲端 / agent 來的字串:只進 textContent,不變成元素(直軸、橫軸名與 title 都是原字)", r.bad === 0 && r.ar === "<img src=x onerror=1> →" && r.arT === "<img src=x onerror=1>"
+    && r.ac === "<svg onload=1> →" && r.acT === "<svg onload=1>");
 
   // ── ② 單參數(6×1、col_param "_"):一欄熱圖,文字不出現 _ / "/ 0" / N×1;二維 3×3 的 innerHTML 跟改前快照逐字相同 ──
   const one = (code) => js(`(() => { window.__render({ stats: ${JSON.stringify(STATS)}, scan: ${JSON.stringify(SINGLE)}, code: ${JSON.stringify(code)}, name: "s9" }, false);
     const q = (s) => [...window.__box.querySelectorAll(s)], tbl = window.__box.querySelector(".rob-tbl"), cur = q(".rob-tbl td.is-current")[0];
     return { meta: window.__box.querySelector(".bt-meta").textContent, tag: (window.__box.querySelector(".rob-tag") || {}).textContent, verdict: window.__box.querySelector(".rob-verdict").textContent,
       hdr: window.__box.querySelector(".rob-cmp-tbl th.prm").textContent, rows: q(".rob-cmp-tbl tbody tr").map((tr) => [...tr.children].map((td) => td.textContent)),
-      cls: tbl.className, minW: tbl.style.minWidth, aria: tbl.getAttribute("aria-label"), corner: q(".rob-tbl th.corner span").map((x) => x.textContent), colTh: q(".rob-tbl thead th:not(.corner)").map((x) => x.textContent),
+      cls: tbl.className, minW: tbl.style.minWidth, aria: tbl.getAttribute("aria-label"), corner: q(".rob-tbl th.corner").map((x) => x.textContent), axR: q(".rob-ax-r").map((x) => [x.textContent, x.title]), axC: q(".rob-tbl th.rob-ax-c").length, colTh: q(".rob-tbl thead th:not(.corner)").map((x) => x.textContent),
       cells: q(".rob-tbl td").length, cur: cur ? [cur.dataset.i, cur.dataset.j] : null, cellAria: q(".rob-tbl td")[0].getAttribute("aria-label"), legend: q(".rob-legend .it").map((x) => x.textContent), text: window.__box.textContent }; })()`);
   r = await one("N = 10\n");
   const bad = (t) => /_|\/ 0|×1|×|\{/.test(t);   // 佔位痕跡:_、x / 0、N×1(單參數整頁沒有 ×)、沒填的 {var}
-  ok("② 單參數(尖峰上):meta「掃描 6 格」(不寫 6×1)、tag / 結論是 *1 版、比較表欄頭只有 N、參數欄只印值、熱圖 is-single、不設 minWidth、aria 用 heatAria1、角落一行、欄頭空、6 格、虛線格 (0,0)",
+  ok("② 單參數(尖峰上):meta「掃描 6 格」(不寫 6×1)、tag / 結論是 *1 版、比較表欄頭只有 N、參數欄只印值、熱圖 is-single、不設 minWidth、aria 用 heatAria1、軸名只有左側直排一個(N →、title N;角落空、沒有上方橫軸列)、欄頭空、6 格、虛線格 (0,0)",
     r.meta.endsWith((await tf("rob.metaScan")) + (await tf("rob.cells", { n: "6" }))) && r.tag === (await tf("rob.tag.peak")) && r.verdict === (await tf("rob.verdict.peak1")) && r.hdr === "N" && r.rows.length === 2 && r.rows[0][1] === "10" && r.rows[1][1] === "50"
-    && r.cls === "rob-tbl is-single" && r.minW === "" && r.aria === (await tf("rob.heatAria1", { rp: "N" })) && JSON.stringify(r.corner) === '["N ↓"]' && JSON.stringify(r.colTh) === '[""]' && r.cells === 6 && JSON.stringify(r.cur) === '["0","0"]'
+    && r.cls === "rob-tbl is-single" && r.minW === "" && r.aria === (await tf("rob.heatAria1", { rp: "N" })) && JSON.stringify(r.corner) === '[""]' && JSON.stringify(r.axR) === '[["N →","N"]]' && r.axC === 0 && JSON.stringify(r.colTh) === '[""]' && r.cells === 6 && JSON.stringify(r.cur) === '["0","0"]'
     && r.cellAria.startsWith("N 10: ") && !bad(r.text), JSON.stringify(r));
   r = await one("N = 50\n");
   const curPl1 = await tf("rob.legend.curPlateau1"), curOff1 = await tf("rob.legend.curOff1", { prm: "99" });
@@ -449,8 +453,9 @@ app.whenReady().then(async () => {
     const b = window.__box.querySelector(".rob-cmp-tbl th button.mp-tip"); b.dispatchEvent(new FocusEvent("focus")); const tip2 = document.querySelector(".rob-tip").textContent; b.dispatchEvent(new FocusEvent("blur")); return { lbl, tip, tip2 }; })()`);
   ok("② 單參數:鄰域 label 是 heatNbr1(相鄰 3 格)、格 tooltip 第一行只有「N 50」(不帶 ·)、欄頭說明是 cmp.nbrTip1", r.lbl === (await tf("rob.heatNbr1", { k: "3" })) && r.tip.startsWith("N 50" + (await tf("rob.tipSharpe", { s: "1.60", n: "1.55" }))) && r.tip2 === (await tf("rob.cmp.nbrTip1", { k: "3" })) && !bad(r.lbl + r.tip + r.tip2), JSON.stringify(r));
   r = await js(`(() => { window.__render({ stats: ${JSON.stringify(STATS)}, scan: ${JSON.stringify({ ...SINGLE, col_param: "B", col_vals: [0.5] })}, code: "N = 10\\nB = 0.5", name: "s9" }, false);
-    const tbl = window.__box.querySelector(".rob-tbl"); return { cls: tbl.className, minW: tbl.style.minWidth, corner: tbl.querySelectorAll("th.corner span").length, meta: window.__box.querySelector(".bt-meta").textContent }; })()`);
-  ok("② 第二軸是真常數只有一格(不是 \"_\"):照二維畫(沒有 is-single、有 minWidth、角落兩行、meta 6×1)", r.cls === "rob-tbl" && r.minW === "340px" && r.corner === 2 && r.meta.endsWith((await tf("rob.metaScan")) + "6×1"));
+    const tbl = window.__box.querySelector(".rob-tbl"); const ac = tbl.querySelector("th.rob-ax-c span"), ar = window.__box.querySelector(".rob-ax-r");
+    return { cls: tbl.className, minW: tbl.style.minWidth, ax: [ar && ar.textContent, ac && ac.textContent, ac && ac.closest("th").colSpan], meta: window.__box.querySelector(".bt-meta").textContent }; })()`);
+  ok("② 第二軸是真常數只有一格(不是 \"_\"):照二維畫(沒有 is-single、有 minWidth、兩軸名都在(左側 N →、上方 B → 跨 1 欄)、meta 6×1)", r.cls === "rob-tbl" && r.minW === "340px" && JSON.stringify(r.ax) === '["N →","B →",1]' && r.meta.endsWith((await tf("rob.metaScan")) + "6×1"));
   {
     const diffs = [];
     for (const e of SNAP) {

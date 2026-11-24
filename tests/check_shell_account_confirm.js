@@ -118,7 +118,7 @@ app.whenReady().then(async () => {
   await setReport(report({ account_guard: null, halt: { halted: true, source: "reconciler" } })); await poll();
   ok("④ 舊 runtime 沒有 holds_all:照來源名單(reconciler → A′)", (await head()).desc.includes(await T("tr.haltReasonAll")));
   const zh = await js(`[STRINGS.zh["tr.acct.reason"], STRINGS.zh["tr.acct.title"], STRINGS.en["tr.acct.btn"]]`);
-  ok("字串:zh 全形標點、不出帳本 / book / reset / HALT;en 有", /，|。/.test(zh[0]) && !/帳本|book|reset|HALT/i.test(zh.join("")) && zh[2] === "Confirm account");
+  ok("字串:zh 全形標點、不出帳本 / book / reset / HALT;en 主鈕 Title Case「Confirm Account」", /，|。/.test(zh[0]) && !/帳本|book|reset|HALT/i.test(zh.join("")) && zh[2] === "Confirm Account");   // 0.1.60 英文下單鈕 Title Case
 
   console.log(red ? `\n${red} 紅` : "\nALL PASS");
   app.exit(red ? 1 : 0);

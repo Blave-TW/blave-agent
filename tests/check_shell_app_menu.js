@@ -47,7 +47,12 @@ app.whenReady().then(() => {
         && Menu.getApplicationMenu().items[3].submenu.items.some((x) => FULL.test(x.label)));
       ok(`${tag}:那一格的字 = ${L[full ? "menuFullExit" : "menuFullEnter"]}`, fsLabels.length === 1 && fsLabels[0].label === L[full ? "menuFullExit" : "menuFullEnter"]);
       const named = items.filter((x, i) => !(i === 0 && x.top));
-      ok(`${tag}:除了 app 名稱那一格,每一格都有字,而且都來自 ${lang}.po`, named.every((x) => x.label && Object.values(L).includes(x.label)));
+      // 0.1.60 ⌘1–⌘9 切對話分頁列進「顯示」(QA 0159 R4-10):menu.tabN 由主行程代 {n}=1..8,⌘9 是 menu.tabLast;代完不留 {n}
+      const tabs = [1, 2, 3, 4, 5, 6, 7, 8].map((n) => L.menuTabN.replace("{n}", String(n))).concat(L.menuTabLast);
+      const fromPo = Object.values(L).filter((v) => !v.includes("{n}")).concat(tabs);
+      ok(`${tag}:除了 app 名稱那一格,每一格都有字,而且都來自 ${lang}.po`, named.every((x) => x.label && fromPo.includes(x.label)));
+      const view = Menu.getApplicationMenu().items[3].submenu.items.filter((x) => /^CmdOrCtrl\+[1-9]$/.test(x.accelerator || ""));
+      ok(`${tag}:「顯示」有 ⌘1–⌘9 九列對話分頁,字照 po 代好 {n}、只顯示不註冊快捷鍵`, view.length === 9 && view.every((x, i) => x.label === tabs[i] && x.accelerator === "CmdOrCtrl+" + (i + 1) && x.registerAccelerator === false));
       if (lang === "zh") ok(`${tag}:沒有英文漏網(Substitutions / Speech / Toggle 那種)`, named.every((x) => !/[A-Za-z]{3,}/.test(x.label.replace(/Blave/g, ""))));
     }
   }

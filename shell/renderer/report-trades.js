@@ -1520,7 +1520,8 @@
         live = { chart: built.chart, retheme: retheme, cancelSized: whenSized(host, built.applyInitialView) };
         if (candles.length > 1) {
           const wrap = el("div", "tr-map");
-          card.appendChild(wrap);
+          // buildChart 已在卡尾掛上十字線讀數;地圖要緊接在圖(與 tr-more)後面
+          card.insertBefore(wrap, moreEl.nextSibling);
           map = buildMap(wrap, built, S, dateOnly);
           live.cancelMap = map.cancel;
         }

@@ -587,8 +587,13 @@
     });
     if (hi <= frame.clientWidth) return;
     const pitch = (() => { const c = frame.querySelectorAll("tbody tr:first-child td"); return c.length > 1 ? c[1].getBoundingClientRect().left - c[0].getBoundingClientRect().left : 0; })();
-    let want = Math.max(0, Math.min(lo - 84 - 24, hi - frame.clientWidth + 16));   // 84 = 釘住的列標欄、24 = 它的間距 + frame 內距
-    if (pitch > 0) want = Math.floor(want / pitch) * pitch;   // 對齊欄距:第一欄不要半切(設計師複核 09-25 建議 N4)
+    const loCap = lo - 84 - 24;   // 84 = 釘住的列標欄、24 = 它的間距 + frame 內距
+    let want = Math.max(0, Math.min(loCap, hi - frame.clientWidth + 16));
+    if (pitch > 0) {   // 對齊欄距:第一欄不要半切(設計師複核 09-25 建議 N4)
+      const down = Math.floor(want / pitch) * pitch;
+      // 往下取整最多退回 pitch-1,會吃掉右邊 16 的餘量把最右的標記切掉;那時多捲一欄(不把第一個標記推到列標底下才行)
+      want = hi - down > frame.clientWidth && down + pitch <= loCap ? down + pitch : down;
+    }
     frame.scrollLeft = want;
   }
 

@@ -32,7 +32,8 @@ const MODALS = [
   { name: "確認框(暫停 / 金額那一種)", open: `confirmBox({ title: "t", lines: ["一段說明"], ok: "ok", onOk() {}, opener: $("tr-nav") })`, isOpen: `!$("del-scrim").hidden`, text: "#del-body p" },
   { name: "連接交易所", open: `(ENV.cur = "local", cxModalOpen(null))`, isOpen: `!$("cx-scrim").hidden`, text: "#cx-title" },
   { name: "設定", open: `(running = false, setOpen())`, isOpen: `!$("set-scrim").hidden`, text: "#set-title" },
-  { name: "圖片放大", open: `lbOpen("data:image/gif;base64,R0lGODlhAQABAAAAACw=", "x", $("ta"))`, isOpen: `!$("lb-scrim").hidden`, text: null },
+  // 0.1.60 膠捲版放大檢視(spec chat-image-strip-0160):lbOpen 收的是聊天裡那顆圖鈕,src / 說明字從鈕上讀
+  { name: "圖片放大", open: `lbOpen(chatImgBtn("data:image/gif;base64,R0lGODlhAQABAAAAACw=", "x"))`, isOpen: `!$("lb-scrim").hidden`, text: null },
   // 0.1.6 的兩個表單 modal(欄位可聚焦:焦點在框裡那一格會落在描述欄 / 名稱欄上)
   { name: "新增策略", open: `(running = false, nsOpen($("strat-add")))`, isOpen: `!$("ns-scrim").hidden`, text: "#ns-modal .ns-hint" },
   { name: "新增報告", open: `(running = false, rptNewOpen($("rpt-ask")))`, isOpen: `!$("rpn-scrim").hidden`, text: "#rpn-honest" },
