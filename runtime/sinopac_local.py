@@ -42,6 +42,10 @@ STOP_GRACE_S = 20  # a request in flight confirms within its own deadline; logou
 SHUTDOWN_WAIT_S = 2
 WANTED_EVERY_S = 5
 LOG_MAX = 5 * 1024 * 1024
+RESUME_STEP = "sinopac_local:resume"  # = shell/renderer/sinopac.js SP_BUSY_STEP
+RESUME_WAIT_S = STOP_GRACE_S + 15     # the old worker leaves; the tick kills it past STOP_GRACE_S
+RESUME_RETRY_S = 60                   # the one more login after a TIMEOUT (a 451 waits for its retry_at)
+_TRANSIENT = ("timeout", "too_many")  # probe.state of a login that got no answer / 451: tried once more
 
 
 def _paths():
@@ -226,6 +230,47 @@ def local_shutdown():
 
 def reap_orphan(pid_cmdline):
     _W.reap_orphan(pid_cmdline)
+    try:
+        _sweep_interrupted()
+    except Exception as e:
+        print(f"[sinopac_local] interrupted step not swept ({type(e).__name__})", file=sys.stderr)
+
+
+def _sweep_interrupted():
+    """A daemon that died mid-step (the app quit, a runtime publish) leaves `busy` and a section at
+    running in the status file: the app would wait on it for good (capital_local._sweep_interrupted).
+    Running sections → failed INTERRUPTED, busy off. A worker section left running with WANTED there
+    (a key change's resume died inside run_finish) has its finish wait taken up again: the supervisor
+    starts that worker once the app re-sends the credentials, and the page must not keep reading
+    「開通中」 over a worker that trades. The lock is free only when no step runs in this process."""
+    import sinopac_connect as sc
+    if not sc._busy.acquire(blocking=False):
+        return
+    handed = False
+    try:
+        st = sc.read_status()
+        if not st or not st.get("busy"):
+            return
+        refinish = ((st.get("worker") or {}).get("status") == "running"
+                    and os.path.exists(os.path.join(WORKSPACE, sinopac_service.WANTED)))
+        sc._end_step()
+        if refinish:
+            sc._update(busy=RESUME_STEP)
+            threading.Thread(target=_refinish_job, name="sinopac-refinish", daemon=True).start()
+            handed = True
+    finally:
+        if not handed:
+            sc._busy.release()
+
+
+def _refinish_job():
+    import sinopac_connect as sc
+    try:
+        sc.run_finish(True)
+    except Exception as e:
+        print(f"[sinopac_local] finish after the restart stopped ({type(e).__name__})", file=sys.stderr)
+    finally:
+        sc._release_step()
 
 
 # ── credentials (desktop): the app's encrypted store → this process's memory → the worker's stdin ──
@@ -234,7 +279,8 @@ def reap_orphan(pid_cmdline):
 # a 統一 or 群益 payload never opens here) and sends it in `sinopac_local`:
 #   bind     {sealed + src}: the .pfx the user chose is opened HERE with the CA password (the
 #            national id when ca_password is ""), copied to credentials/sinopac.pfx, .env gets the
-#            sentinels (sinopac_service.store) — no login
+#            sentinels (sinopac_service.store) — no login. A key change on a machine whose connect
+#            flow had finished then logs in and restarts the worker itself (_resume_after_rebind)
 #   secrets  {sealed}: re-sent after every daemon start; refused unless .env was bound with it
 #   setup / probe / sim_test / start: runtime/sinopac_connect's steps (local=True). probe is the
 #            user's 「確認登入」: `sinopac_worker.py --once` with the credentials as its stdin line —
@@ -352,9 +398,9 @@ def _set_secrets(b):
     _SEAL["secrets"] = {k: b[k] for k in ("api_key", "secret_key", "person_id", "ca_password", "live")}
 
 
-def _bind(b):
+def _bind(b, push=None):
     """The file the user chose, opened here with the one-field rule (sinopac_connect.open_pfx), then
-    stored; no login. A refusal leaves whatever was bound before untouched."""
+    stored; no login here. A refusal leaves whatever was bound before untouched."""
     import sinopac_connect
     path = b.get("src") or sinopac_service.paths(WORKSPACE)["pfx"]
     try:
@@ -372,10 +418,74 @@ def _bind(b):
         na = getattr(e, "not_after", None)
         sinopac_connect._update("cert", error=code, not_after=na)
         raise Refused(code, f"not_after {na}" if na else "")
+    # WANTED = the connect flow had finished (run_finish), read before store() drops it: a key change,
+    # not a first connect (which still walks setup / sign / start in the app's box)
+    rekey = os.path.exists(os.path.join(WORKSPACE, sinopac_service.WANTED))
     _W.stop_now("rebinding")
     out = sinopac_connect.store_cert(data, b, local=True)
     _set_secrets(dict(b, ca_password=b["ca_password"] or b["person_id"]))
+    if rekey:
+        _resume_after_rebind(push)
     return out
+
+
+def _resume_after_rebind(push=None):
+    """A key change (Wei 11-24): the new set's 確認登入 and the worker's start run here, so orders
+    come back with the app's box closed. Held as the one 永豐 step (sinopac_connect._busy, `busy` =
+    RESUME_STEP): the app sends no probe / start of its own while `busy` is set, and one it sends
+    anyway is refused BUSY. A login that got no answer or a 451 is tried once more; one that still
+    does not pass stays on that row (probe.state) with the worker not wanted, as a box-driven one
+    would. False = another step holds the lock: the app's box walks it as before."""
+    import sinopac_connect as sc
+    if not sc._busy.acquire(blocking=False):
+        return False
+    try:
+        sc._update(busy=RESUME_STEP)
+        if push:
+            push()
+        threading.Thread(target=_resume_job, args=(push,), name="sinopac-resume", daemon=True).start()
+    except BaseException:
+        sc._release_step()
+        raise
+    return True
+
+
+def _resume_job(push=None):
+    import sinopac_connect as sc
+    try:
+        deadline = time.time() + RESUME_WAIT_S
+        while _W.running() and time.time() < deadline:
+            time.sleep(0.5)
+        if _W.running():  # one login per national id: never a probe beside the old worker
+            print("[sinopac_local] the old worker is still running — the new key waits for 確認登入", file=sys.stderr)
+            return
+        st = sc.run_probe(True, push)
+        if st.get("state") in _TRANSIENT and _still_bound():
+            # once more, no loop: a 451 after its own wait (retry_at), a TIMEOUT after RESUME_RETRY_S
+            at = st.get("retry_at") if st["state"] == "too_many" else None
+            at = at if isinstance(at, (int, float)) else time.time() + RESUME_RETRY_S
+            if _wait_bound(min(at, time.time() + sc.LOGIN_451_WAIT_S)):
+                st = sc.run_probe(True, push)
+        # an unbind meanwhile (credentials_remove does not take the step's lock): no WANTED left behind
+        if st.get("state") == "ok" and _still_bound():
+            sc.run_finish(True, push)
+    except Exception as e:
+        print(f"[sinopac_local] resume after the key change stopped ({type(e).__name__})", file=sys.stderr)
+    finally:
+        sc._release_step()
+
+
+def _still_bound():
+    return _SEAL["secrets"] is not None and sinopac_service.bound(WORKSPACE) is True
+
+
+def _wait_bound(until):
+    """Sleep to `until`; False at once on an unbind (the step's lock must not outlive the binding)."""
+    while time.time() < until:
+        if not _still_bound():
+            return False
+        time.sleep(min(1.0, max(0.0, until - time.time())))
+    return _still_bound()
 
 
 def kill_tree(p):
@@ -412,7 +522,10 @@ def local_dispatch(args, deferred_cls=None, push=None):
         _set_secrets(b)
         return {"secrets": "ok"}
     if op == "bind":
-        return _bind(_bundle(open_sealed(args.get("sealed")), need_src=True))
+        import sinopac_connect
+        if sinopac_connect._busy.locked():  # a step (or the key change's own resume) is logging in
+            raise Refused("BUSY", "another 永豐 step is running")
+        return _bind(_bundle(open_sealed(args.get("sealed")), need_src=True), push)
     if op == "stop":
         _drop_wanted()
         _W.stop_now("asked")

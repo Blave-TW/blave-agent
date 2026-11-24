@@ -5339,6 +5339,14 @@ function trPaintSet() {
   }
   // 平倉後解除進行中:進度只看這顆鈕(spec §3)。用 aria-disabled 不用 disabled:關掉 ④ 時焦點要回得來(設計稽核 M6)
   const unbindingClose = !!(TR.ub && TR.ub.state === "run");
+  /* 永豐、這台電腦、已連接或串接中才有〔換金鑰〕,開框直接到表單(sinopac.js spRekeyOpen)。開通中、登入停了、重試登入中各有自己的出口;
+     串接失敗的出口是〔重新測試〕(多半是下單程式沒跟上,不是金鑰),三顆鈕在 288 寬也會撐出橫捲(設計稽核 11-24 必修 1)。
+     雲端不出:主機那一端每次都要整組重填(spFix 在雲端不只清金鑰) */
+  if (id === "sinopac" && SINOPAC_LOCAL_ON && !ro && !spW && !spLogin && !spRetry && !failed && !headRelogin && typeof spRekeyOpen === "function") {
+    const k = trEl("button", "pf-act", t("cx.changeKey")); k.type = "button"; k.id = "sp-rekey";
+    k.disabled = !!TR.unbinding || unbindingClose; k.addEventListener("click", () => spRekeyOpen(k));
+    acts.appendChild(k);
+  }
   const ub = trEl("button", "pf-act", unbindingClose ? t("tr.ub.runningBtn") : TR.unbinding ? t("tr.unbinding") : t("tr.unbind")); ub.type = "button"; ub.id = "tr-unbind";
   ub.disabled = !!TR.unbinding || !id || !trEnvNames(id).length;
   if (unbindingClose) ub.setAttribute("aria-disabled", "true");
@@ -5392,7 +5400,7 @@ function trPaintSet() {
    自訂(custom)只能跟 agent 說:是現值時列成選項,改選別的 = 放棄自訂。
    改了立即送(同網頁),送出帶兩份:execution_default(runtime 1.1.127 起)+ 展開到每支成員的舊 map(更舊的 runtime 只認它)。
    現值讀報告的 execution_effective(runtime 依同一條遷移規則算好的);沒有這欄 = 舊 runtime,讀 config.execution_default。
-   台灣期貨券商(統一、群益)的下單程式不經這一層、只下市價單:選單停用、固定顯示市價,下面一行講為什麼。 */
+   台灣期貨券商(統一、群益、永豐)的下單程式不經這一層、只下市價單:選單停用、固定顯示市價,下面一行講為什麼。 */
 const TR_TWAP_DEFAULT_MIN = 15;   // = 網頁 TWAP_MINS 唯一的固定選項
 function trExecKey(spec) {
   if (!spec || typeof spec !== "object") return "market";

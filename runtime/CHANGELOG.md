@@ -9,6 +9,8 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 ## Unreleased
 
 - **KOL 推薦碼延長試用(spec kol-referral-trial-2026-11-23 §7)**:`DATA_ACCESS_WHY["no_card"]` 不再寫死「14-day trial」,改成試用天數以帳戶頁為準——推薦碼帳號的試用是 30 天,Blave AI 不能背 14。
+- **存檔閘把永豐納入台指期限制(`command_listener._cmd_amounts`、新 `_sinopac_trades`;閘門仍關著)**:路由到永豐的非台指期策略(或 Type C)存檔時拒 `NOT_TXF`(同統一那組,句子寫「永豐期貨」);只在永豐真的會下單時擋——期貨閘門開著、而且是經連接流程綁的(`sinopac_service.bound`,vault 哨兵)。零股時代留下明碼 sinopac_* 金鑰的機器不擋。統一、群益不變。
+- **永豐換金鑰後由機器自己接回下單(`sinopac_local._bind`／`_resume_after_rebind`;Wei 11-24,閘門仍關著)**:連接流程已走完(`state/sinopac_worker_wanted.json` 在)的機器送新金鑰,存好後 daemon 自己用新的那組確認登入,過了就照 `run_finish` 寫 WANTED、由 supervisor 把 worker 起回來,不再靠電腦版的框開著;期間 `sinopac_connect.json` 的 `busy` 是 `sinopac_local:resume`,外殼不送自己的 probe／start,送了也拒 BUSY(換金鑰途中再 bind 一樣拒)。登入沒回應(TIMEOUT)或 451 再試一次(451 等它自己的 retry_at、TIMEOUT 等 60 秒,不迴圈),仍沒過照現行停在那一列、worker 不 wanted;途中解除連接就不再登入、不寫 WANTED。首次開通(沒有 WANTED)行為不變。daemon 起來(`reap_orphan`,第一次 tick 之前)先清上一支 daemon 死在步驟中留下的 `busy`(running 段落標 INTERRUPTED,同群益 `_sweep_interrupted`);死在 run_finish 而 WANTED 在的,接著重等第一份快照。
 
 ## 1.1.170 — 2026-11-23(desktop 0.1.60:報告框搜尋驗證不等人、更新雲端主機改走直接指令、永豐期貨翻開關前的實測修正(閘門仍關著))
 

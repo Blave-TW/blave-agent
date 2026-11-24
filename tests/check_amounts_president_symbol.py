@@ -235,5 +235,40 @@ check(save({}) is None and "ghost" not in json.load(open(CONFIG))["asset_specs"]
       "a spec whose strategy folder is gone is pruned")
 os.remove(SNAPF)
 
+# ── 永豐期貨: the same gate once it really trades (futures gate open + bound through the connect
+#    flow, vault sentinels); odd-lot era plain sinopac_* keys never trade and are never refused ──
+import sinopac_service  # noqa: E402
+SP_LIVE = "".join(f"{k}={v}\n" for k, v in sinopac_service.bound_env("k", "s", WS).items())
+SP_ODDLOT = "sinopac_api_key=plainkey\nsinopac_secret_key=plainsecret\nsinopac_ca_passwd=pw\nsinopac_person_id=A123456789\n"
+real_modes = cl.venue_traits.verified_modes
+gate = {"open": True}
+cl.venue_traits.verified_modes = lambda v: ("futures",) if gate["open"] and v == "sinopac" else real_modes(v)
+bind(SP_LIVE)
+err = save({"txf_sma": 1})
+check(err is None and json.load(open(CONFIG))["exchanges"] == {"txf_sma": "sinopac"},
+      f"永豐 (live): a TXF member saves, routed to sinopac ({err})")
+before = open(CONFIG).read()
+for amt in (100, 0):
+    err = save({"txf_sma": 1, "btc_sma": amt})
+    check(err is not None and err.startswith("NOT_TXF: 「btc_sma」") and "BTCUSDT" in err and "永豐期貨" in err
+          and open(CONFIG).read() == before,
+          f"永豐 (live): a BTCUSDT member at amount {amt} is refused NOT_TXF naming 永豐期貨, nothing written: {err}")
+err = save({"txf_sma": 1, "port_c": 5})
+check(err is not None and err.startswith("NOT_TXF: 「port_c」") and "Type C" in err and "永豐期貨" in err,
+      f"永豐 (live): a Type C portfolio is refused NOT_TXF: {err}")
+bind(SP_ODDLOT)
+err = save({"btc_sma": 100})
+check(err is None and json.load(open(CONFIG))["exchanges"].get("btc_sma") == "sinopac",
+      f"永豐 odd-lot era keys (plain values, gate open): not a trading route — the save is not refused ({err})")
+gate["open"] = False
+bind(SP_LIVE)
+err = save({"btc_sma": 100})
+check(err is None, f"永豐 bound but its futures gate shut: not refused (nothing trades it) ({err})")
+cl.venue_traits.verified_modes = real_modes
+for env_lines, zh, code in ((PRESIDENT, "統一期貨", "NOT_TXF"), (CAPITAL, "群益期貨", "MARKET_VENUE")):
+    bind(env_lines)
+    err = save({"txf_sma": 1, "btc_sma": 5})
+    check(err is not None and err.startswith(f"{code}: 「btc_sma」") and zh in err, f"{zh}: unchanged, {code}: {err}")
+
 print(f"\n{'ALL PASS' if not fails else f'{fails} FAIL'}")
 sys.exit(1 if fails else 0)

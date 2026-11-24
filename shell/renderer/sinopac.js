@@ -35,13 +35,15 @@ const SP_FEATURE = { form: "sinf_form_saved", sign: "sinf_sign_open", sim: "sinf
 /* phase:"form"(表單)/"flow"(清單)。fix:從登入失敗回表單時只清哪一類("key" | "cert" | null)。
    capw:第五格「憑證密碼」展開了沒有。relogin:從〔重新登入〕進來(主鈕是〔確認登入〕) */
 const spBlank = () => ({ phase: "form", fix: null, apiKey: "", secret: "", id: "", caPw: "", capw: false, idBad: false, picked: false,
-  busy: false, msg: null, sent: null, info: null, seen: {}, sig: null, started: false, relogin: false, reloginAt: null,
+  busy: false, rekey: false, msg: null, sent: null, info: null, seen: {}, sig: null, started: false, relogin: false, reloginAt: null,
   setupSent: false, probeSent: false, startSent: false, simClosed: false, openedAt: 0, awaitCert: null, view: null, timer: null });
 let SP = spBlank();
 
 /* ── 純邏輯(tests/check_shell_sinopac_view.js 從原文切出來跑;這一段不准碰 DOM)── */
 const spSec = (sc, k) => (sc && sc[k] && typeof sc[k] === "object" ? sc[k] : {});
-const SP_BUSY_STEP = { "sinopac_local:setup": "setup", "sinopac_local:probe": "probe", "sinopac_local:sim_test": "sim_test", "sinopac_local:start": "start" };
+// sinopac_local:resume = 換金鑰後機器自己確認登入、再起下單程式(runtime sinopac_local.RESUME_STEP):先畫登入那一列在跑
+const SP_BUSY_STEP = { "sinopac_local:setup": "setup", "sinopac_local:probe": "probe", "sinopac_local:sim_test": "sim_test", "sinopac_local:start": "start",
+  "sinopac_local:resume": "probe" };
 function spRunning(sc, sent, now) {
   const fresh = (sec) => typeof sec.at !== "number" || now - sec.at * 1000 < SP_STUCK_MS;
   const s = (k, v) => spSec(sc, k).status === v && fresh(spSec(sc, k));
@@ -49,9 +51,15 @@ function spRunning(sc, sent, now) {
   if (s("sim", "running")) return "sim_test";
   if (s("probe", "running")) return "probe";
   if (s("setup", "running")) return "setup";
-  const upd = sc && typeof sc.updated_at === "number" ? now - sc.updated_at * 1000 < SP_STUCK_MS : true;
-  if (sc && typeof sc.busy === "string" && SP_BUSY_STEP[sc.busy] && upd) return SP_BUSY_STEP[sc.busy];
+  // 換金鑰的接回在等再試一次(TIMEOUT／451):登入那一列照失敗那一態畫(451 帶時間),鈕由 spBusy 鎖住
+  if (spBusy(sc, now) && sc.busy === "sinopac_local:resume" && s("probe", "failed")) return sent ? sent.step : null;
+  if (spBusy(sc, now) && SP_BUSY_STEP[sc.busy]) return SP_BUSY_STEP[sc.busy];
   return sent ? sent.step : null;
+}
+// 機器在跑一個步驟(busy)而且狀態檔還新鮮:同 spRunning 的 SP_STUCK_MS。daemon 死在步驟中留下的舊 busy(runtime 起來會清)不鎖畫面
+function spBusy(sc, now) {
+  if (!sc || typeof sc.busy !== "string" || !sc.busy) return false;
+  return typeof sc.updated_at === "number" ? now - sc.updated_at * 1000 < SP_STUCK_MS : true;
 }
 // 台北時間的星期(0 = 週日)與時分;用本機時鐘換算(機器端送單前用校過的鐘再判一次,畫面只決定鈕能不能按)
 function spTpe(ms) { const d = new Date(ms + 8 * 3600000); return { wd: d.getUTCDay(), h: d.getUTCHours(), m: d.getUTCMinutes() }; }
@@ -126,6 +134,18 @@ function spHm(sec) { if (typeof sec !== "number" || !isFinite(sec)) return null;
 // 讀帳失敗那一行(不是登入停了、不是重試中):lib 在 worker 沒寫快照時標 [sinopac_worker_down],其他一律講讀不到帳戶,不出原文。
 // cloud = 雲端視角:重開電腦版救不了主機上的 worker,講主機那一句(不承諾自動重啟)
 const spAcctErrKey = (msg, cloud) => (/\[sinopac_worker_down\]/.test(String(msg || "")) ? (cloud ? "sp.acct.downCloud" : "sp.acct.down") : "sp.acct.readFail");
+/* 完成頁的權益數(11-23 夜盤實測:報告讀帳比下單程式第一份快照早 4 秒,那一輪是「—」)→ { v } 數字 | { wait } 讀取中… | {} 「—」。
+   SnapshotLag 那一筆讀到了權益(trade.js trPosPending)照數字畫。wait 只在下單程式剛 ok、帳戶讀取的時間還早於它時,
+   而且不超過 SP_EQ_WAIT_MS(帳戶讀取每 60 秒一輪);之後讀到了卻沒有權益、或一直沒跟上,照舊「—」 */
+const SP_EQ_WAIT_MS = 120000;   // = trade.js TR_SP_BOOT_MS
+function spEqView(r, sc, now) {
+  const a = r && r.account && r.account.venues && r.account.venues[SINOPAC];
+  if (a && typeof a.equity === "number" && isFinite(a.equity)) return { v: a.equity };
+  const w = spSec(sc, "worker"), okAt = w.status === "ok" && typeof w.at === "number" ? w.at : null;
+  if (okAt === null || now - okAt * 1000 >= SP_EQ_WAIT_MS) return {};
+  const readAt = r && r.account && typeof r.account.read_at === "number" ? r.account.read_at : 0;
+  return readAt < okAt || !a ? { wait: true } : {};
+}
 /* ── 純邏輯到此 ── */
 
 /* 兩個視角(spec §1.2):這台電腦看本機 daemon 的回報、指令走 sinopac_local;雲端看主機的回報、指令走雲端那組(cloud_sinopac.js)。
@@ -143,15 +163,27 @@ function spForget() {
   // 主行程丟掉這次選的檔(旗標關時那支 IPC 不在,不叫)
   if (SINOPAC_LOCAL_ON) { try { window.blave.sinopacClose().catch(() => {}); } catch (_) { } }
 }
+/* 已連接狀態的〔換金鑰〕(設定 › 帳戶那一列,只有這台電腦):開框直接停在表單、只清金鑰兩格,同登入失敗那幾列的 spFix("key")。
+   開框不動機器;送出那一下 runtime 先停舊的下單程式,再自己用新的那組確認登入、過了就起回來(sinopac_local._resume_after_rebind),
+   框關了也一樣。spAsk 跨過 cxModalOpen 裡的 spForget 帶到 spResume;框沒開成就收掉 */
+let spAsk = null;
+function spRekeyOpen(b) {
+  spAsk = "key"; cxModalOpen(b, SINOPAC);
+  if ($("cx-scrim").hidden || CXF.venue !== SINOPAC) spAsk = null;
+}
 /* 開框時決定從哪裡開始:主行程存了那一組、這台電腦有開通紀錄 → 直接回清單(〔繼續〕〔重新登入〕);否則表單 */
 async function spResume() {
   // 雲端:這台電腦不存任何一格(都封進主機),表單一律從頭填;清單照主機的回報接回
   let info = null; if (spCloud()) info = { saved: false, picked: false, caSeparate: false }; else { try { info = await window.blave.sinopacInfo(); } catch (_) { } }
+  const ask = spAsk; spAsk = null;
   SP.info = info;
   const sc = spSC();
   if (((info && info.saved) || spCloud()) && sc && spSec(sc, "cert").status === "ok") {
-    SP.phase = "flow";
-    if (sc.login_stop && typeof sc.login_stop === "object") { SP.relogin = true; SP.reloginAt = sc.login_stop.at || 0; }
+    if (ask === "key" && !spCloud()) { SP.fix = "key"; SP.rekey = true; }
+    else {
+      SP.phase = "flow";
+      if (sc.login_stop && typeof sc.login_stop === "object") { SP.relogin = true; SP.reloginAt = sc.login_stop.at || 0; }
+    }
   }
   if (info && info.caSeparate) SP.capw = true;
   spPaint();
@@ -182,7 +214,7 @@ async function spcGo() {
   if ($("cx-scrim").hidden) return;
   if (r && r.code === "OK") {
     spTrack("form");
-    SP.apiKey = ""; SP.secret = ""; SP.caPw = ""; SP.id = ""; SP.fix = null; SP.phase = "flow"; SP.relogin = false;
+    SP.apiKey = ""; SP.secret = ""; SP.caPw = ""; SP.id = ""; SP.fix = null; SP.phase = "flow"; SP.relogin = false; SP.rekey = false;
     SP.setupSent = false; SP.probeSent = false; SP.startSent = false;
     if (!spCloud()) { try { SP.info = await window.blave.sinopacInfo(); } catch (_) { } }
     spBurst();
@@ -220,7 +252,7 @@ function spAdvance(view, sc) {
     const cert = spSec(sc, "cert"), fresh = (cert.at || 0) >= SP.awaitCert.at;
     if (fresh && cert.status === "ok") {
       SP.awaitCert = null; SP.busy = false; spTrack("form");
-      SP.apiKey = ""; SP.secret = ""; SP.caPw = ""; SP.id = ""; SP.fix = null; SP.phase = "flow"; SP.relogin = false;
+      SP.apiKey = ""; SP.secret = ""; SP.caPw = ""; SP.id = ""; SP.fix = null; SP.phase = "flow"; SP.relogin = false; SP.rekey = false;
       SP.setupSent = false; SP.probeSent = false; SP.startSent = false; SP.sig = null;
     } else if (fresh && cert.status === "failed") {
       SP.awaitCert = null; SP.busy = false; SP.msg = { code: String(cert.error || "PFX_INVALID"), notAfter: cert.not_after || null }; SP.sig = null;
@@ -233,7 +265,7 @@ function spAdvance(view, sc) {
   if (probe.status === "ok" && (probe.at || 0) * 1000 >= (SP.openedAt || 0)) spTrack("signed");
   if (SP.relogin && probe.status === "ok" && (probe.at || 0) > (SP.reloginAt || 0)) spTrack("relogin");
   if (worker.status === "ok" && SP.startSent) spTrack("ready");
-  if (SP.busy || SP.sent || spDown() || SP.phase !== "flow" || (sc && sc.busy)) return;
+  if (SP.busy || SP.sent || spDown() || SP.phase !== "flow" || spBusy(sc, Date.now())) return;
   if (view === "r-setup" && !SP.setupSent && !spRunning(sc, null, Date.now())) { SP.setupSent = true; spStep("setup"); return; }
   if (view === "r-ready" && !SP.probeSent) { SP.probeSent = true; spStep("probe"); return; }
   if (view === "w-ready" && !SP.startSent) { SP.startSent = true; spStep("start"); }
@@ -324,7 +356,7 @@ function spFormBody() {
   f.appendChild(s2);
   return f;
 }
-const spOff = (sc) => SP.busy || spDown() || !!(sc && sc.busy);
+const spOff = (sc) => SP.busy || spDown() || spBusy(sc, Date.now());
 const spRetry = (step, id, off) => capBtn("btn-out", t("pres.retry"), () => spStep(step), id || "sp-retry", off);
 /* 登入那一列的失敗(spec r-*;從〔重新登入〕進來時主鈕是填色的〔確認登入〕):講哪一類、給那一類的出口 */
 function spLoginBody(view, sc) {
@@ -402,11 +434,14 @@ function spRows(view, sc) {
   else add(capRow(worker.status === "ok" && !(sc && sc.login_stop) ? "done" : "todo", t("sp.s.worker")));
   return ol;
 }
+// 權益等第一份快照:骨架條(.sk 配方,靜態;canon loading.md 單一欄位依預期字數),高度照 .v 撐住,數字回來不跳
+function spEqSk() { const v = trEl("div", "v"), b = trEl("span", "sk sp-eq-sk"); b.setAttribute("aria-hidden", "true"); v.appendChild(b); return v; }
 function spDoneBody(sc) {
   const r = spReport() || {}, a = (r.account && r.account.venues && r.account.venues[SINOPAC]) || {}, cert = spSec(sc, "cert");
   const f = document.createDocumentFragment();
   const lede = trEl("p", "cap-lead pres-ok"); lede.append(trEl("i", "dot"), trEl("span", "", t("sp.done.lead"))); f.appendChild(lede);
-  const big = trEl("div", "pres-big"); big.append(trEl("div", "l", t("pres.done.equity")), trEl("div", "v mono", typeof a.equity === "number" ? trTwd(a.equity) + " " + TR_TXF_CCY : "—"));
+  const eq = spEqView(r, sc, Date.now());
+  const big = trEl("div", "pres-big"); big.append(trEl("div", "l", t("pres.done.equity")), eq.wait ? spEqSk() : trEl("div", "v mono", eq.v !== undefined ? trTwd(eq.v) + " " + TR_TXF_CCY : "—"));
   f.appendChild(big);
   const dl = trEl("dl", "cap-acct"), kv = (k, v, cls) => { const d = trEl("div", ""); d.append(trEl("dt", "", k), trEl("dd", cls || "", v)); dl.appendChild(d); };
   const masked = typeof a.account_masked === "string" && a.account_masked ? a.account_masked : spSec(sc, "probe").account_masked;   // ****1234,只露尾碼
@@ -423,7 +458,11 @@ function spFoot(view) {
   // 雲端的表單:鈕上方講目的地「雲端 · 真錢 · 永豐期貨」(同其他交易所的雲端連接框)
   const dest = spCloud() && view === "f";
   where.hidden = !dest; where.textContent = dest ? t("tr.cloud.footWhere", { where: t("env.cloud"), money: envMoneyText("real"), venue: t("sp.venue") }) : "";
-  const label = view === "f" ? (SP.busy ? t("cx.connecting") : t("cx.connect")) : view === "done" ? t("pres.done.ok") : null;
+  const label = view === "f" ? (SP.busy ? t("cx.connecting") : SP.rekey ? t("cx.changeKey") : t("cx.connect")) : view === "done" ? t("pres.done.ok") : null;
+  // 換金鑰路徑:送出鈕正上方講下單會先停(copy.md #4,同群益 capFoot 的 .foot-msg);首次開通、登入失敗回來的表單不出
+  let msg = $("sp-foot-msg");
+  if (view === "f" && SP.rekey) { if (!msg) { msg = trEl("span", "foot-msg"); msg.id = "sp-foot-msg"; go.parentNode.insertBefore(msg, go.parentNode.firstChild); } msg.textContent = t("sp.rekeyNote"); }
+  else if (msg) msg.remove();
   go.hidden = !label;
   if (label && go.textContent.trim() !== label) {
     go.textContent = "";
@@ -457,17 +496,18 @@ function spPaint() {
   view = spcView(sc, SP, ctx);
   SP.view = view;
   const box = $("cx-body");
-  $("cx-title").textContent = t("sp.title");
+  $("cx-title").textContent = t(view === "f" && SP.rekey ? "cx.changeKey" : "sp.title");   // 設定列〔換金鑰〕開的表單:標題講這件事
   $("cx-modal").querySelector(".modal-head").classList.toggle("cloud", spCloud());
   $("cx-env").hidden = false; $("cx-env").textContent = t(spCloud() ? "env.cloud" : "env.local");
   spFoot(view);
-  box.setAttribute("aria-busy", SP.busy || ["r-setup", "r-login", "r-ready", "s-run", "s-review", "w-run", "w-ready"].indexOf(view) >= 0 ? "true" : "false");
+  const eqWait = view === "done" && !!spEqView(spReport(), sc, ctx.now).wait;
+  box.setAttribute("aria-busy", SP.busy || eqWait || ["r-setup", "r-login", "r-ready", "s-run", "s-review", "w-run", "w-ready"].indexOf(view) >= 0 ? "true" : "false");
   // 451 的〔再試一次〕停用到 {time}、時段外的鈕到開窗:到點重畫一次
   if (SP.timer) { clearTimeout(SP.timer); SP.timer = null; }
   const due = view === "r-451" ? (spSec(sc, "probe").retry_at || 0) * 1000 : view === "s-closed" || view === "s-twip" ? spNextOpen(sc, Date.now()) : null;
   if (due && due > Date.now()) SP.timer = setTimeout(() => { SP.sig = null; SP.simClosed = false; spPaint(); }, Math.min(due - Date.now() + 500, 2 ** 31 - 1));
   const sig = LANG + "|" + JSON.stringify([view, sc, SP.busy, SP.msg, SP.fix, SP.capw, SP.idBad, SP.picked, SP.info, SP.relogin,
-    SP.sent && Date.now() - SP.sent.at >= SP_NO_MOVE_MS, spDown(), view === "done" && spReport() && spReport().account]);
+    SP.sent && Date.now() - SP.sent.at >= SP_NO_MOVE_MS, spDown(), view === "done" && spReport() && spReport().account, eqWait]);
   if (SP.sig === sig && box.firstChild) return;
   SP.sig = sig;
   const hadId = box.contains(document.activeElement) ? document.activeElement.id : null;
@@ -483,7 +523,7 @@ function spPaint() {
   const back = hadId && $(hadId);
   if (back && !back.disabled) back.focus();
 }
-function spFootRestore() { const go = $("cx-go"); go.classList.remove("is-busy"); }
+function spFootRestore() { const go = $("cx-go"); go.classList.remove("is-busy"); const msg = $("sp-foot-msg"); if (msg) msg.remove(); }
 
 /* ── 連好之後(trade.js 用;spec §1.3、§6)── */
 // 開通中:存了那一組、下單程式還沒起來過(同統一 presWip)。重新連接會把 worker 段清回 idle,所以又是開通中

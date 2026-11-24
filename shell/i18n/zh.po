@@ -2382,7 +2382,7 @@ msgid "tr.exec.noteChase"
 msgstr "限價追價會掛限價單跟著盤口移動，成交價通常比市價單好，追不到會自動轉市價保證成交。"
 
 msgid "tr.exec.tw"
-msgstr "統一期貨、群益期貨的單一律以市價送出，TWAP 與限價追價不適用。"
+msgstr "台灣期貨一律以市價下單。"
 
 msgid "tr.exec.unread"
 msgstr "設定檔暫時讀不到，下單方式先不能改。下一份回報讀到就恢復。"
@@ -12065,8 +12065,12 @@ msgstr "確認登入"
 msgid "sp.err.key"
 msgstr "永豐說金鑰不對。"
 
+# 設定列〔換金鑰〕開的表單,送出鈕正上方(送出那一下先停舊的下單程式,登入過了機器自己接回);首次開通、登入失敗回來的表單不出
+msgid "sp.rekeyNote"
+msgstr "連線會先中斷，新金鑰登入成功才恢復下單。"
+
 msgid "sp.fixKey"
-msgstr "改金鑰"
+msgstr "換金鑰"
 
 msgid "sp.err.noFut"
 msgstr "這把金鑰沒有勾期貨帳戶。"

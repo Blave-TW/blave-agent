@@ -2363,7 +2363,7 @@ msgid "tr.exec.noteChase"
 msgstr "Chase limit places a limit order that follows the book, usually filling at a better price than market; if it can't catch up it switches to a market order to guarantee the fill."
 
 msgid "tr.exec.tw"
-msgstr "President Futures and Capital Futures orders always go out at market; TWAP and chase limit do not apply to them."
+msgstr "Taiwan futures orders always go out at market."
 
 msgid "tr.exec.unread"
 msgstr "The settings file can't be read right now, so execution can't be changed. It comes back on the next report."
@@ -12020,8 +12020,12 @@ msgstr "Confirm Sign-in"
 msgid "sp.err.key"
 msgstr "SinoPac says the key is wrong."
 
+# 設定列〔換金鑰〕開的表單,送出鈕正上方(送出那一下先停舊的下單程式,登入過了機器自己接回);首次開通、登入失敗回來的表單不出
+msgid "sp.rekeyNote"
+msgstr "The connection stops first. Orders resume once sign-in with the new key succeeds."
+
 msgid "sp.fixKey"
-msgstr "Change Key"
+msgstr "Replace Key"
 
 msgid "sp.err.noFut"
 msgstr "This key doesn’t include the futures account."

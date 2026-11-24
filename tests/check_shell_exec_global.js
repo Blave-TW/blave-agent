@@ -70,12 +70,12 @@ const howTip = (root) => { const b = all(root).find((n) => /\btr-tipb\b/.test(n.
 const sent = [], said = [], tracked = [];
 const ctx = vm.createContext({ LANG: "zh", J, document: { createElement: mk, createDocumentFragment: () => mk("#frag"), createTextNode: (s) => ({ tag: "#text", textContent: s, children: [] }) }, sent, said, tracked,
   t: (k, p) => k + (p ? J(p) : ""), srSay: (m) => said.push(m), trackFeature: (n) => tracked.push(n), trPollSoon() {}, trPaint() {}, trPaintSet() {},
-  trTwBroker: (id) => id === "capital" || id === "president", ENV: { cur: "local" }, trSendError: (res) => "ERR:" + (res && res.error),
+  trTwBroker: (id) => id === "capital" || id === "president" || (id === "sinopac" && ctx.SINOPAC_LOCAL_ON), ENV: { cur: "local" }, trSendError: (res) => "ERR:" + (res && res.error),
   trSec: (label) => { const s = mk("div"); s.appendChild(label); return s; } });
 const TA = { value: "", focused: 0, sel: null, focus() { this.focused++; }, setSelectionRange(a, b) { this.sel = [a, b]; } };
 Object.assign(ctx, { $: (id) => (id === "ta" ? TA : null), autosize() {}, paneSt: { chat: { off: true } }, paneToggle(n, off) { ctx.paneSt.chat.off = off; } });
 ["trEl", "trTipLabel", "trExecKey", "trExecSpec", "trExecArgs", "trExecMinutes", "trExecStored", "trExecCurrent", "trCatchHow", "trExecSection", "trExecSend", "trExecAskCustom"].forEach((n) => vm.runInContext(cutF(trade, n), ctx));
-vm.runInContext(`var trTipSeq = 0; var TR_TWAP_DEFAULT_MIN = 15; var REP = null; var VID = "binance"; function trReport() { return REP; } function trVenueId() { return VID; }
+vm.runInContext(`var SINOPAC_LOCAL_ON = false; var trTipSeq = 0; var TR_TWAP_DEFAULT_MIN = 15; var REP = null; var VID = "binance"; function trReport() { return REP; } function trVenueId() { return VID; }
   var TR = { env: "local", open: true, sig: {}, sending: {}, exec: { edit: null, err: null, raw: null },
     api: { tradeSend: async (cmd, args) => { sent.push([cmd, args]); return globalThis.NEXT || { ok: true }; } } };
   async function trSend(S, cmd, args) { return S.api.tradeSend(cmd, args); }`, ctx);
@@ -99,6 +99,12 @@ for (const tw of ["president", "capital"]) {
     && J(sel.children.map((o) => o.value)) === J(["market", "twap", "chase"])
     && note(box) === "tr.exec.tw");
 }
+// 永豐開放後(旗標開)同樣停用、同一行;那一行不點名券商(設計稽核 11-24 必修 3:「台灣期貨一律以市價下單。」),之後再加券商不用改字
+ok("③ trade.js 的 trTwBroker 在旗標開時認永豐", /function trTwBroker\(id\) \{ return id === "capital" \|\| id === "president" \|\| \(id === "sinopac" && SINOPAC_LOCAL_ON\); \}/.test(trade));
+ctx.SINOPAC_LOCAL_ON = true;
+box = paint(rep({ type: "chase" }), "sinopac"); sel = find(box, "tr-exec-sel");
+ok("③ 旗標開、sinopac:選單停用、顯示市價、那一行是 tr.exec.tw", sel.disabled && sel.value === "market" && note(box) === "tr.exec.tw");
+ctx.SINOPAC_LOCAL_ON = false;
 box = paint({ config: null }, "okx");
 ok("③ 設定檔讀不到:沒有選單,一行說明", !find(box, "tr-exec-sel") && /tr\.exec\.unread/.test(text(box)));
 
@@ -171,6 +177,10 @@ ok("③ 設定檔讀不到:沒有選單,一行說明", !find(box, "tr-exec-sel")
     "tr.exec.noteTwap", "tr.exec.noteChase", "tr.exec.tw", "tr.exec.unread"];
   ok("⑤ tr.exec.* 中英兩份都有,而且來源是 .po(strings.js 是產生的)", KEYS.every((k) => en.indexOf(`"${k}":`) >= 0 && zh.indexOf(`"${k}":`) >= 0)
     && ["en", "zh"].every((l) => { const po = read(path.join(SHELL, "i18n", l + ".po")); return KEYS.every((k) => po.indexOf(`msgid "${k}"\n`) >= 0) && !/onlyWebExec/.test(po); }));
+  ok("⑤ tr.exec.tw 不點名券商:中文「台灣期貨一律以市價下單。」、英文一句;twSp 與旗標分支都不在了",
+    /"tr\.exec\.tw": "台灣期貨一律以市價下單。"/.test(zh) && /"tr\.exec\.tw": "Taiwan futures orders always go out at market\."/.test(en)
+    && !/twSp/.test(S + trade) && ["en", "zh"].every((l) => !/twSp/.test(read(path.join(SHELL, "i18n", l + ".po"))))
+    && /if \(tw\) box\.appendChild\(trEl\("div", "pf-foot tr-exec-note", t\("tr\.exec\.tw"\)\)\);/.test(trade));
   ok("⑤ tr.exec.all 退役:.po、strings.js、trade.js 都沒有", !/tr\.exec\.all\b/.test(S + trade) && ["en", "zh"].every((l) => !/msgid "tr\.exec\.all"/.test(read(path.join(SHELL, "i18n", l + ".po")))));
   ok("⑤ 入口那一句照網頁的字(workspace_pf_exec_custom_ask / _prefill)", /"tr\.exec\.customAsk": "自訂，跟 agent 說"/.test(zh) && /"tr\.exec\.customPrefill": "我想自訂下單方式："/.test(zh)
     && /"tr\.exec\.customAsk": "Custom — tell the agent"/.test(en) && /"tr\.exec\.customPrefill": "I want a custom execution style: "/.test(en));
