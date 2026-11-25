@@ -200,13 +200,16 @@ process.on("beforeExit", () => { if (spDone) return; console.log("FAIL  非同�
     && run(acct(okAt + 5, { ok: true, equity: 1 }), null) === J({ v: 1 }));
   ok("SP_EQ_WAIT_MS = trade.js TR_SP_BOOT_MS", ctx.SP_EQ_WAIT_MS !== null && new RegExp("const TR_SP_BOOT_MS = " + ctx.SP_EQ_WAIT_MS + ",").test(trade));
   const doneB = (() => { const i = src.indexOf("function spDoneBody("); return src.slice(i, src.indexOf("\n}\n", i)); })();
-  ok("完成頁的權益格走 spEqView;等第一份快照時是骨架條(spEqSk),不放「讀取中…」字;讀取中框 aria-busy、簽章帶這一態(過了等待時間會重畫成「—」)",
-    /const eq = spEqView\(r, sc, Date\.now\(\)\);/.test(doneB) && /eq\.wait \? spEqSk\(\) : trEl\("div", "v mono", eq\.v !== undefined \? trTwd\(eq\.v\)/.test(doneB)
+  ok("完成頁的權益格走 spEqView;等第一份快照時是圓環(spEqWait),畫面上不放「讀取中…」字;讀取中框 aria-busy、簽章帶這一態(過了等待時間會重畫成「—」)",
+    /const eq = spEqView\(r, sc, Date\.now\(\)\);/.test(doneB) && /eq\.wait \? spEqWait\(\) : trEl\("div", "v mono", eq\.v !== undefined \? trTwd\(eq\.v\)/.test(doneB)
     && !/readRun|讀取中/.test(doneB) && /SP\.busy \|\| eqWait \|\|/.test(src) && /spReport\(\)\.account, eqWait\]\);/.test(src));
-  ok("骨架條:.v 裡一條 aria-hidden 的 .sk(設計稽核 11-24 必修 4;先例 portfolio.js sk mg-sk)",
-    /function spEqSk\(\) \{ const v = trEl\("div", "v"\), b = trEl\("span", "sk sp-eq-sk"\); b\.setAttribute\("aria-hidden", "true"\); v\.appendChild\(b\); return v; \}/.test(src));
+  ok("等待態:.v 裡一顆 aria-hidden 的 .spin16 + .sr-only 念 sp.posPending(設計定稿 11-25;骨架撐 120 秒會讀成壞掉)",
+    /function spEqWait\(\) \{ const v = trEl\("div", "v"\), b = trEl\("span", "spin16 sp-eq-spin"\); b\.setAttribute\("aria-hidden", "true"\); v\.append\(b, trEl\("span", "sr-only", t\("sp\.posPending"\)\)\); return v; \}/.test(src)
+    && !/spEqSk|sp-eq-sk/.test(src));
   const pcss = fs.readFileSync(path.join(R, "president.css"), "utf8");
-  ok("骨架條尺寸 12ch × 16、不閃(最長等 120 秒)", /\.pres-big \.sp-eq-sk \{ display: inline-block; width: 12ch; height: 16px; vertical-align: middle; animation: none; \}/.test(pcss)); }
+  ok("圓環 20/2、--ink-3、不覆寫 animation(reduced-motion 照轉,繼承 trade.css .spin16);舊骨架條規則已拿掉",
+    /\.pres-big \.sp-eq-spin \{ width: 20px; height: 20px; color: var\(--ink-3\); vertical-align: middle; \}/.test(pcss)
+    && !/sp-eq-spin[^}]*animation/.test(pcss) && !/sp-eq-sk/.test(pcss)); }
 // 已連接狀態的〔換金鑰〕(runbook 11-23 第 7 項;設計稽核 11-24):只在設定 › 帳戶那一列、只有這台電腦;開框直接到表單、只清金鑰兩格
 { const body = (n) => { const i = src.indexOf("function " + n + "("); return i < 0 ? "" : src.slice(i, src.indexOf("\n}\n", i)); };
   ok("完成頁沒有〔換金鑰〕(剛驗過的金鑰;入口只留設定列)", !/sp-fix-key|sp\.fixKey|spFix|rekey/.test(body("spDoneBody")));

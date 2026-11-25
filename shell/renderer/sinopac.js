@@ -439,14 +439,14 @@ function spRows(view, sc) {
   else add(capRow(worker.status === "ok" && !(sc && sc.login_stop) ? "done" : "todo", t("sp.s.worker")));
   return ol;
 }
-// 權益等第一份快照:骨架條(.sk 配方,靜態;canon loading.md 單一欄位依預期字數),高度照 .v 撐住,數字回來不跳
-function spEqSk() { const v = trEl("div", "v"), b = trEl("span", "sk sp-eq-sk"); b.setAttribute("aria-hidden", "true"); v.appendChild(b); return v; }
+// 權益等第一份快照(最長 120 秒):圓環＋輔具念 sp.posPending,不用骨架(骨架過 10 秒停光會讀成壞掉);高度照 .v 撐住,數字回來不跳
+function spEqWait() { const v = trEl("div", "v"), b = trEl("span", "spin16 sp-eq-spin"); b.setAttribute("aria-hidden", "true"); v.append(b, trEl("span", "sr-only", t("sp.posPending"))); return v; }
 function spDoneBody(sc) {
   const r = spReport() || {}, a = (r.account && r.account.venues && r.account.venues[SINOPAC]) || {}, cert = spSec(sc, "cert");
   const f = document.createDocumentFragment();
   const lede = trEl("p", "cap-lead pres-ok"); lede.append(trEl("i", "dot"), trEl("span", "", t("sp.done.lead"))); f.appendChild(lede);
   const eq = spEqView(r, sc, Date.now());
-  const big = trEl("div", "pres-big"); big.append(trEl("div", "l", t("pres.done.equity")), eq.wait ? spEqSk() : trEl("div", "v mono", eq.v !== undefined ? trTwd(eq.v) + " " + TR_TXF_CCY : "—"));
+  const big = trEl("div", "pres-big"); big.append(trEl("div", "l", t("pres.done.equity")), eq.wait ? spEqWait() : trEl("div", "v mono", eq.v !== undefined ? trTwd(eq.v) + " " + TR_TXF_CCY : "—"));
   f.appendChild(big);
   const dl = trEl("dl", "cap-acct"), kv = (k, v, cls) => { const d = trEl("div", ""); d.append(trEl("dt", "", k), trEl("dd", cls || "", v)); dl.appendChild(d); };
   const masked = typeof a.account_masked === "string" && a.account_masked ? a.account_masked : spSec(sc, "probe").account_masked;   // ****1234,只露尾碼
