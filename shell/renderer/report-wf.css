@@ -92,7 +92,7 @@
 .wf-canvas {
   display: block;
   width: 100%;
-  height: 220px;
+  height: clamp(220px, 20cqi, 320px);   /* 寬欄時長高、內容寬 1600 起封頂(1920 與 2560 長寬比相近);cqi 量的是 .bt */
 }
 .wf-legend {
   display: flex;
@@ -135,6 +135,8 @@
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
 }
+/* 單參數:同參數熱圖 .rob-tbl.is-single 的寬,同一組參數在兩個分頁一樣寬 */
+.wf-grid.is-single { max-width: 328px; }
 .wf-grid th {
   font-weight: 500;
   font-size: 11px;

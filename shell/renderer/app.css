@@ -225,7 +225,7 @@
 .wc-chip { position: relative; }
 .wc-chip::before { content: ""; position: absolute; inset: -7px 0; }   /* 32 → 44 熱區(框 1px 不在 padding box 內,所以 -7):兩列之間重疊 4,同列左右不擴 */
 
-/* RIGHT — .pane-chat:452 寬、卡面底 */
+/* RIGHT — .pane-chat:寬由 app.js 寫進 --chat-w(沒拉過 = clamp(452, 30vw, 620))、卡面底 */
 .pane-chat {
   width: var(--chat-w, 452px); flex: 0 0 auto;
   background: var(--surface-card);
@@ -840,8 +840,8 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
   overflow: hidden;
   transition: width var(--motion-base) var(--ease-standard), padding var(--motion-base) var(--ease-standard);
 }
-/* 拖曳中要即時跟手,不吃緩動 */
-body.resizing .pane-strategies, body.resizing .pane-chat { transition: none; }
+/* 拖曳中要即時跟手、視窗縮放時跟著視窗走(.ws-snap,app.js 的 resize),都不吃緩動 */
+body.resizing .pane-strategies, body.resizing .pane-chat, .ws-snap .pane-strategies, .ws-snap .pane-chat { transition: none; }
 /* 收合動畫把寬度掃向 0:子層撐住 min-width,內容是滑出去而不是逐字回流 */
 .chat-scroll, .chat-input-wrap { min-width: 320px; }
 

@@ -427,7 +427,7 @@ html.ws-sc .side-gate { display: none; }
 .pf-wallet-row .w-amt.danger { color: var(--color-redText); }
 .pf-wallet-row .mini_tag { display: inline-flex; align-items: center; height: 18px; padding: 0 var(--space-6); margin-left: var(--space-6); border-radius: var(--radius-micro); font-size: 11px; font-weight: 600; letter-spacing: 0.04em; line-height: 1; white-space: nowrap; }
 .pf-wallet-row .mini_tag.danger { background-color: var(--color-redLight); color: var(--color-redBlack); }
-.pf-log { overflow-x: auto; }
+.pf-log { overflow-x: auto; max-width: 1200px; }   /* 同 .pf-scroll 的掃讀寬上限、靠左(designer desktop-widescreen-2026-11-24 §2.4) */
 .pf-log-row { display: flex; gap: var(--space-16); padding: var(--space-4) 0; border-bottom: 1px solid var(--border-hairline); color: var(--ink-2); font-size: 12px; white-space: nowrap; }
 .pf-log-row:last-child { border-bottom: none; }
 .pf-log-row .ts { flex: none; width: 92px; color: var(--ink-3); }
@@ -439,8 +439,9 @@ html.ws-sc .side-gate { display: none; }
 .pf-log-row .px .tr-tipb, .pf-log-row .tr-tipb.px { font-size: inherit; line-height: inherit; }
 .tip.hist-tip { position: fixed; left: 0; top: 0; bottom: auto; z-index: 60; }  /* 同 .rob-tip:橫捲容器會裁掉行內氣泡 */
 .tip.hist-tip.is-on { display: block; }
-/* 整張表共用一組欄(同 web .exec-body .pf-log):flex 列的口數貼著價格欄跑,價格欄寬一點口數就歪 */
-.pf-log { display: grid; grid-template-columns: max-content max-content 1fr max-content max-content max-content; }
+/* 整張表共用一組欄(同 web .exec-body .pf-log):flex 列的口數貼著價格欄跑,價格欄寬一點口數就歪。
+   欄全部照內容寬、靠左:商品欄不再用 1fr 把金額推到最右(designer desktop-widescreen-2026-11-24 §7.1-3;網頁那張這版沒改) */
+.pf-log { display: grid; grid-template-columns: max-content max-content max-content max-content max-content max-content; justify-content: start; }
 .pf-log-row { display: grid; grid-template-columns: subgrid; grid-column: 1 / -1; align-items: baseline; }
 .pf-log-row .amt { margin-left: 0; text-align: right; }
 
@@ -565,7 +566,7 @@ html.ws-sc .side-gate { display: none; }
   .pf-log-row .ts { width: 84px; }
   /* 一次只能連一個交易所,狀態帶已經寫了是哪一家:窄欄時這一欄是多餘的;單位同部位表收到表下一行 */
   .pf-log-row .ex, .pf-log-row .ccy:not(.lots) { display: none; }   /* 「口」不收:沒有單位的口數會被讀成錢 */
-  .pf-log { grid-template-columns: max-content max-content 1fr max-content max-content; }   /* .ex 收起來,少一欄 */
+  .pf-log { grid-template-columns: max-content max-content max-content max-content max-content; }   /* .ex 收起來,少一欄 */
 }
 /* app.js 的 MAIN_MIN = 480:現行設定下這一段不會觸發,留著當保險(哪天中欄下限調低才用得到) */
 @container (max-width: 400px) {
@@ -859,7 +860,9 @@ html.ws-sc .side-gate { display: none; }
 /* 部位大小攤在頁面上(spec portfolio-optimize-lite §3,同網頁 .mg-sz):投入資金、口徑三選一、目標值、〔套用金額〕一列,預覽與原因句一列。
    控件 32 高,熱區上下補到 44。折法量主欄寬(container),不量視窗 */
 .mg-szw { container: mg-sz / inline-size; margin-top: var(--space-12); }
-.mg-sz { display: grid; grid-template-columns: auto auto auto 1fr auto; grid-template-areas: "fund seg t . go" "msg msg msg msg msg"; column-gap: var(--space-8); align-items: center; }
+/* 〔套用金額〕直接接在目標值後面(隔 8),多的寬度留在列尾:同一組的輸入與送出不被拉開(designer desktop-widescreen-2026-11-24 §2.4)。
+   預覽與原因句那一列不撐欄寬(contain),原因句的右緣 = 鈕的右緣 */
+.mg-sz { display: grid; grid-template-columns: auto auto auto auto; grid-template-areas: "fund seg t go" "msg msg msg msg"; justify-content: start; column-gap: var(--space-8); align-items: center; }
 .mg-szf { grid-area: fund; position: relative; display: flex; align-items: center; gap: var(--space-8); width: 224px; height: 32px; padding: 0 var(--space-12); border: 1px solid var(--border-frame);
   border-radius: var(--radius-xs); background: var(--bg-body); font-size: 12px; color: var(--ink-3); white-space: nowrap; cursor: text; transition: border-color var(--motion-fast) var(--ease-standard); }
 .mg-szf:focus-within { border-color: var(--ink); }
@@ -881,7 +884,7 @@ html.ws-sc .side-gate { display: none; }
 .mg-apply.is-busy > .lbl-busy { visibility: visible; }
 .mg-apply .spin16 { width: 12px; height: 12px; border-width: 2px; }
 /* 預覽(左)與原因句(右)同一列,高度固定:填的時候表不跳 */
-.mg-msg { grid-area: msg; display: flex; align-items: flex-start; gap: var(--space-16); margin-top: var(--space-8); }
+.mg-msg { grid-area: msg; display: flex; align-items: flex-start; gap: var(--space-16); margin-top: var(--space-8); contain: inline-size; }
 .mg-pv { grid-area: pv; flex: none; display: flex; flex-wrap: wrap; gap: 0 var(--space-16); min-height: 18px; font-size: 12px; line-height: 18px; color: var(--ink-3); }
 .mg-pv > span { display: inline-flex; align-items: baseline; height: 18px; }
 .mg-pv b { margin-left: var(--space-4); font: 500 12px/18px var(--font-mono); font-variant-numeric: tabular-nums; color: var(--ink); }

@@ -131,7 +131,7 @@
 /* 種類小標:最亮一階,整片調倉列裡一眼可挑(調倉列沒有這一格) */
 .tr-kind { flex: none; font-size: 11px; color: var(--ink); }
 .tr-px { flex: none; font-family: var(--font-mono); color: var(--ink-3); }
-.tr-pos { flex: none; margin-left: auto; text-align: right; }
+.tr-pos { flex: none; text-align: right; }   /* 寬框接在價格後(列的 gap 16),不推到最右(designer desktop-widescreen-2026-11-24 §7.1-5) */
 
 /* 窄框:時間欄佔兩行(分線的日期、時分在空格處自己折成兩行;日線一個字串、一行);
    第一行方向+數量+種類,第二行價格靠左、部位靠右。每一列折法相同,不看價格字串多長 */
@@ -139,6 +139,7 @@
   .tr-row { display: grid; grid-template-columns: auto 1fr; column-gap: var(--space-8); row-gap: var(--space-2); }
   .tr-ts { grid-row: span 2; width: min-content; }
   .tr-l1, .tr-l2 { display: flex; align-items: baseline; gap: var(--space-8); min-width: 0; }
+  .tr-pos { margin-left: auto; }   /* 第二行:價格靠左、部位靠右 */
 }
 
 /* 系統設定要求減少動態時,hover 底色直接切換 */
