@@ -364,6 +364,7 @@ class _LocalWorker:
                 self._spawn()
 
     def _spawn(self):
+        _skcom_gate()
         line = secret_line()
         if not line:
             _refuse("NO_SECRETS", "the app has not handed over the 群益 credentials")
@@ -425,7 +426,11 @@ class _LocalWorker:
                 self._spawn()
             except Exception as e:
                 print(f"[capital_local] worker restart failed ({type(e).__name__})", file=sys.stderr)
-                self.respawn_at = time.time() + LOCAL_RESPAWN_S
+                if cc._code(e, "") == "SETUP_NEEDED":   # retrying cannot load SKCOM: stop and show it, like _start
+                    self.wanted = False
+                    _update("worker", status="failed", error="SETUP_NEEDED", wanted=False)
+                else:
+                    self.respawn_at = time.time() + LOCAL_RESPAWN_S
 
     def reap_orphan(self, pid_cmdline):
         """A worker left by a daemon that died holds credentials nobody manages any more."""
@@ -798,6 +803,26 @@ def _ensure_skcom(tmp):
         raise RuntimeError(f"regsvr32 exit {r.returncode}")
 
 
+def _skcom_intact():
+    skdir = os.path.join(local_dir() or "", "skcom", "x64")
+    for name, want in CAP_X64_SHA256.items():
+        try:
+            if _sha(atomic_file.read_bytes(os.path.join(skdir, name))) != want:
+                return False
+        except OSError:
+            return False
+    return True
+
+
+def _skcom_gate():
+    """setup ok is only true while the installed files still match their pins: a component deleted or swapped
+    after setup (win-test-6, 11-25: renamed folder, status still ok) sends setup back to idle, so the app runs it
+    again instead of retrying a worker that cannot load SKCOM."""
+    if ((read_status() or {}).get("setup") or {}).get("status") == "ok" and not _skcom_intact():
+        _update("setup", reset=True, status="idle")
+        _refuse("SETUP_NEEDED", "the 群益 component is missing or changed")
+
+
 # the DLL path comes in through the environment (no user text in the script)
 _CHECK_COM = ("import os, comtypes.client as c\n"
               "c.GetModule(os.environ['CAPL_SKCOM'])\n"
@@ -887,6 +912,7 @@ def _bind(b, push):
 
 
 def probe_once(push=None):
+    _skcom_gate()
     _update("probe", status="running")
     if push:
         push()

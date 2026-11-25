@@ -1,5 +1,5 @@
 // 左下第一格的選單(spec first-strategy-sidebar §A3–A6、§10.1):已登入六項／沒登入三項的內容與順序、每一項的動作與埋點、
-// 登入在等時不出「登出」、「帳號與方案」列尾跟設定那一頁同一支 planStateOf、說明文件網址、開關與收起的時機、位置夾回視窗、Esc 在 capture 階段攔。
+// 登入在等時不出「登出」、「帳號與方案」列尾跟設定那一頁同一支 planStateOf、使用教學網址、開關與收起的時機、位置夾回視窗、Esc 在 capture 階段攔。
 // 真的函式配假 DOM,不開 Electron;鍵盤實走、180 寬、亮暗、熱區要開窗(交回清單)。
 // 跑法:node tests/check_shell_side_menu.js
 const fs = require("fs"), path = require("path"), vm = require("vm");
@@ -26,11 +26,11 @@ function paint(o) {
   return { menu, rows, log, items: menu.children.filter((k) => k.className === "am-i") };
 }
 { const p = paint({ inn: true, acct: { email: "a@b.co" }, st: "方案有效" });
-  t("§A4 已登入:email、報告、空白、設定、帳號與方案、用量與帳務、說明文件、空白、登出", p.rows.join() === "who:a@b.co,報告,GAP,設定,帳號與方案,用量與帳務,說明文件,GAP,登出", p.rows);
+  t("§A4 已登入:email、報告、空白、設定、帳號與方案、用量與帳務、使用教學、空白、登出", p.rows.join() === "who:a@b.co,報告,GAP,設定,帳號與方案,用量與帳務,使用教學,GAP,登出", p.rows);
   t("§A4 email 那一行不能按、不進方向鍵順序(不是 .am-i、沒有 role)", p.menu.children[0].tag === "p" && !p.menu.children[0].attrs.role && p.items.length === 6);
   t("§A6 項目都是 role=menuitem、tabIndex -1、type=button", p.items.every((b) => b.attrs.role === "menuitem" && b.tabIndex === -1 && b.type === "button"));
   const plan = p.items[2], v = plan.children[1];
-  t("§A4 帳號與方案列尾是狀態字(跟完整那句相同時不掛 title);用量、說明文件列尾是外連箭頭", v.className === "v" && v.textContent === "方案有效" && v.title === "" && p.items[3].children[1].tag === "svg" && p.items[4].children[1].tag === "svg");
+  t("§A4 帳號與方案列尾是狀態字(跟完整那句相同時不掛 title);用量、使用教學列尾是外連箭頭", v.className === "v" && v.textContent === "方案有效" && v.title === "" && p.items[3].children[1].tag === "svg" && p.items[4].children[1].tag === "svg");
   p.items.forEach((b) => b.on.click());
   t("§A4／§10.1 每一項先收選單(焦點回第一格)再做事,埋點各一個字面名字;登出開確認框(opener = 第一格)", p.log.join() === ["close:true", "rpt", "close:true", "tm:side_menu_set", "set", "close:true", "tm:side_menu_plan", "plan",
     "close:true", "tm:side_menu_usage", "ext:USAGE", "close:true", "tm:side_menu_docs", "ext:DOCS", "close:true", "tm:side_menu_out", "out:ANCHOR"].join(), p.log); }
@@ -46,9 +46,9 @@ function paint(o) {
   const q = paint({ inn: true }); q.items[1].on.click();
   t("沒亮:設定列沒有值、沒有 aria-label,照舊 setOpen", q.items[1].children.length === 1 && !q.items[1].attrs["aria-label"] && q.log.join() === "close:true,tm:side_menu_set,set", q.log); }
 { const p = paint({ inn: false });
-  t("§A4 沒登入:報告、空白、設定、說明文件;沒有 email 那一行", p.rows.join() === "報告,GAP,設定,說明文件", p.rows); }
+  t("§A4 沒登入:報告、空白、設定、使用教學;沒有 email 那一行", p.rows.join() === "報告,GAP,設定,使用教學", p.rows); }
 for (const k of ["pending", "busy"]) { const p = paint({ inn: true, [k]: true });
-  t("§A4 登入在等(" + (k === "pending" ? "oauthPending" : "planLoginBusy") + "):不出「登出」與它上面的空白", p.rows.join() === "報告,GAP,設定,帳號與方案,用量與帳務,說明文件", p.rows); }
+  t("§A4 登入在等(" + (k === "pending" ? "oauthPending" : "planLoginBusy") + "):不出「登出」與它上面的空白", p.rows.join() === "報告,GAP,設定,帳號與方案,用量與帳務,使用教學", p.rows); }
 { const p = paint({ inn: true, st: "" });
   t("§A4 狀態字取不到就不畫(只有「帳號與方案」四個字)", p.items[2].children.length === 1); }
 { const p = paint({ inn: false, rptOn: true });
@@ -79,7 +79,7 @@ for (const k of ["pending", "busy"]) { const p = paint({ inn: true, [k]: true })
 
 // ── 網址、開關、位置、收起時機 ──
 { const u = (L) => vm.runInNewContext(cutFn(app, "docsHomeUrl") + "\ndocsHomeUrl();", { LANG: L });
-  t("§A4 說明文件開 /docs/<lang>?from=desktop(沒有結尾斜線,不借 docsUrl)", u("zh") === "https://blave.org/docs/zh?from=desktop" && u("en") === "https://blave.org/docs/en?from=desktop"); }
+  t("§A4 使用教學開 /docs/<lang>?from=desktop(沒有結尾斜線,不借 docsUrl)", u("zh") === "https://blave.org/docs/zh?from=desktop" && u("en") === "https://blave.org/docs/en?from=desktop"); }
 { const els = {}, el = (id) => els[id] || (els[id] = { id, hidden: true, attrs: {}, style: {}, offsetWidth: 240, prev: null, setAttribute(k, v) { this.attrs[k] = v; }, focus() { log.push("focus:" + id); },
     get previousElementSibling() { return this.prev; }, after(m) { m.prev = this; log.push("after:" + id); }, getBoundingClientRect: () => ({ left: this_left, top: 760 }), querySelector: () => ({ focus: () => log.push("focus:first") }) });
   let this_left = 12, rail = false; const log = [];

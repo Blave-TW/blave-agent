@@ -1242,12 +1242,12 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     var trVenueLabel = (x) => x, t = (k, v) => k + (v ? JSON.stringify(v) : "");
     eval(ev.replace(/^const /gm, "var "));
     ok("S4 machine_restart_stop_failed 事件:同網頁那一列(可能沒停住;先暫停、再更新)", J(trEventText("machine_restart_stop_failed", {}).slice(0, 2)) === J(["tr.ov.evRestartStopFailed", "tr.ov.evRestartStopFailedNote"]));
-    ok("machine_restart_stopped 事件:標題已暫停、說明講平倉停損也不會執行", J(trEventText("machine_restart_stopped", {}).slice(0, 2)) === J(["tr.ov.evRestartStopped", "tr.ov.evRestartStoppedNote"]));
+    ok("machine_restart_stopped 事件(0.1.62 Wei):只留標題「主機重開，已暫停下單」,不帶「什麼單都不送」", J(trEventText("machine_restart_stopped", {}).slice(0, 2)) === J(["tr.ov.evRestartStopped", null]));
     ok("desktop_action 不畫", trEventText("desktop_action", { action: "update" }) === null);
     // 0.1.58 下單程式卡住自救、睡醒(copy-0158 §1–§3)
-    ok("0.1.58 卡住已重啟 P2、反覆卡住已暫停 P1(什麼單都不送)、睡醒 P2",
+    ok("0.1.58 卡住已重啟 P2、反覆卡住已暫停 P1(0.1.62 起只留標題)、睡醒 P2",
       J(trEventText("reconciler_hang_restarted", {}).slice(0, 3)) === J(["tr.ov.evHangRestarted", null, 2])
-      && J(trEventText("reconciler_hang_halted", {}).slice(0, 3)) === J(["tr.ov.evHangHalted", "tr.ov.evRestartStoppedNote", 1])
+      && J(trEventText("reconciler_hang_halted", {}).slice(0, 3)) === J(["tr.ov.evHangHalted", null, 1])
       && trEventText("machine_woke", { minutes: 45 })[2] === 2);
     ok("0.1.58 execution_interrupted 帶 cause hang:送單時卡住的標題、結果不明那句帶標的;沒帶 cause 照舊",
       J(trEventText("execution_interrupted", { keys: "BTCUSDT#market(market), ETHUSDT@spot#market(market)", cause: "hang" }).slice(0, 2))
@@ -1398,8 +1398,10 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     const head = fnS("trPaintHead");
     ok("A′ / B / B0 與帳戶對不上的原因行升正文墨色,用原因句本身定位(前面有「串接失敗 · 」也照升)", /const inkReason = state === "halted" && \(trRestartKind\(hr\) \|\| \(trHaltStopsAll\(hr\.halt\) && !\(trHaltFreeze\(hr\) && trHaltByUser\(hr\.halt\)\)\) \|\| trAcctAsk\(hr\) \|\| trHaltUnexplained\(hr\.halt\)\.length\) \? trHaltReasonText\(hr, TR\.acctDone\) : state === "noaccount" && trNoAccountStopped\(hr\) \? t\("tr\.cloud\.restartNoAccountZ"\) : "";/.test(head)
       && /const inkAt = inkReason \? vis\.indexOf\(inkReason\) : -1;/.test(head) && !/full === text && !trFailedIds/.test(head.slice(head.indexOf("const inkReason"))));
-    ok("A′ 事件列:halt 列與 UI 補的 HALT 列都依 source 取重開那句說明", /note = d\.source === "hang_watch" \? t\("tr\.ov\.evHaltHangNote"\) : trHaltUnconfirmedSym\(d\) != null \? trHaltUnconfirmedNote\(d\) : closes \? null : trHaltStopsAll\(d\) \|\| trHaltFreeze\(r\) \? t\("tr\.ov\.evRestartStoppedNote"\) : t\("tr\.ov\.evHaltNote"\);/.test(src)
-      && /trHaltStopsAll\(halt\) \? t\("tr\.ov\.evRestartStoppedNote"\) : t\("tr\.ov\.evHaltNote"\)/.test(src)); }
+    ok("事件列(0.1.62):halt 列與 UI 補的 HALT 列,什麼單都不送的暫停只留標題(不帶「什麼單都不送」);平倉照常的舊 lib 暫停照帶 evHaltNote",
+      /note = d\.source === "hang_watch" \? t\("tr\.ov\.evHaltHangNote"\) : trHaltUnconfirmedSym\(d\) != null \? trHaltUnconfirmedNote\(d\) : closes \|\| trHaltStopsAll\(d\) \|\| trHaltFreeze\(r\) \? null : t\("tr\.ov\.evHaltNote"\);/.test(src)
+      && /else if \(!closes && !trHaltStopsAll\(halt\) && !trHaltFreeze\(r\)\) body\.append\(" ", trEl\("span", "dim", "— " \+ t\("tr\.ov\.evHaltNote"\)\)\);/.test(src)
+      && (src.match(/"tr\.ov\.evRestartStoppedNote"/g) || []).length === 1 && /ev_halt_n: t\("tr\.ov\.evRestartStoppedNote"\)/.test(src)); }   // 只剩 P1 通知內文用(範圍外,照舊)
   { // audit 2-1(B0):沒有交易所 + 重開停止
     const B0 = (o) => ({ alive: true, report: { venues: {}, halt: {}, reconciler: { alive: false, stopped: { reason: "machine_restart", at: 1, ...o } } } });
     ok("B0 判定:沒交易所 + 重開停著才算;gated:false、沒停、有交易所都不算", trNoAccountStopped(B0({}).report) && trNoAccountStopped(B0({ gated: true }).report)
@@ -2744,9 +2746,16 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
         const fc = evRows([{ ts: now - 60, type: "halt_close", closing: true }], { halted: true, freeze: true, at: iso(now - 60), source: "web", reason: "close all positions", closing: true });
         const fa = evRows([], { halted: true, holds_all: true, at: iso(now - 600), source: "web", reason: "close all positions", closing: true });
         const fp = evRows([{ ts: now - 60, type: "halt" }], { halted: true, freeze: true, at: iso(now - 60), source: "web", reason: "user request", closing: false });
-        ok("凍結／holds_all 下的暫停並關閉部位:寫 evHaltClose、不帶 evRestartStoppedNote;凍結的一般暫停照帶",
+        const fu = evRows([], { halted: true, freeze: true, at: iso(now - 600), source: "unbound", reason: "venue unbound" });
+        // 現在的 HALT、沒有畫面紀錄:freeze:true 卻沒 holds_all(人按的 web 暫停)不能講「平倉與停損停利照常執行」;沒凍結的舊 lib 照講
+        const fw = evRows([], { halted: true, freeze: true, at: iso(now - 600), source: "web", reason: "user request" });
+        const fo = evRows([], { halted: true, at: iso(now - 600), source: "web", reason: "user request" });
+        ok("現在的 HALT:凍結的一般暫停不帶 evHaltNote(只留標題);沒凍結照帶", fw.length === 1 && /tr\.ov\.evHalt/.test(fw[0]) && !/evHaltNote|evRestartStoppedNote|—/.test(fw[0])
+          && fo.length === 1 && /evHaltNote/.test(fo[0]), J([fw, fo]));
+        ok("凍結／holds_all 下的暫停並關閉部位:寫 evHaltClose、不帶 evRestartStoppedNote;凍結的一般暫停、解除連接的自動暫停(0.1.62)也不帶,只留標題",
           fc.length === 1 && /evHaltClose/.test(fc[0]) && !/evRestartStoppedNote/.test(fc[0]) && fa.length === 1 && /evHaltClose/.test(fa[0]) && !/evRestartStoppedNote/.test(fa[0])
-          && fp.length === 1 && /evRestartStoppedNote/.test(fp[0]), J([fc, fa, fp])); }
+          && fp.length === 1 && /tr\.ov\.evHalt/.test(fp[0]) && !/evRestartStoppedNote|evHaltNote|—/.test(fp[0])
+          && fu.length === 1 && /tr\.ov\.evHalt/.test(fu[0]) && !/evRestartStoppedNote|evHaltNote|—/.test(fu[0]), J([fc, fa, fp, fu])); }
       ok("§1.4 N 照連著的交易所算;0 筆整行不出(事件也空時只剩 label + 空態句)",
         !!paintEv({ orders: [{ ...CAP, ts: now - 8 * 86400 }] }).some((n) => n.className === "pf-acts ev-fills")
         && !paintEv({ orders: [{ ...CAP, exchange: "paper" }], venues: { president: { credentials: true, pair: true, order: true, account: true } } }).some((n) => n.className === "pf-acts ev-fills")

@@ -11,7 +11,8 @@ if (a < 0 || b < 0) { console.log("FAIL  president.js 找不到純邏輯段的�
 const head = src.slice(0, src.indexOf("let PRES = presBlank();"));   // 常數 + presBlank
 const ctx = {}; vm.createContext(ctx);
 vm.runInContext(head + "\n" + src.slice(a, b) + "\nthis.presView = presView; this.presRunning = presRunning; this.presBlank = presBlank; this.presDaysLeft = presDaysLeft;"
-  + " this.presFirstRows = presFirstRows; this.PRES_PROBE_VIEW = PRES_PROBE_VIEW; this.presMsgPlace = presMsgPlace; this.PRES_ROW_STEPS = PRES_ROW_STEPS; this.PRES_FRAME_ERR = PRES_FRAME_ERR;", ctx);
+  + " this.presFirstRows = presFirstRows; this.PRES_PROBE_VIEW = PRES_PROBE_VIEW; this.presMsgPlace = presMsgPlace; this.PRES_ROW_STEPS = PRES_ROW_STEPS; this.PRES_FRAME_ERR = PRES_FRAME_ERR;"
+  + " this.presEqView = typeof presEqView === \"function\" ? presEqView : null; this.PRES_EQ_WAIT_MS = typeof PRES_EQ_WAIT_MS === \"number\" ? PRES_EQ_WAIT_MS : null;", ctx);
 const { presView, presRunning, presDaysLeft, presFirstRows, presMsgPlace } = ctx;
 
 const NOW = 1790000000 * 1000, S = NOW / 1000;
@@ -153,6 +154,23 @@ ok("C-1 BAD_PW / NO_CA_PW(cert)→ 欄位下;BAD_PW(creds)→ slot;LIB_OUTDATED 
   ok("憑證 ok、測試單未 ok → 有 pres-skip-test;測試單 ok 後沒有", rowsOf({ env: "test", cert: CERT_OK }).indexOf('"btn":"pres-skip-test"') >= 0
     && rowsOf({ env: "test", cert: CERT_OK, probe: { status: "ok", state: "ok", env: "test", at: S - 3 } }).indexOf('"btn":"pres-skip-test"') >= 0
     && rowsOf({ env: "test", cert: CERT_OK, probe: { status: "ok", state: "ok", env: "test", at: S - 9 }, test_order: { status: "ok", state: "accepted", at: S - 3 } }).indexOf("pres-skip-test") < 0); }
+// 0.1.62(設計 sinopac-equity-loader §2.2):完成頁權益格在第一次讀帳前是圓環,不是靜態「—」(「—」讀成缺值);同永豐 spEqView
+{ const ev = ctx.presEqView, okAt = S - 10, J = JSON.stringify, w = pc({ worker: { status: "ok", at: okAt, ok_at: okAt } });
+  const acct = (readAt, e) => ({ account: { read_at: readAt, venues: e ? { president: e } : {} } });
+  const run = (r, c, now) => (ev ? J(ev(r, c, now === undefined ? NOW : now)) : "no presEqView");
+  ok("統一完成頁:讀帳早於下單程式 ok／還沒有這一家／報告沒有 account → 等待中", run(acct(okAt - 4, { ok: false }), w) === J({ wait: true }) && run(acct(okAt + 1), w) === J({ wait: true }) && run({}, w) === J({ wait: true }));
+  ok("統一完成頁:讀到數字就畫(不看時間窗與下單程式狀態);讀到了但沒權益、等超過 PRES_EQ_WAIT_MS、下單程式沒 ok 過 → 「—」",
+    run(acct(okAt + 5, { ok: true, equity: 1234 }), w) === J({ v: 1234 }) && run(acct(okAt + 5, { ok: true, equity: 1 }), null, okAt * 1000 + 999999) === J({ v: 1 })
+    && run(acct(okAt + 5, { ok: false }), w) === J({}) && run(acct(okAt - 4), w, okAt * 1000 + ctx.PRES_EQ_WAIT_MS) === J({}) && run(acct(okAt - 4), w, okAt * 1000 + ctx.PRES_EQ_WAIT_MS - 1) === J({ wait: true })
+    && run(acct(0), pc()) === J({}) && run(acct(0), pc({ worker: { status: "ok", at: okAt } })) === J({}));
+  const trade = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.js"), "utf8"), pcss = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "president.css"), "utf8");
+  const doneB = src.slice(src.indexOf("function presDoneBody("), src.indexOf("\n}\n", src.indexOf("function presDoneBody(")));
+  ok("PRES_EQ_WAIT_MS = trade.js TR_PRES_BOOT_MS", ctx.PRES_EQ_WAIT_MS !== null && new RegExp("const TR_PRES_BOOT_MS = " + ctx.PRES_EQ_WAIT_MS + ";").test(trade));
+  ok("完成頁權益格走 presEqView;等待時是 aria-hidden 的 .spin16 + .sr-only 念 cap.s.readRun(不帶券商名,不用 sp.posPending);aria-busy 與簽章帶這一態;與永豐共用 .pres-eq-spin",
+    /const eq = presEqView\(r, pc, Date\.now\(\)\);/.test(doneB) && /eq\.wait \? presEqWait\(\) : trEl\("div", "v mono", eq\.v !== undefined/.test(doneB)
+    && /function presEqWait\(\) \{ const v = trEl\("div", "v"\), b = trEl\("span", "spin16 pres-eq-spin"\); b\.setAttribute\("aria-hidden", "true"\); v\.append\(b, trEl\("span", "sr-only", t\("cap\.s\.readRun"\)\)\); return v; \}/.test(src)
+    && !/sp\.posPending/.test(src) && /PRES\.busy \|\| eqWait \|\|/.test(src) && /presReport\(\)\.account, eqWait\]\);/.test(src)
+    && /\.pres-big \.pres-eq-spin \{ width: 20px; height: 20px; color: var\(--ink-3\); vertical-align: middle; \}/.test(pcss)); }
 // 稽核 integ-0118 B-1:設定 › 帳戶 的「開通中＋繼續」看 worker.ok_at(開通過又停掉的不算開通中),同 trade.js trPresWip
 ok("presWip:worker ok 過(ok_at)就不是開通中", /function presWip\(r\) \{[^\n]*c\.worker\.status === "ok" \|\| c\.worker\.ok_at/.test(src));
 // 字串:president.js / trade.js 用到的 pres.* 兩語都有
@@ -209,7 +227,7 @@ ok("n1／n2 逐字;沒有夜盤、不睡、同月份;完成頁只剩 n1,n2 搬�
 ok("stopNote 沒有數字", !/\d/.test(sctx.S.zh["pres.err.stopNote"]) && !/\d/.test(sctx.S.en["pres.err.stopNote"]));
 // 設計稽核 desktop-10-08(電腦版統一畫面)#2 / #8 / #10
 ok("#2 第一次真錢框:權益數「12,147,198 TWD」(trTwd 整數 + 幣別後綴),不用 NT$;保證金那句不再講「統一沒有給用戶的模擬環境」",
-  !/"NT\$/.test(src) && /t\("pres\.first\.equity", \{ v: trTwd\(a\.equity\) \+ " " \+ TR_TXF_CCY \}\)/.test(src) && /trEl\("div", "v mono", typeof a\.equity === "number" \? trTwd\(a\.equity\) \+ " " \+ TR_TXF_CCY : "—"\)/.test(src)
+  !/"NT\$/.test(src) && /t\("pres\.first\.equity", \{ v: trTwd\(a\.equity\) \+ " " \+ TR_TXF_CCY \}\)/.test(src) && /trEl\("div", "v mono", eq\.v !== undefined \? trTwd\(eq\.v\) \+ " " \+ TR_TXF_CCY : "—"\)/.test(src)
   && sctx.S.zh["pres.first.margin"] === "每口保證金以統一公告為準，保證金不足時統一會拒單。這幾口是真錢。" && !/模擬環境|simulated/i.test(sctx.S.zh["pres.first.margin"] + sctx.S.en["pres.first.margin"]));
 { const body = src.slice(src.indexOf("function presProbeBody("), src.indexOf("function presTestHostBody("));
   ok("#8 失敗畫面的輔助句照類別:PASSWORD / UNKNOWN → 被鎖找營業員;TIMEOUT → 恢復後再試;憑證 / 維護 / 沒帳密 → 沒有輔助句",

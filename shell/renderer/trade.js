@@ -5028,7 +5028,12 @@ function poSigTable(r, stored, states, mode) {
   }
   if (footN) frag.appendChild(foot);
   if (outside.length) frag.appendChild(trEl("div", "pf-foot", t("tr.unmanagedTip")));
-  if (posPend) frag.appendChild(trEl("div", "pf-foot", t("sp.posPending")));
+  /* 等讀帳(第一次讀帳、永豐送單後的快照):表底一行圓環＋一句(.cx-wait 那組;設計 sinopac-equity-loader §3 #3／#4),帳上與差額的「—」才讀得出是在等。
+     常駐程式死了／不知道就沒有人在讀:兩句都不出(轉一個不會結束的圈、等一個不會來的回報都比不放更糟) */
+  if ((posPend || firstRead) && hs !== "dead" && hs !== "unknown") {
+    const w = trEl("div", "pf-foot cx-wait"), sp = trEl("span", "spin16"); sp.setAttribute("aria-hidden", "true");
+    w.append(sp, trEl("span", "", t(posPend ? "sp.posPending" : "cap.s.readRun"))); frag.appendChild(w);
+  }
   /* 下單失敗:每個還欠著單的標的各掛它最新的那一筆(trLiveOrderErrs,同網頁),掛在那一列底下(靠右,跟著差額);整台機器的平倉沒做成("*")放表底。
      音量各筆自己算(spec 丙案):對帳器在跑、而且是最近一輪的失敗 = 紅字「下單失敗:…」;否則降成灰字「上次下單失敗:…」帶時間。
      狀態跟頁頭同一個來源(envHeadState):雲端讀不到新狀態時兩處才不會一紅一灰 */
@@ -6209,7 +6214,7 @@ function trEventText(type, d, strat) {
   }
   if (type === "execution_interrupted") return out(t("tr.ov.evExecInterrupted"), t("tr.ov.evExecInterruptedNote"));
   if (type === "reconciler_hang_restarted") return out(t("tr.ov.evHangRestarted"), null);
-  if (type === "reconciler_hang_halted") return out(t("tr.ov.evHangHalted"), t("tr.ov.evRestartStoppedNote"));
+  if (type === "reconciler_hang_halted") return out(t("tr.ov.evHangHalted"));   // 0.1.62 Wei:暫停類事件只留標題,說明在頁首原因行
   if (type === "machine_woke") return out(t("tr.ov.evWoke"), t(d.held === true ? "tr.ov.evWokeNoteHeld" : "tr.ov.evWokeNote", { d: trSleepText(d.minutes) }));
   // kind 只有 overdue/abandoned;認不得的照樣是通用句(同網頁)
   if (type === "execution_stuck") return d.kind === "abandoned" ? out(t("tr.ov.evExecAbandoned"), t("tr.ov.evExecAbandonedNote"))
@@ -6217,7 +6222,7 @@ function trEventText(type, d, strat) {
   if (type === "scheduler_error") return outS(t("tr.ov.evSchedErr"), t("tr.ov.evSchedErrNote"));
   if (type === "strategy_failed") return outS(t("tr.ov.evStrategyFailed"), t(trStrategyFailedNoteKey(d)));
   // 主機重開、對帳那支程式停著:標題已暫停,說明講「什麼單都不下」——跟 HALT 那列(平倉停損照常)並排時要分得出來;顏色跟 trigger
-  if (type === "machine_restart_stopped") return out(t("tr.ov.evRestartStopped"), t("tr.ov.evRestartStoppedNote"));
+  if (type === "machine_restart_stopped") return out(t("tr.ov.evRestartStopped"));
   if (type === "machine_restart_stop_failed") return out(t("tr.ov.evRestartStopFailed"), t("tr.ov.evRestartStopFailedNote"));
   // 全部平倉跳過這家、部位還開著:symbols 是逗號分隔的帳本 key,讀不到快照時是空字串 → 只講那一句、不帶標的。
   // reason snapshot_lag(群益、統一):部位快照還沒跟上剛送的單,一分鐘後再按就平得掉——講「沒替哪家平倉」(券商名照固定對照表,
@@ -6363,7 +6368,7 @@ function trOvEvents(r, z) {
     // halt 的字照 source(trEvLevel);顏色在 push 那裡讓 api 的 level 蓋過
     if (ev.type === "halt" && d.unexplained === true) { head = t("tr.ov.evHaltUnexplained"); lv = 1; code = trUnxSym(d) || null; note = t("tr.ov.evHaltUnexplainedNote", { venue: trUnxVenue(d) }); tip = typeof d.reason === "string" && d.reason ? d.reason : null; unxSeen.add(String(d.park_id || "")); }
     // 這次平倉什麼都沒平、只有台指期休市留著:照一般暫停寫,台指期由緊接的 kept 列講
-    else if (ev.type === "halt" || ev.type === "halt_close") { lv = trEvLevel(ev.type, d); const closes = lv !== 1 && trHaltCloses(ev.type, trHaltNow(ev, d, r)); head = t(lv === 1 || d.source === "hang_watch" ? "tr.ov.evHaltAuto" : closes ? "tr.ov.evHaltClose" : d.by === "phone" ? "tr.ov.evHaltPhone" : "tr.ov.evHalt"); note = d.source === "hang_watch" ? t("tr.ov.evHaltHangNote") : trHaltUnconfirmedSym(d) != null ? trHaltUnconfirmedNote(d) : closes ? null : trHaltStopsAll(d) || trHaltFreeze(r) ? t("tr.ov.evRestartStoppedNote") : t("tr.ov.evHaltNote"); uiHalts.push(ev.ts * 1000); lastRun = "halt"; }
+    else if (ev.type === "halt" || ev.type === "halt_close") { lv = trEvLevel(ev.type, d); const closes = lv !== 1 && trHaltCloses(ev.type, trHaltNow(ev, d, r)); head = t(lv === 1 || d.source === "hang_watch" ? "tr.ov.evHaltAuto" : closes ? "tr.ov.evHaltClose" : d.by === "phone" ? "tr.ov.evHaltPhone" : "tr.ov.evHalt"); note = d.source === "hang_watch" ? t("tr.ov.evHaltHangNote") : trHaltUnconfirmedSym(d) != null ? trHaltUnconfirmedNote(d) : closes || trHaltStopsAll(d) || trHaltFreeze(r) ? null : t("tr.ov.evHaltNote"); uiHalts.push(ev.ts * 1000); lastRun = "halt"; }
     // 前一筆是暫停才叫「恢復」;第一次啟動(或之前的暫停不在紀錄裡,例如對帳器自動暫停)寫「已啟動下單」。標題已經講完,不帶說明
     else if (ev.type === "resume" || ev.type === "resume_wait") { head = t(lastRun === "halt" ? "tr.ov.evResume" : "tr.ov.evStart"); lastRun = "resume"; }
     else if (ev.type === "venue_connected" && venue) head = ["tr.ov.evConnected", { venue }];
@@ -6381,10 +6386,10 @@ function trOvEvents(r, z) {
     const auto = !!halt.source && halt.source !== "web";
     const closes = !auto && trHaltCloses("halt", halt);
     body.appendChild(trEl("span", trEvClass(trEvLevel("halt", halt)), auto ? t("tr.ov.evHaltAuto") : t(closes ? "tr.ov.evHaltClose" : trHaltByPhone(halt) ? "tr.ov.evHaltPhone" : "tr.ov.evHalt")));
-    // 平倉那一列標題已經講完,不帶說明(設計稽核 S2);「什麼單都不送」也不帶——平倉單正在送(QA 0158 P1-1)
+    // 平倉那一列標題已經講完,不帶說明(設計稽核 S2);什麼單都不送的暫停也只留標題(0.1.62 Wei:「已暫停下單」就夠,說明在頁首原因行)
     if (halt.source === "hang_watch") body.append(" ", trEl("span", "dim", "— " + t("tr.ov.evHaltHangNote")));   // 下單程式反覆卡住(0.1.58)
     else if (trHaltUnconfirmedSym(halt) != null) body.append(" ", trEl("span", "dim", "— " + trHaltUnconfirmedNote(halt)));
-    else if (!closes) body.append(" ", trEl("span", "dim", "— " + (trHaltStopsAll(halt) ? t("tr.ov.evRestartStoppedNote") : t("tr.ov.evHaltNote"))));   // A′:什麼單都不下,同重開那一句
+    else if (!closes && !trHaltStopsAll(halt) && !trHaltFreeze(r)) body.append(" ", trEl("span", "dim", "— " + t("tr.ov.evHaltNote")));   // 凍結時平倉停損也不走,不能講照常執行
   });
   // 帳戶對不上(halt.unexplained):平台已記成事件的(雲端,同 park_id)上面畫過了;這台電腦沒有平台事件,從狀態檔畫
   // 標題「部位對不上」＋標的(mono)＋「— 先到{venue}核對」,tooltip 是機器那句原因(口數、送單前後),同雲端那一列

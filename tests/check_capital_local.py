@@ -551,6 +551,60 @@ check("10 重新下載後快取換成新那份(經 atomic_file 寫、沒留 .tmp
       and not [n for n in os.listdir(os.path.dirname(cached)) if n.endswith(".tmp")])
 check("10 每個元件檔上限 32 MB(真包最大的 SKCOM.dll 約 10 MB)、整包 200 MB", capl.CAP_FILE_MAX == 32 * 1024 * 1024 and capl.CAP_ZIP_MAX == 200 * 1024 * 1024)
 
+# setup ok 之後元件被刪／換(win-test-6 11-25:skcom 改名,狀態檔仍寫 setup ok):worker 起之前、probe 之前驗一次,
+# 不符就把 setup 改回 idle(畫面照 idle 自動重跑 setup),這一步回 SETUP_NEEDED、不起 worker、不登入
+capl._update("setup", status="ok", error=None)
+capl._skcom_gate()
+check("10 元件完好:setup ok 照留、不擋", capl.read_status()["setup"]["status"] == "ok")
+gone = skdir + ".renamed"
+os.rename(skdir, gone)
+probe_before = dict(capl.read_status()["probe"])
+check("10 元件資料夾不見 → probe 回 SETUP_NEEDED、setup 改回 idle、probe 沒被改成 running(沒登入)",
+      code_of(capl.probe_once) == "SETUP_NEEDED" and capl.read_status()["setup"]["status"] == "idle"
+      and capl.read_status()["probe"] == probe_before)
+check("10 setup 不是 ok 時不另外擋(本來就會重跑 setup)", code_of(capl._skcom_gate) is None)
+os.rename(gone, skdir)
+capl._update("setup", status="ok", error=None)
+with open(os.path.join(skdir, "SKTradeLib.dll"), "wb") as f:
+    f.write(b"swapped")
+spawn_w = capl._LocalWorker()
+check("10 元件被換(hash 不符)→ worker 不起(SETUP_NEEDED,沒開行程)、setup 改回 idle",
+      code_of(spawn_w._spawn) == "SETUP_NEEDED" and spawn_w.proc is None and capl.read_status()["setup"]["status"] == "idle")
+capl._update("setup", status="ok", error=None)
+os.remove(os.path.join(skdir, "SKCOM.dll"))
+capl._update("probe", status="ok", state="ok")
+w_keep, capl._LOCAL["worker"] = capl._LOCAL["worker"], capl._LocalWorker()
+start_code = code_of(lambda: capl._start(None))
+capl._LOCAL["worker"] = w_keep
+check("10 少一個元件檔 → start 失敗記 worker failed SETUP_NEEDED、setup 改回 idle",
+      start_code == "SETUP_NEEDED" and capl.read_status()["worker"]["status"] == "failed"
+      and capl.read_status()["worker"]["error"] == "SETUP_NEEDED" and capl.read_status()["setup"]["status"] == "idle")
+capl._update("setup", status="ok", error=None)
+capl._update("worker", status="ok", error=None, wanted=True)
+rw = capl._LocalWorker()
+rw.wanted, rw.proc, rw.respawn_at = True, FakeProc(1), 0
+rw.tick()
+after = dict(capl.read_status()["worker"])
+rw.respawn_at = 0
+rw.tick(); rw.tick()
+check("10 自動重起時元件不見 → 不再迴圈(wanted False、沒排下一次)、worker 記 failed SETUP_NEEDED 給畫面看、setup 改回 idle",
+      rw.wanted is False and rw.respawn_at == 0 and isinstance(rw.proc, FakeProc) and after["status"] == "failed" and after["error"] == "SETUP_NEEDED"
+      and after["wanted"] is False and capl.read_status()["setup"]["status"] == "idle" and capl.read_status()["worker"] == after, after)
+with um.patch.object(capl.subprocess, "run", fake_run):
+    capl._ensure_skcom(tempfile.mkdtemp(dir=BASE))
+check("10 重跑 setup 把元件補回 → 驗得過", capl._skcom_intact())
+s_keep, capl._LOCAL["secrets"] = capl._LOCAL["secrets"], None
+capl._update("setup", status="ok", error=None)
+capl._update("worker", status="ok", error=None, wanted=True)
+nw = capl._LocalWorker()
+nw.wanted, nw.proc, nw.respawn_at = True, FakeProc(1), 0
+t_before = time.time()
+nw.tick()
+capl._LOCAL["secrets"] = s_keep
+check("10 自動重起時沒有秘密(NO_SECRETS)→ 照舊排 10 秒後再試、wanted 仍 True、worker 狀態不動(只有 SETUP_NEEDED 會停)",
+      nw.wanted is True and isinstance(nw.respawn_at, float) and nw.respawn_at >= t_before + capl.LOCAL_RESPAWN_S
+      and capl.read_status()["worker"]["status"] == "ok" and capl.read_status()["setup"]["status"] == "ok", [nw.wanted, nw.respawn_at])
+
 
 def setup_with(members, what, want):
     serve(mkzip(os.path.join(BASE, "bad.zip"), members))

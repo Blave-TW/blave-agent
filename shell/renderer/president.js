@@ -15,6 +15,7 @@ const PRES_HOTLINE = "(02) 8172-4668";
 const PRES_SCAN_MS = 3000;
 const PRES_NO_MOVE_MS = 90000;
 const PRES_STUCK_MS = 25 * 60 * 1000;
+const PRES_EQ_WAIT_MS = 60000;   // = trade.js TR_PRES_BOOT_MS
 // runtime president_connect.LOGIN_STATES 的值 → 畫面態(文案與雲端同一組 key;只有「主機」換成「這台電腦」)
 // 只用來顯示:哪一類都一樣停下來、不自動重試,用戶按「確認登入」才再試一次(Wei 10-07 MVP)
 const PRES_PROBE_VIEW = { password: "PASSWORD", unknown: "UNKNOWN", cert_mismatch: "CERT_MISMATCH", cert: "CERT",
@@ -113,6 +114,16 @@ function presMsgPlace(m) {
   if (m.step === "cert" && PRES_PFX_ERR[m.code]) return "field";   // 存帳密那一步的 BAD_PW 沒有憑證欄位可掛,照 slot
   if (m.step === "probe" && PRES_HOST_ERR[m.code]) return "field";
   return PRES_ROW_STEPS.indexOf(m.step) >= 0 ? "row" : "slot";
+}
+/* 完成頁權益格(同 sinopac.js spEqView):有數字就畫;下單程式 ok 後、daemon 那一輪讀帳(account.read_at)還沒跟上、
+   而且不超過 PRES_EQ_WAIT_MS 時是等待中;之後讀到了卻沒有權益、或一直沒跟上,照舊「—」 */
+function presEqView(r, pc, now) {
+  const a = r && r.account && r.account.venues && r.account.venues[PRESIDENT];
+  if (a && typeof a.equity === "number" && isFinite(a.equity)) return { v: a.equity };
+  const w = presSec(pc, "worker"), okAt = w.status === "ok" && typeof w.ok_at === "number" ? w.ok_at : null;
+  if (okAt === null || now - okAt * 1000 >= PRES_EQ_WAIT_MS) return {};
+  const readAt = r && r.account && typeof r.account.read_at === "number" ? r.account.read_at : 0;
+  return readAt < okAt || !a ? { wait: true } : {};
 }
 /* ── 純邏輯到此 ── */
 
@@ -460,11 +471,14 @@ function presRows(view, pc) {
   else add(capRow(worker.status === "ok" ? "done" : "todo", t("pres.s.worker")));
   return ol;
 }
+// 權益等第一次讀帳:圓環＋輔具念 cap.s.readRun(不帶券商名),同永豐 spEqWait;「—」在這裡讀成缺值
+function presEqWait() { const v = trEl("div", "v"), b = trEl("span", "spin16 pres-eq-spin"); b.setAttribute("aria-hidden", "true"); v.append(b, trEl("span", "sr-only", t("cap.s.readRun"))); return v; }
 function presDoneBody(pc) {
-  const r = presReport() || {}, a = (r.account && r.account.venues && r.account.venues[PRESIDENT]) || {}, cert = presSec(pc, "cert");
+  const r = presReport() || {}, cert = presSec(pc, "cert");
   const f = document.createDocumentFragment();
   const lede = trEl("p", "cap-lead pres-ok"); lede.append(trEl("i", "dot"), trEl("span", "", t("pres.done.lead"))); f.appendChild(lede);
-  const big = trEl("div", "pres-big"); big.append(trEl("div", "l", t("pres.done.equity")), trEl("div", "v mono", typeof a.equity === "number" ? trTwd(a.equity) + " " + TR_TXF_CCY : "—"));   // 同第一次真錢框:TWD 整數 + 幣別後綴,不用 NT$
+  const eq = presEqView(r, pc, Date.now());
+  const big = trEl("div", "pres-big"); big.append(trEl("div", "l", t("pres.done.equity")), eq.wait ? presEqWait() : trEl("div", "v mono", eq.v !== undefined ? trTwd(eq.v) + " " + TR_TXF_CCY : "—"));   // 同第一次真錢框:TWD 整數 + 幣別後綴,不用 NT$
   f.appendChild(big);
   const dl = trEl("dl", "cap-acct"), kv = (k, v, cls) => { const d = trEl("div", ""); d.append(trEl("dt", "", k), trEl("dd", cls || "", v)); dl.appendChild(d); };
   kv(t("pres.done.acct"), t("pres.done.acctV", { acct: (PRES.info && PRES.info.account) || "—" }), "mono");
@@ -528,9 +542,10 @@ function presPaint() {
   $("cx-modal").querySelector(".modal-head").classList.remove("cloud");
   $("cx-env").hidden = mac; $("cx-env").textContent = mac ? "" : t("env.local");
   presFoot(view);
-  box.setAttribute("aria-busy", PRES.busy || ["d-finish", "d-probe", "d-cert-run", "d-setup", "d-t-probe", "d-t-order-run"].indexOf(view) >= 0 ? "true" : "false");
+  const eqWait = view === "d-done" && !!presEqView(presReport(), pc, Date.now()).wait;
+  box.setAttribute("aria-busy", PRES.busy || eqWait || ["d-finish", "d-probe", "d-cert-run", "d-setup", "d-t-probe", "d-t-order-run"].indexOf(view) >= 0 ? "true" : "false");
   const sig = LANG + "|" + JSON.stringify([view, pc, PRES.scan, PRES.busy, PRES.msg, PRES.source, PRES.tcemMsg, PRES.choice, PRES.test, PRES.info,
-    PRES.sent && Date.now() - PRES.sent.at >= PRES_NO_MOVE_MS, presDown(), presReport() && presReport().account]);
+    PRES.sent && Date.now() - PRES.sent.at >= PRES_NO_MOVE_MS, presDown(), presReport() && presReport().account, eqWait]);
   if (PRES.sig === sig && box.firstChild) return;
   PRES.sig = sig;
   const hadId = box.contains(document.activeElement) ? document.activeElement.id : null;

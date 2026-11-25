@@ -6048,7 +6048,7 @@ msgstr "Research"
 msgid "rpt.newMark"
 msgstr "New report"
 
-# 左下第一格的選單(app.js amPaint):說明文件那一項;第一格的名稱沒登入是 am.menu、已登入是 am.acct
+# 左下第一格的選單(app.js amPaint):使用教學那一項(外開網站的使用教學首頁);第一格的名稱沒登入是 am.menu、已登入是 am.acct
 msgid "am.docs"
 msgstr "Docs"
 

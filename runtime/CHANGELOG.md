@@ -8,6 +8,8 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **群益元件開通後被刪／換掉會重跑 setup(`capital_local._skcom_gate`;win-test-6 11-25 實測:skcom 資料夾改名後狀態檔仍寫 setup ok,畫面不重跑安裝)**:worker 每次要起(`_LocalWorker._spawn`,含開機補交密碼與自動重起)與確認登入(`probe_once`)之前,setup 是 ok 就把 11 個元件檔逐一對 `CAP_X64_SHA256`;缺檔或 hash 不符 → `setup` 改回 `idle`、這一步回 `SETUP_NEEDED`(start 與自動重起都記 `worker.failed`／`SETUP_NEEDED`;自動重起另把 `wanted` 設 False,不再每 10 秒起一次壞掉的 worker),電腦版開通框看到 setup idle 照現行邏輯自動重跑安裝。setup 不是 ok 時不另外擋。電腦版隨下一版(0.1.62)帶。測試 `tests/check_capital_local.py` §10。
+
 ## 1.1.173 — 2026-11-25(群益元件改逐檔釘版;電腦版下一版帶)
 
 - **`capital_local._ensure_skcom` 改成逐檔釘版(`CAP_X64_SHA256`,11 個元件檔 → 完整 sha256)**:群益 10-27 重包同名 `CapitalAPI_2.13.59.zip`(新包 sha256 c07ebe2e…;根目錄 docx 換了、x64 多了 `SKCOM_x64.exe`、`vcredist_x64.exe`),11 個元件檔與 10-21 釘的那份 byte 相同,但舊的整包 `CAP_ZIP_SHA256` 比對失敗,Windows 電腦版開通群益「安裝元件」一律失敗。現在 zip 的 x64 那一層必須有白名單每個檔、各出現一次、hash 相符,只裝這 11 個(多的檔不裝);缺檔、重複、不符都失敗。快取的 zip 同樣看白名單成員,舊包新包都沿用;快取有任何毛病(含壓縮資料損壞的 `zlib.error`)一律重新下載。裝進去的 bytes 就是驗過的那份,不再從快取重讀;快取改用 `atomic_file.replacing` 寫。下載仍走官方 https 網址、整包 200 MB、每個元件檔 32 MB 上限。

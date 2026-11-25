@@ -41,7 +41,7 @@ function env(view) {
   // 落點二:選單「報告」那一列的列尾(真的 amPaint 配假 DOM)
   const mk = (tag) => { const n = { tag, className: "", textContent: "", attrs: {}, children: [], title: "", setAttribute(k, v) { n.attrs[k] = v; }, append(...k) { n.children.push(...k); }, addEventListener() {} }; return n; };
   const menu = mk("div"); menu.replaceChildren = (...k) => { menu.children = k; };
-  const STR = { "rpt.nav": "報告", "rpt.newMark": "有新報告", "ws.settings": "設定", "am.docs": "說明文件" };
+  const STR = { "rpt.nav": "報告", "rpt.newMark": "有新報告", "ws.settings": "設定", "am.docs": "使用教學" };
   const run = (mark) => {
     vm.runInNewContext(cutFn(app, "amPaint") + "\namPaint();", { $: (id) => (id === "side-menu" ? menu : { hidden: true }), LANG: "zh", t: (k) => STR[k] || k, document: { createElement: mk },
       amSignedIn: () => false, amMark: () => mark, rptBag: () => ({ open: false }), libExtIcon: () => mk("svg"), acct: null, oauthPending: false, planLoginBusy: false,
@@ -52,6 +52,6 @@ function env(view) {
   const dot = on.children.find((k) => k.className === "nav-new");
   t("落點二:有新報告時「報告」那一列列尾一顆 aria-hidden 的點、那一列名稱「報告，有新報告」", !!dot && dot.attrs["aria-hidden"] === "true" && on.attrs["aria-label"] === "報告，有新報告", on.attrs);
   t("沒新報告:那一列沒有點、不另設名稱", off.children.length === 1 && !("aria-label" in off.attrs));
-  t("沒登入選單三項:報告、空白、設定、說明文件(沒有 email、帳號與方案、用量、登出)", menu.children.map((k) => (k.className === "am-gap" ? "GAP" : k.children[0].textContent)).join() === "報告,GAP,設定,說明文件");
+  t("沒登入選單三項:報告、空白、設定、使用教學(沒有 email、帳號與方案、用量、登出)", menu.children.map((k) => (k.className === "am-gap" ? "GAP" : k.children[0].textContent)).join() === "報告,GAP,設定,使用教學");
   console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);
 })();

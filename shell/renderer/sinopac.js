@@ -440,7 +440,7 @@ function spRows(view, sc) {
   return ol;
 }
 // 權益等第一份快照(最長 120 秒):圓環＋輔具念 sp.posPending,不用骨架(骨架過 10 秒停光會讀成壞掉);高度照 .v 撐住,數字回來不跳
-function spEqWait() { const v = trEl("div", "v"), b = trEl("span", "spin16 sp-eq-spin"); b.setAttribute("aria-hidden", "true"); v.append(b, trEl("span", "sr-only", t("sp.posPending"))); return v; }
+function spEqWait() { const v = trEl("div", "v"), b = trEl("span", "spin16 pres-eq-spin"); b.setAttribute("aria-hidden", "true"); v.append(b, trEl("span", "sr-only", t("sp.posPending"))); return v; }
 function spDoneBody(sc) {
   const r = spReport() || {}, a = (r.account && r.account.venues && r.account.venues[SINOPAC]) || {}, cert = spSec(sc, "cert");
   const f = document.createDocumentFragment();

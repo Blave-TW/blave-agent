@@ -108,5 +108,15 @@ ok("字串表有兩個 key(策略外小標、表底說明)", /"tr\.unmanagedTag"
   ok("群益:讀帳 TM2608 多 2、帳本 TMF 多 2 → 一列、帳上 +2、差額 0;沒有「另有手動」、沒有「策略外」列", rs.length === 1 && rs[0][2].startsWith("+2") && rs[0][3].startsWith("0") && !one.some((x) => /po\.manualPart/.test(x)) && !rs.some((x) => /tr\.unmanagedTag/.test(x[0])), JSON.stringify([rs, one]));
   ok("trLivePositions:台灣期貨券商走 trTwFutCanon(TM2608 → TMF、TX2608 → TXF、MTX2608 → MXF);其他照舊", JSON.stringify(trLivePositions({ venues: VC, account: { venues: { capital: { ok: true, positions: { TM2608: { side: "long", size: 2 }, TX2608: { side: "short", size: 1 }, MTX2608: { side: "long", size: 3 } } } } } })) === JSON.stringify({ TMF: 2, TXF: -1, MXF: 3 }));
   TR.list = []; }
+// 0.1.62(設計 sinopac-equity-loader §3 #3／#4):等讀帳時表底一行圓環＋一句;常駐程式沒在跑就沒人在讀,不轉圈
+{ const AMT = { btc_trend: 100 }; var trVenueCcy = () => "USDT";   // 第一次讀帳前沒有讀帳結果,幣別退回交易所預設
+  const waitFoot = (r, hs) => { const keep = envHeadState; envHeadState = () => hs; TR.st.report = r; const box = new N("div"); box.appendChild(poSigTable(r, AMT, STATES, "trade")); envHeadState = keep;
+    return box.tags("div").filter((d) => /pf-foot/.test(d.className)).map((d) => ({ cls: d.className, text: d.textContent, spin: d.tags("span").filter((x) => x.className === "spin16" && x.attrs["aria-hidden"] === "true").length })); };
+  const first = Object.assign(report(false, null, {}, AMT), { last_reconcile: null }); delete first.account;
+  const lag = report(false, null, {}, AMT); lag.account.venues.binance = { ok: false, equity: 10, currency: "USDT", positions: null, error: { type: "SnapshotLag", stage: "get_positions", msg: "x" } };
+  ok("第一次讀帳還沒回來:表底一行圓環＋cap.s.readRun(不帶券商名)", J(waitFoot(first, "running")) === J([{ cls: "pf-foot cx-wait", text: "cap.s.readRun", spin: 1 }]));
+  ok("永豐送單後等快照:同一行圓環＋sp.posPending", J(waitFoot(lag, "running")) === J([{ cls: "pf-foot cx-wait", text: "sp.posPending", spin: 1 }]));
+  ok("常駐程式死了／不知道:第一次讀帳與永豐那句都不出(沒人在讀)", ["dead", "unknown"].every((hs) => J(waitFoot(first, hs)) === "[]" && J(waitFoot(lag, hs)) === "[]"));
+  ok("讀到帳了:沒有等待那一行", !waitFoot(report(false, null, {}, AMT), "running").some((f) => /cap\.s\.readRun|sp\.posPending/.test(f.text))); }
 console.log(red ? `\n${red} 項沒過` : "\n全部通過");
 process.exit(red ? 1 : 0);

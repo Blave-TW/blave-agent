@@ -166,7 +166,7 @@ ok("稽核 C1:雲端視角不叫人重開 Blave,講主機那一句;讀不到帳�
     lag.ok === false && /const posPend = recon && !firstRead && trVenueIds\(r\)\.some\(\(id\) => trPosPending\(trLiveEntry\(r, id\)\)\);/.test(trade)
     && /else if \(firstRead \|\| posPend\) row\.append\(dash\(false\), dash\(false\)\);/.test(trade)
     && /const outside = recon && !firstRead && !posPend \?/.test(trade) && /if \(trade && !firstRead && !posPend && covered\(sym\)\)/.test(trade)
-    && /if \(posPend\) frag\.appendChild\(trEl\("div", "pf-foot", t\("sp\.posPending"\)\)\);/.test(trade)
+    && /if \(\(posPend \|\| firstRead\) && hs !== "dead" && hs !== "unknown"\) \{/.test(trade) && /w\.append\(sp, trEl\("span", "", t\(posPend \? "sp\.posPending" : "cap\.s\.readRun"\)\)\)/.test(trade)
     && /function trLivePositions\(r\) \{[\s\S]{0,120}if \(!e \|\| !e\.ok \|\| !e\.positions\) return;/.test(trade)
     && /function trCfBookBad\(r\) \{\n  if \(!trVenueIds\(r\)\.some\(\(id\) => \{ const e = trLiveEntry\(r, id\); return !!e && e\.ok === false; \}\)\) return false;/.test(trade));
   ok("總權益、資產頁、設定 › 帳戶那一列看 trEqOk／trPosPending,不看 e.ok",
@@ -204,12 +204,12 @@ process.on("beforeExit", () => { if (spDone) return; console.log("FAIL  非同�
     /const eq = spEqView\(r, sc, Date\.now\(\)\);/.test(doneB) && /eq\.wait \? spEqWait\(\) : trEl\("div", "v mono", eq\.v !== undefined \? trTwd\(eq\.v\)/.test(doneB)
     && !/readRun|讀取中/.test(doneB) && /SP\.busy \|\| eqWait \|\|/.test(src) && /spReport\(\)\.account, eqWait\]\);/.test(src));
   ok("等待態:.v 裡一顆 aria-hidden 的 .spin16 + .sr-only 念 sp.posPending(設計定稿 11-25;骨架撐 120 秒會讀成壞掉)",
-    /function spEqWait\(\) \{ const v = trEl\("div", "v"\), b = trEl\("span", "spin16 sp-eq-spin"\); b\.setAttribute\("aria-hidden", "true"\); v\.append\(b, trEl\("span", "sr-only", t\("sp\.posPending"\)\)\); return v; \}/.test(src)
+    /function spEqWait\(\) \{ const v = trEl\("div", "v"\), b = trEl\("span", "spin16 pres-eq-spin"\); b\.setAttribute\("aria-hidden", "true"\); v\.append\(b, trEl\("span", "sr-only", t\("sp\.posPending"\)\)\); return v; \}/.test(src)
     && !/spEqSk|sp-eq-sk/.test(src));
   const pcss = fs.readFileSync(path.join(R, "president.css"), "utf8");
   ok("圓環 20/2、--ink-3、不覆寫 animation(reduced-motion 照轉,繼承 trade.css .spin16);舊骨架條規則已拿掉",
-    /\.pres-big \.sp-eq-spin \{ width: 20px; height: 20px; color: var\(--ink-3\); vertical-align: middle; \}/.test(pcss)
-    && !/sp-eq-spin[^}]*animation/.test(pcss) && !/sp-eq-sk/.test(pcss)); }
+    /\.pres-big \.pres-eq-spin \{ width: 20px; height: 20px; color: var\(--ink-3\); vertical-align: middle; \}/.test(pcss)
+    && !/pres-eq-spin[^}]*animation/.test(pcss) && !/sp-eq-sk/.test(pcss)); }
 // 已連接狀態的〔換金鑰〕(runbook 11-23 第 7 項;設計稽核 11-24):只在設定 › 帳戶那一列、只有這台電腦;開框直接到表單、只清金鑰兩格
 { const body = (n) => { const i = src.indexOf("function " + n + "("); return i < 0 ? "" : src.slice(i, src.indexOf("\n}\n", i)); };
   ok("完成頁沒有〔換金鑰〕(剛驗過的金鑰;入口只留設定列)", !/sp-fix-key|sp\.fixKey|spFix|rekey/.test(body("spDoneBody")));

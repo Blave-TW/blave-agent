@@ -19,7 +19,7 @@
 
 https://github.com/user-attachments/assets/66c747e9-b068-4da9-a372-84d9afa7cb0d
 
-<p align="center"><a href="https://blave.org/docs/cn">文档</a></p>
+<p align="center"><a href="https://blave.org/docs/cn">使用教程</a></p>
 
 ## 你会得到
 
@@ -72,7 +72,7 @@ Windows 在 PowerShell 里改跑 `npm.cmd install` 与 `npm.cmd start`。
 - **每笔委托都跟交易所核对过**，记在 `state/audit.jsonl`。
 - **回测只代表过去。** 交易可能亏光本金。
 
-交易所与密钥：[文档](https://blave.org/docs/cn/exchange_api) · 数据来源：[加密](https://blave.org/docs/cn/data_crypto)、[台股](https://blave.org/docs/cn/data_twstock)
+交易所与密钥：[使用教程](https://blave.org/docs/cn/exchange_api) · 数据来源：[加密](https://blave.org/docs/cn/data_crypto)、[台股](https://blave.org/docs/cn/data_twstock)
 
 ## 云端运行（付费）
 

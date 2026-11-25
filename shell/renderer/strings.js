@@ -5940,7 +5940,7 @@ const STRINGS = {
     "rpt.type.morning": "晨報",
     "rpt.type.research": "研究",
     "rpt.newMark": "有新報告",
-    "am.docs": "說明文件",
+    "am.docs": "使用教學",
     "am.menu": "選單",
     "am.acct": "帳號",
     "rpt.new.title": "新增報告",
