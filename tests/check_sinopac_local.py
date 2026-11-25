@@ -27,6 +27,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import types
 
@@ -826,6 +827,81 @@ check(st.get("worker", {}).get("status") == "ok" and not st.get("busy"),
       "8c …and the worker reads ok once its snapshot is there (not stuck at 開通中)", st)
 sc._run_worker = _real_run
 os.environ.pop("BLAVE_AGENT_LOCAL", None)
+
+# ── 8e run_finish waits through the worker's 「登入中」／login-retry snapshots (29026 11-24: the first
+#       snapshot, written the second the worker started, is {"ok": False, "waiting": "login"} — read as
+#       WORKER_FAILED while the login then passed); only an answer settles it ──
+_real_wait, _real_poll = sc.FINISH_WAIT_S, sc.FINISH_POLL_S
+sc.FINISH_POLL_S = 0.05
+
+
+def _finish_with(writes, wait_s=3.0):
+    """run_finish(local) while a stand-in worker writes `writes` [(delay_s, snapshot), …] in order."""
+    sc.FINISH_WAIT_S = wait_s
+    if os.path.exists(SNAP):
+        os.remove(SNAP)
+
+    def writer():
+        for delay, snap in writes:
+            time.sleep(delay)
+            with open(SNAP, "w") as f:
+                json.dump(dict(snap, read_at=time.time()), f)
+    t = threading.Thread(target=writer, daemon=True)
+    t0 = time.time()
+    t.start()
+    code = code_of(lambda: sc.run_finish(True))
+    t.join()
+    return code, time.time() - t0, (sc.read_status() or {}).get("worker", {})
+
+
+_W_LOGIN = {"ok": False, "waiting": "login", "positions": [], "error": "永豐登入中"}
+_W_RETRY = {"ok": False, "waiting": "login_retry", "retry_at": time.time() + 60, "error": "timeout"}
+code, took, wk = _finish_with([(0.1, _W_LOGIN), (0.3, _W_RETRY), (0.3, {"ok": True, "equity": 1.0})])
+check(code is None and wk.get("status") == "ok" and took >= 0.6,
+      "8e 登入中, then a login retry, then a read: the finish waits them out and reads ok", (code, took, wk))
+code, took, wk = _finish_with([(0.1, _W_LOGIN), (0.2, _W_RETRY)], wait_s=1.0)
+check(code == "WORKER_FAILED" and wk.get("status") == "failed" and took >= 1.0,
+      "8e still logging in when the wait runs out: WORKER_FAILED only then (the user's 〔再試一次〕)", (code, took, wk))
+code, took, wk = _finish_with([(0.1, {"ok": False, "error": "KEY", "login_stopped": True})])
+check(code == "WORKER_FAILED" and took < 1.5,
+      "8e a login STOP settles it at once (WORKER_FAILED)", (code, took, wk))
+code, took, wk = _finish_with([(0.1, {"ok": False, "error": "read failed"})])
+check(code == "WORKER_FAILED" and took < 1.5, "8e a failed read (not waiting) settles it at once", (code, took))
+# Windows cloud: `--install`'s exit code judges its first snapshot alone (「登入中」 → 2); not read
+_real_win, _real_rq, _real_py = sc.IS_WINDOWS, sc.cc._run_quiet, sc._python
+_installs = []
+
+
+def _fake_install(argv, timeout, what, env=None):
+    _installs.append(argv[-1])
+    with open(SNAP, "w") as f:
+        json.dump(dict(_W_LOGIN, read_at=time.time()), f)
+    return types.SimpleNamespace(returncode=2, stdout=b"", stderr=b"")
+
+
+sc.IS_WINDOWS, sc.cc._run_quiet, sc._python = True, _fake_install, (lambda local: sys.executable)
+sc.FINISH_WAIT_S = 3.0
+if os.path.exists(SNAP):
+    os.remove(SNAP)
+
+
+def _ok_later():
+    time.sleep(0.4)
+    with open(SNAP, "w") as f:
+        json.dump({"ok": True, "equity": 1.0, "read_at": time.time()}, f)
+
+
+_t = threading.Thread(target=_ok_later, daemon=True)
+_t.start()
+code = code_of(lambda: sc.run_finish(False))
+_t.join()
+check(_installs == ["--install"] and code is None and (sc.read_status() or {}).get("worker", {}).get("status") == "ok",
+      "8e Windows cloud: --install exits 2 on its 「登入中」 snapshot, the finish waits on and reads ok",
+      (_installs, code, (sc.read_status() or {}).get("worker")))
+sc.IS_WINDOWS, sc.cc._run_quiet, sc._python = _real_win, _real_rq, _real_py
+sc.FINISH_WAIT_S, sc.FINISH_POLL_S = _real_wait, _real_poll
+if os.path.exists(SNAP):
+    os.remove(SNAP)
 
 # ── 8d the cloud steps check the workspace's own lib gate too (audit S4): a runtime newer than the
 #       workspace refuses before the setup and the certificate, with nothing written and no HALT ──

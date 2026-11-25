@@ -8,6 +8,11 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+## 1.1.172 — 2026-11-24(永豐開通最後一步不再把「登入中」當失敗;canary)
+
+- **`sinopac_connect.run_finish` 等過 worker 的「登入中」／重試中快照(29026 11-24 實測)**:worker 一起來同一秒先寫 `{"ok": false, "waiting": "login"}`,舊的等待迴圈只看 `read_at` 就拿它定案,開通最後一步判 `WORKER_FAILED`,之後 worker 照樣登入成功、快照 ok。現在 `waiting`(`login`／`login_retry`)當作還沒回答、繼續等到 `FINISH_WAIT_S`;到期還在登入照舊 `WORKER_FAILED`(用戶按〔再試一次〕),`login_stopped` 與一般讀取失敗立刻失敗。Linux 雲端的 `sinopac_finish`、本機 `sinopac_local` 的 start、換金鑰接回(`_resume_job`)、daemon 重啟後的 `_refinish_job` 共用這個等待迴圈。測試 `tests/check_sinopac_local.py` 8e。
+- **Windows 雲端 `sinopac_finish` 不看 `lib/sinopac_worker.py --install` 的結束碼**:它只看第一份快照,「登入中」也回 2,同樣誤判。現在裝完接著跑同一個等待迴圈。測試同上。
+
 ## 1.1.171 — 2026-11-24(desktop 0.1.61:永豐期貨開放)
 
 - **永豐期貨開放(`venue_traits.py` 永豐列 `verified_modes = ("futures",)`,與 `lib/venue_traits.py` 同一份)**:runtime 這份打開雲端連接流程(`sinopac_connect.gate`、`sinopac_service.wanted`)、本機 `sinopac_local`、`account_reader` 讀永豐;`hand_wired`／`native_units` 跟著變 True。零股時代只留明碼 sinopac_* 金鑰、沒開過期貨的機器(沒有 `bound_marker`)照舊不讀、不平倉。雲端 worker 還要 workspace 的 lib 也是開的(根 `VERSION` 2026-11-24-b);沒更新的雲端主機確認登入那一步回 `probe.state` `not_open`,電腦版講「先按〔更新雲端主機〕」。測試 `tests/check_venue_traits.py`、`tests/check_sinopac_futures_wiring.py`、`tests/check_sinopac_local.py`。
