@@ -8,6 +8,8 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+## 1.1.174 — 2026-11-25(desktop 0.1.62:群益元件被刪／換掉會重跑安裝)
+
 - **群益元件開通後被刪／換掉會重跑 setup(`capital_local._skcom_gate`;win-test-6 11-25 實測:skcom 資料夾改名後狀態檔仍寫 setup ok,畫面不重跑安裝)**:worker 每次要起(`_LocalWorker._spawn`,含開機補交密碼與自動重起)與確認登入(`probe_once`)之前,setup 是 ok 就把 11 個元件檔逐一對 `CAP_X64_SHA256`;缺檔或 hash 不符 → `setup` 改回 `idle`、這一步回 `SETUP_NEEDED`(start 與自動重起都記 `worker.failed`／`SETUP_NEEDED`;自動重起另把 `wanted` 設 False,不再每 10 秒起一次壞掉的 worker),電腦版開通框看到 setup idle 照現行邏輯自動重跑安裝。setup 不是 ok 時不另外擋。電腦版隨下一版(0.1.62)帶。測試 `tests/check_capital_local.py` §10。
 
 ## 1.1.173 — 2026-11-25(群益元件改逐檔釘版;電腦版下一版帶)
