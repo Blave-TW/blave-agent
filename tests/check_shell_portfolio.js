@@ -465,7 +465,7 @@ ok("必改 3:存金額框的策略列用 trCloseTag / trCtCloseTag(「平倉」�
     ok("trAppRestartQuiet:沒金額、帳本空、沒暫停 → true;有金額 / 帳本有部位 / 暫停中又有自己下單的策略 → false;暫停但 selfOrdering:false → true",
       q(R()) === true && q(R({ config: { amounts: { a: 1 } } })) === false && q(R({ last_reconcile: { ledger: { BTCUSDT: { side: "long", size: 5 } } } })) === false
       && q(R({ halt: { halted: true } })) === false && q(R({ halt: { halted: true }, selfOrdering: false })) === true && q(R({ daemon: { reconciler: { running: true } } })) === false);
-    ok("狀態行:halted 而且 trAppRestartQuiet → tr.notStarted(不講重開)", /s = !ask && !done && trAppRestartQuiet\(r\) \? t\("tr\.notStarted"\)/.test(src)); }
+    ok("狀態行:halted 而且 trAppRestartQuiet → tr.notStarted(不講重開)", /if \(!ask && !done && trAppRestartQuiet\(r\)\) p = P\(t\("tr\.s\.off"\), t\("tr\.notStarted"\)\);/.test(src)); }
   // 第 8 列:補齊會送出的單(取自部位表的差額)
   { ctx.TR = bag({ binance: V }); ctx.TR.st.report.account.read_at = Math.floor(Date.now() / 1000);
     const w = vm.runInContext("TR = this.TR; trCatchWill(TR.st.report)", ctx);
@@ -847,8 +847,8 @@ ok("1264 寬開著聊天欄(Windows 捲軸佔 17px):中欄 ≤ 600 時表頭可�
   ok("載入中的字:第一次安裝引擎 → tr.loadingEngine;更新引擎 → tr.loadingEngineUpd;裝完 / 沒有快照 / 雲端 → tr.loading",
     L("local", { phase: "run", kind: "first" }) === "tr.loadingEngine" && L("local", { phase: "run", kind: "update" }) === "tr.loadingEngineUpd"
     && L("local", { phase: "done", kind: "first" }) === "tr.loading" && L("local", null) === "tr.loading" && L("cloud", { phase: "run", kind: "first" }) === "tr.loading");
-  ok("只留一個:自動下單頁頁首那一行講(trStateText),內容區不再畫第二個「載入中…」;策略組合頁沒有頁首狀態行,寫在內容區那一處",
-    /if \(state === "loading"\) return TR\.env === "cloud" \? t\("tr\.cloud\.hdFetching"\) : trLoadingText\(\);/.test(src) && /if \(state === "loading"\) return;/.test(cutF(src, "trPaintOnboard"))
+  ok("只留一個:自動下單頁頁首那一行講(trStateParts),內容區不再畫第二個「載入中…」;策略組合頁沒有頁首狀態行,寫在內容區那一處",
+    /if \(state === "loading"\) return P\(null, null, TR\.env === "cloud" \? t\("tr\.cloud\.hdFetching"\) : trLoadingText\(\)\);/.test(src) && /if \(state === "loading"\) return;/.test(cutF(src, "trPaintOnboard"))
     && !/t\("tr\.loading"\)/.test(cutF(src, "trPaintOnboard")) && /trEl\("div", "pf-state", trLoadingText\(\)\)/.test(cutF(src, "poPaintCfg"))); }
 // 程式稽核 audit-desktop-portfolio-2026-10-14
 ok("P1-1 trRoundLots 補 1e-9(同機器 lib/portfolio、網頁 pfRoundLots):0.01 + 3×0.83 = 2.4999… → 3;負的同樣往外", C.trRoundLots(0.01 + 3 * 0.83) === 3 && C.trRoundLots(-(0.01 + 3 * 0.83)) === -3 && C.trRoundLots(2.4) === 2 && C.trLotsTarget(0.01 + 3 * 0.83).lots === 3);

@@ -2,7 +2,7 @@
 //   ① trZCase:每一種報告 × 候選清單 × 有沒有沒存的勾選 → 缺哪一步(pick / noStrat / noVenue / amt / draft / 不歸這份管)
 //   ② trZGuide:每一種組合(情況 × 純 Z × 還沒啟動 × 等回報 × 等待中 × 分頁)→ 頁首鈕、實心、狀態行、原因行、部位霧、aria-describedby;
 //      列舉全部組合驗不變式(同一個動作只有一顆鈕、同一句不講兩次、等待中不出霧)
-//   ③ 文案逐字照 spec §6;trHeadText 只換那兩處;部位霧卡的字、鈕、id;接線
+//   ③ 文案逐字照 spec §6;trHeadParts 只換那兩處;部位霧卡的字、鈕、id;接線
 // 跑法:node tests/check_shell_autotrade_empty.js
 const fs = require("fs"), path = require("path"), vm = require("vm");
 const R = path.join(__dirname, "..", "shell", "renderer");
@@ -140,36 +140,47 @@ ok("tr.startOffNoAmtShort 兩語都刪了(沒人用)", !("tr.startOffNoAmtShort"
 ok("每個情況的原因句、按鈕字都在表裡(兩語)", Object.values(LINE).concat(Object.values(BTN), ["po.goCfg"]).every((k) => S.zh[k] && S.en[k]));
 ok("新增的句子不提哪個市場不能自動下單(Wei 10-16 更正:不擋股票)", Object.keys(COPY).every((k) => !/股票|台股|stock/i.test(S.zh[k] + " " + S.en[k])));
 
-// trHeadText:只換「還沒有策略設定金額」與 dead 分支自己那句,其餘原樣
+// trHeadParts:只換「還沒有策略設定金額」與 dead 分支自己那句,其餘原樣(整句 = trStateJoin;頂列有詞時標題下只畫 fail + tail)
 { const ctx = vm.createContext({ console, LANG: "zh" });
   vm.runInContext(pure.replace(/^const /gm, "var "), ctx);
-  vm.runInContext(["trHeadText", "trRunZText", "trZVars"].map((n) => cutF(src, n)).join("\n"), ctx);
+  vm.runInContext(["trHeadParts", "trRunZText", "trZVars", "trLeadCut", "trStateJoin"].map((n) => cutF(src, n)).join("\n"), ctx);
   Object.assign(ctx, { t: (k, v) => (S.zh[k] || k).replace("{venue}", v && v.venue ? v.venue : "{venue}"), trVenueId: () => "president", trVenueLabel: () => "統一期貨", trZRows: () => ctx.ROWS, trZDraft: () => !!ctx.DRAFT });
-  const H = (state, stText, report, zg) => { ctx.ST = stText; ctx.REP = report; vm.runInContext("trStateText = () => ST; trReport = () => REP", ctx); ctx.ZG = zg; return vm.runInContext(`trHeadText(${J(state)}, ZG)`, ctx); };
   const z = S.zh, empty = { venues: V, config: { amounts: {} } };
+  // 狀態段:lead 是 trStateParts 給的開頭狀態詞;Z 在跑那一句用 trLeadCut 切(跟 production 同一支)
+  const Pt = (lead, tail, x) => ({ top: "w", lead: lead || null, tail: tail || "", fail: null, bad: false, ...x });
+  const ns = (tail) => Pt(z["tr.notStarted"], tail), zRun = (x) => { const [lead, tail] = vm.runInContext(`trLeadCut(${J(z["tr.runningZ"])})`, ctx); return Pt(lead, tail, { z: true, ...x }); };
+  const HP = (state, parts, report, zg) => { ctx.ST = parts; ctx.REP = report; vm.runInContext("trStateParts = () => ST; trReport = () => REP", ctx); ctx.ZG = zg; return vm.runInContext(`trHeadParts(${J(state)}, ZG)`, ctx); };
+  const H = (...a) => vm.runInContext("trStateJoin", ctx)(HP(...a));
   ctx.ROWS = [{ name: "a", locked: false }];
-  const pickDead = H("dead", z["tr.notStarted"], empty, G({ zc: "pick", pure: true, dead: true, tab: "over" }));
-  const pickDeadLast = H("dead", z["tr.notStarted"] + " · " + z["tr.lastRun"], empty, G({ zc: "pick", pure: true, dead: true, tab: "over" }));
-  const fogDead = H("dead", z["tr.notStarted"], empty, G({ zc: "pick", pure: true, dead: true, tab: "pos" }));
-  const venueDead = H("dead", z["tr.notStarted"], empty, G({ zc: "noVenue", pure: true, dead: true, tab: "over" }));
-  const funded = H("dead", z["tr.notStarted"], { venues: V, config: { amounts: { a: 1 } } }, G({ zc: null, pure: false, dead: true, tab: "over" }));
-  const died = H("dead", "停了 · x", empty, G({ zc: "pick", pure: true, dead: false, tab: "over" }));
-  const boot = H("dead", "booting", empty, G({ zc: "pick", pure: true, dead: true, tab: "over" }));
-  const halted = H("halted", z["tr.halted"] + " · x", empty, G({ zc: "pick", pure: true, dead: false, tab: "over" }));
-  ok("trHeadText:純 Z 還沒啟動 → 「還沒選策略。」取代「尚未啟動下單(· 上次執行)」;霧開著空著;{venue} 帶入;有金額、還沒啟動照舊「尚未啟動下單」",
+  const pickDead = H("dead", ns(), empty, G({ zc: "pick", pure: true, dead: true, tab: "over" }));
+  const pickDeadLast = H("dead", ns(z["tr.lastRun"]), empty, G({ zc: "pick", pure: true, dead: true, tab: "over" }));
+  const fogDead = H("dead", ns(), empty, G({ zc: "pick", pure: true, dead: true, tab: "pos" }));
+  const venueDead = H("dead", ns(), empty, G({ zc: "noVenue", pure: true, dead: true, tab: "over" }));
+  const funded = H("dead", ns(), { venues: V, config: { amounts: { a: 1 } } }, G({ zc: null, pure: false, dead: true, tab: "over" }));
+  const died = H("dead", Pt(null, "停了 · x"), empty, G({ zc: "pick", pure: true, dead: false, tab: "over" }));
+  const boot = H("dead", Pt(null, "booting"), empty, G({ zc: "pick", pure: true, dead: true, tab: "over" }));
+  const halted = H("halted", Pt(z["tr.halted"], "x"), empty, G({ zc: "pick", pure: true, dead: false, tab: "over" }));
+  ok("trHeadParts:純 Z 還沒啟動 → 「還沒選策略。」取代「尚未啟動下單(· 上次執行)」;霧開著空著;{venue} 帶入;有金額、還沒啟動照舊「尚未啟動下單」",
     pickDead === "還沒選策略。" && pickDeadLast === "還沒選策略。" && fogDead === "" && venueDead === "還沒有統一期貨能下的策略。" && funded === z["tr.notStarted"], J([pickDead, pickDeadLast, fogDead, venueDead, funded]));
-  ok("trHeadText:異常停止、統一開機中(不是「尚未啟動下單」那句)、已暫停照舊", died === "停了 · x" && boot === "booting" && halted === z["tr.halted"] + " · x", J([died, boot, halted]));
+  ok("trHeadParts:異常停止、統一開機中(不是「尚未啟動下單」那句)、已暫停照舊", died === "停了 · x" && boot === "booting" && halted === z["tr.halted"] + " · x", J([died, boot, halted]));
   const runs = [["pick", [{ locked: false }], { amounts: {} }, "下單程式在跑 · 還沒選策略"], ["noStrat", [], { amounts: {} }, "下單程式在跑 · 還沒有回測完成的策略"],
     ["noVenue", [{ locked: true }], { amounts: {} }, "下單程式在跑 · 還沒有統一期貨能下的策略"], ["amt", [{ locked: false }], { amounts: { a: 0 } }, "下單程式在跑 · 策略金額都是 0"]];
-  const got = runs.map(([, rw, cfg]) => { ctx.ROWS = rw; return H("running", z["tr.runningZ"], { venues: V, config: cfg }, G({ zc: null })); });
+  const got = runs.map(([, rw, cfg]) => { ctx.ROWS = rw; return H("running", zRun(), { venues: V, config: cfg }, G({ zc: null })); });
   ctx.ROWS = [{ locked: false }]; ctx.DRAFT = true;
-  const draftRun = H("running", z["tr.runningZ"], empty, G({ zc: null })), draftAmt = H("running", z["tr.runningZ"], { venues: V, config: { amounts: { a: 0 } } }, G({ zc: null }));
+  const draftRun = H("running", zRun(), empty, G({ zc: null })), draftAmt = H("running", zRun(), { venues: V, config: { amounts: { a: 0 } } }, G({ zc: null }));
   ctx.DRAFT = false;
-  ok("trHeadText:下單程式在跑、已存一支都沒有、有沒存的勾選 → 「下單程式在跑 · 勾好的策略還沒儲存」;已存有成員照「策略金額都是 0」", draftRun === "下單程式在跑 · 勾好的策略還沒儲存" && draftAmt === "下單程式在跑 · 策略金額都是 0", J([draftRun, draftAmt]));
-  const pref = H("running", "串接失敗 · " + z["tr.runningZ"], empty, G({ zc: null }));
-  const venueAmt = H("running", z["tr.runningZ"], { venues: { president: V.binance }, config: { amounts: { a: 5 }, exchanges: { a: "president" } } }, G({ zc: null }));
-  ok("trHeadText:下單程式在跑、沒有金額 → 三分(還沒選策略／還沒有回測完成的或這家能下的策略／策略金額都是 0);前綴照接;有金額但這家下不了照舊那一句",
-    J(got) === J(runs.map((x) => x[3])) && pref === "串接失敗 · 下單程式在跑 · 還沒選策略" && venueAmt === z["tr.runningZ"], J([got, pref, venueAmt])); }
+  ok("trHeadParts:下單程式在跑、已存一支都沒有、有沒存的勾選 → 「下單程式在跑 · 勾好的策略還沒儲存」;已存有成員照「策略金額都是 0」", draftRun === "下單程式在跑 · 勾好的策略還沒儲存" && draftAmt === "下單程式在跑 · 策略金額都是 0", J([draftRun, draftAmt]));
+  const pref = H("running", zRun({ fail: "串接失敗", bad: true }), empty, G({ zc: null }));
+  const venueAmt = H("running", zRun(), { venues: { president: V.binance }, config: { amounts: { a: 5 }, exchanges: { a: "president" } } }, G({ zc: null }));
+  ok("trHeadParts:下單程式在跑、沒有金額 → 三分(還沒選策略／還沒有回測完成的或這家能下的策略／策略金額都是 0);前綴照接;有金額但這家下不了照舊那一句",
+    J(got) === J(runs.map((x) => x[3])) && pref === "串接失敗 · 下單程式在跑 · 還沒選策略" && venueAmt === z["tr.runningZ"], J([got, pref, venueAmt]));
+  // spec-paused §2.3:頂列有詞時標題下只畫 tail——Z 在跑只剩缺哪一步;純 Z 還沒啟動那句整句在 tail(lead 去掉)
+  ctx.ROWS = [{ locked: false }];
+  const zp = HP("running", zRun(), empty, G({ zc: null })), dp = HP("dead", ns(z["tr.lastRun"]), empty, G({ zc: "pick", pure: true, dead: true, tab: "over" }));
+  ok("trHeadParts:Z 在跑 lead = 「下單程式在跑」、tail = 缺哪一步;純 Z 還沒啟動 lead 拿掉、tail = 導引句", zp.lead === "下單程式在跑" && zp.tail === "還沒選策略" && dp.lead === null && dp.tail === "還沒選策略。", J([zp, dp]));
+  ok("tr.runningZ* 兩語都是「狀態詞 · 其餘」:trLeadCut 切得出非空的兩段(否則標題下會重講頂列的詞)",
+    ["zh", "en"].every((l) => Object.keys(S[l]).filter((k) => /^tr\.runningZ/.test(k)).every((k) => { const [a, b] = vm.runInContext(`trLeadCut(${J(S[l][k])})`, ctx); return a && b && S[l][k].split(" · ").length === 2; }))
+    && Object.keys(S.zh).filter((k) => /^tr\.runningZ/.test(k)).length === 6); }
 
 // 部位霧:卡上一句一顆鈕,示意底是部位的四欄表(寫死、不上紅綠)
 { const El = class { constructor(tag, cls, text) { this.tag = tag; this.className = cls || ""; this.textContent = text || ""; this.kids = []; this.dataset = {}; this.on = {}; this.id = ""; }
@@ -217,7 +228,7 @@ ok("新增的句子不提哪個市場不能自動下單(Wei 10-16 更正:不擋�
 
 // 接線
 const head = cutF(src, "trPaintHead"), pos = cutF(src, "trPaintPos"), over = cutF(src, "trPaintOver"), go = cutF(src, "trZGo"), now = cutF(src, "trZNow");
-ok("頁首:狀態行走 trHeadText(trZNow);原因行、導引鈕、停用鈕的說明都出自同一份 trZNow", /text = trHeadText\(state, trZNow\(state\)\)/.test(head) && /const zg = trZNow\(state, zv, pend\);/.test(head)
+ok("頁首:狀態行走 trHeadParts(trZNow);原因行、導引鈕、停用鈕的說明都出自同一份 trZNow", /hp = trHeadParts\(state, trZNow\(state\)\), text = trStateJoin\(hp\)/.test(head) && /const zg = trZNow\(state, zv, pend\);/.test(head)
   && /trPaintGoCfg\(zg\.btn, zg\.fill, zg\.zc\);/.test(head) && /b\.setAttribute\("aria-describedby", zg\.desc\)/.test(head));
 ok("等待中的判準:報告沒到、清單沒載入、第一次讀帳沒回來、選擇策略框開不了(存檔中／讀不到設定／雲端讀不到新狀態)、等回報", /const wait = !trReport\(\) \|\| !TR\.listLoaded \|\| trFirstReadPending\(r\) \|\| trPickOff\(\) \|\| !!pend;/.test(now)
   && /return TR\.save === "saving" \|\| \(cloud && TR\.save === "sent"\) \|\| !TR\.listLoaded \|\| trStored\(\) === null \|\| trCfgUnread\(trReport\(\)\)/.test(cutF(src, "trPickOff")));

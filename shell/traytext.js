@@ -29,7 +29,7 @@ function venueLabel(id) {
 /* 雲端宿主的 status() → 選單列那一行要的東西,或 null(沒有可講的:沒登入、沒主機、沒連交易所、讀不到)。
    回 { money: "paper" | "real", state: "on" | "paused" | "mayTrade" | "notStarted" | "unknown" }。
    unknown = 主機在運行、有連好的帳戶,但現在讀不到新狀態(連不上 / 回報過舊):不講「執行中」也不講「已暫停」。
-   notStarted = 讀得到、對帳器沒在跑:雲端頁同一份資料寫「尚未啟動下單」(trade.js trStateText 的 dead 且不是 died——雲端沒有監督者欄位),這裡同一句。 */
+   notStarted = 讀得到、對帳器沒在跑:雲端頁同一份資料寫「尚未啟動下單」(trade.js trStateParts 的 dead 且不是 died——雲端沒有監督者欄位),這裡同一句。 */
 function cloudLine(st) {
   const c = st && st.cloud, r = st && st.report;
   if (!c || c.code !== "OK" || !c.machine || c.machine.state !== "running" || !r || typeof r !== "object" || !r.venues || typeof r.venues !== "object") return null;

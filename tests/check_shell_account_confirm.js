@@ -59,13 +59,15 @@ app.whenReady().then(async () => {
   const setReport = (r) => run(`window.__st = { alive: true, report: ${J(r)} }; window.__over.tradeStatus = async () => window.__st`);
   const poll = async () => { await js(`trPoll().then(() => 0)`); await wait(150); };
   const head = () => js(`({ go: $("tr-go") ? $("tr-go").textContent : null, aria: $("tr-go") ? $("tr-go").getAttribute("aria-disabled") : null, dis: $("tr-go") ? $("tr-go").disabled : null,
-    rel: !!$("tr-go-rel"), desc: $("tr-desc").textContent, alert: ($("tr-alert") && !$("tr-alert").hidden) ? $("tr-alert").textContent : "" })`);
+    rel: !!$("tr-go-rel"), desc: $("tr-desc").textContent, title: $("tr-desc").title, top: $("tr-tb-txt").textContent, alert: ($("tr-alert") && !$("tr-alert").hidden) ? $("tr-alert").textContent : "" })`);
   const T = (k, v) => js(`t(${J(k)}${v ? ", " + J(v) : ""})`);
 
   await setReport(report({}));
   await run(`envSwitch("local"); trOpen()`); await poll();
   let h = await head();
-  ok("② 狀態行:已自動暫停 · 換了 OKX 的金鑰後…(不出英文 reason)", h.desc.startsWith((await T("env.st.autoPaused")) + " · " + (await T("tr.acct.reason", { v: "OKX" }))) && !/unreadable/.test(h.desc));
+  // spec-paused 0.1.61:狀態詞在頂列(自動下單頁也出),標題下只講原因;title 照整句
+  ok("② 頂列「已自動暫停」;標題下從「換了 OKX 的金鑰後…」開始;title 是整句(不出英文 reason)", h.top === (await T("env.st.autoPaused")) && h.desc.startsWith(await T("tr.acct.reason", { v: "OKX" }))
+    && h.title.startsWith((await T("env.st.autoPaused")) + " · " + (await T("tr.acct.reason", { v: "OKX" }))) && !/unreadable/.test(h.title));
   ok("② 主鈕是「確認帳戶」、按得到;沒有「解除暫停」", h.go === (await T("tr.acct.btn")) && h.aria === "false" && !h.dis && !h.rel);
   await js(`$("tr-go").click()`); await wait(200);
   const box = await js(`({ open: !$("del-scrim").hidden, title: $("del-title").textContent, ok: $("del-ok").textContent, alt: $("del-alt").hidden ? null : $("del-alt").textContent,
@@ -81,7 +83,7 @@ app.whenReady().then(async () => {
   ok("② 報告還帶著 book_hold:主鈕「確認中…」、停用(aria)、狀態行不講執行中", h.go === (await T("tr.acct.confirming")) && h.aria === "true" && !h.desc.includes(await T("tr.autoOn")));
   await setReport(report({ account_guard: { venue: "okx", book_hold: null }, halt: { halted: true, source: "reconciler", holds_all: false } })); await poll();
   h = await head();
-  ok("② book_hold 不見了才收斂:主鈕回「啟動下單」,HALT 照舊", h.go === (await T("tr.start")) && h.aria === "false" && h.desc.startsWith(await T("tr.halted")));
+  ok("② book_hold 不見了才收斂:主鈕回「啟動下單」,HALT 照舊", h.go === (await T("tr.start")) && h.aria === "false" && h.top === (await T("tr.halted")) && h.title.startsWith(await T("tr.halted")) && !h.desc.startsWith(await T("tr.halted")));
   ok("② 答完那一句(不同帳戶 = 從零開始,會在這個帳戶重新開部位)", h.desc.includes(await T("tr.acct.doneDiff", { v: "OKX" })));
 
   // ③ 還沒確認時的啟動:機器回 held
@@ -92,7 +94,7 @@ app.whenReady().then(async () => {
   h = await head();
   const cmds = await js(`window.__calls.filter((c) => c[0] === "tradeSend").map((c) => c[1][0])`);
   ok("③ 啟動被 held:送了 resume、沒有補 restart_reconciler", J(cmds) === J(["resume"]));
-  ok("③ …當場收掉「啟動中…」(不等逾時)、停在已暫停、不講執行中,也不出「沒送到」那種錯", !(await js(`!!TR.pending`)) && h.desc.startsWith(await T("tr.halted"))
+  ok("③ …當場收掉「啟動中…」(不等逾時)、停在已暫停、不講執行中,也不出「沒送到」那種錯", !(await js(`!!TR.pending`)) && h.top === (await T("tr.halted")) && h.title.startsWith(await T("tr.halted"))
     && !h.desc.includes(await T("tr.autoOn")) && !h.desc.includes(await T("tr.starting")) && h.alert === "");
   ok("③ …讀屏唸那一題(tr.acct.reason,live region #sr-live),不另造新句子", (await js(`$("sr-live").textContent`)) === (await T("tr.acct.reason", { v: "OKX" })));
   // 機器拒絕回答(ok:false,"ValueError: …"):過場收掉、講機器的原因(去掉 ValueError: 前綴)
