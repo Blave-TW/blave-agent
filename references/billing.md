@@ -100,6 +100,8 @@ Three generations of pricing exist. Each account is on exactly one at a time:
 - **Only keys Blave Agent issues are covered** — the cloud server's key and the desktop app's
   sign-in key. A key the user created themselves (API page; their own scripts, an external agent)
   needs an **API plan** (`403 ERR007` points to it). The Agent plan does not include an API plan.
+  The desktop key is written into the workspace `.env` at sign-in when the account includes
+  data — never ask the user to copy it.
 - **Already paying for Pro?** The Agent plan includes Pro; a separate Pro subscription keeps
   renewing until the user cancels it where they bought it (website, App Store, Google Play).
 
@@ -210,8 +212,9 @@ Japanese, Vietnamese, Spanish and Portuguese site faces display USD at 30 TWD/US
 ## Meter 2 — data fee (`usage_blave`) — machine owners never pay it
 
 For an account with no cloud machine and no API plan, whichever key makes the call — the user's
-own API key or the data key the desktop app received at sign-in. The desktop key has one more
-free case: while the card trial runs, or while a machine is still being set up. Rule in
+own API key or the data key the desktop app received at sign-in (written into the workspace `.env`
+automatically when the account can get data — included, or the hour's data fee is covered; never
+ask the user to copy it). The desktop key has one more free case: while the card trial runs, or while a machine is still being set up. Rule in
 `deduct_blave_api_credit` (rate: `PRICING["blave_api_per_hour"]`):
 
 - Exempt outright: API-plan subscribers; any account with a Blave Agent machine (running or stopped).
