@@ -4985,7 +4985,7 @@ msgid "up.done.failedPartial"
 msgstr "雲端主機沒更新完成。再按一次「更新雲端主機」就會接著做。"
 
 msgid "up.err.noGit"
-msgstr "雲端主機少了更新要用的元件，請聯絡我們。"
+msgstr "雲端主機少了更新要用的元件，請聯繫我們。"
 
 msgid "up.dot"
 msgstr "雲端主機有新版"

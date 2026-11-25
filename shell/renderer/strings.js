@@ -5585,7 +5585,7 @@ const STRINGS = {
     "up.done.restartDeferred": "雲端主機的新檔已就位，自動下單仍在跑舊版。這筆單完成後，再按一次「更新雲端主機」就會重啟。",
     "up.done.failedNone": "雲端主機沒有更新，什麼都沒動。再按一次「更新雲端主機」。",
     "up.done.failedPartial": "雲端主機沒更新完成。再按一次「更新雲端主機」就會接著做。",
-    "up.err.noGit": "雲端主機少了更新要用的元件，請聯絡我們。",
+    "up.err.noGit": "雲端主機少了更新要用的元件，請聯繫我們。",
     "up.dot": "雲端主機有新版",
     "up.done.view": "查看",
     "up.done.viewMsg": "列出雲端主機上 {dir} 裡的檔案",
