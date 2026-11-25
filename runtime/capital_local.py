@@ -16,8 +16,8 @@ certificate in it).
 
   setup    the 群益 component, per-user: VC++ 2010 (Microsoft's redist, one UAC
            prompt, only when mfc100/msvcr100 are missing), comtypes into this
-           venv (pinned), SKCOM from the pinned zip (SHA256) under %LOCALAPPDATA%\\Blave\\capital (ACL:
-           this user only; every file compared with the zip each setup) — the path lib/capital_vault
+           venv (pinned), SKCOM's 11 pinned files (CAP_X64_SHA256) from 群益's zip under %LOCALAPPDATA%\\Blave\\capital (ACL:
+           this user only; every file compared with its pin each setup) — the path lib/capital_vault
            .skcom_dll hands the worker and the order lib on the desktop — registered with
            `regsvr32 /s /n /i:user` (HKCU, no UAC), then CreateObject checked.
            Same steps the M0 kit ran on desktop-win-test-4 (2026-10-19).
@@ -43,6 +43,7 @@ import base64
 import ntpath
 import hashlib
 import hmac
+import http.client
 import json
 import os
 import re
@@ -53,6 +54,7 @@ import sys
 import tempfile
 import threading
 import time
+import urllib.error
 import urllib.request
 import zipfile
 
@@ -109,8 +111,23 @@ def _sys32(*parts):
 def _powershell():
     return _sys32("WindowsPowerShell", "v1.0", "powershell.exe")   # the M0 kit's, run against this SKCOM on desktop-win-test-4 (2026-10-19)
 CAP_ZIP_URL = "https://www.capital.com.tw/Service2/download/api_zip/CapitalAPI_2.13.59.zip"
-CAP_ZIP_SHA256 = "e2b5894c148a847f051535c3700f00c2adc88beef4c471701b80d7b68b3470a9"
+# Pinned per installed file, not per zip: 群益 re-packs the same-named zip (2026-10-27: new docx, SKCOM_x64.exe and
+# vcredist_x64.exe added under x64/) with these 11 byte-identical. Only these are installed; any other x64 file is ignored.
+CAP_X64_SHA256 = {
+    "CTSecuritiesATL.dll": "ecf1732cfc983e2925fc5ea64bebbf26b95cd5f47071b2f31741080676831822",
+    "install.bat": "fa02b0814a73d2322db779201c8e2182911b4ea755d8b1e6406a554400162d76",
+    "Interop.SKCOMLib.dll": "0c8be73a79ef1ca800909d6d99ef15a3bd9df12263214f7589658dc2129cc12a",
+    "libsolclient_64.dll": "0ec6989d67f007acff9ae57cf427797a6ed1ee70f0fb4414a4bbb404403c59e0",
+    "SecuCompx64.dll": "69805169bf247fbebfc7e4cbdc581e29f967cc1ca61cbd6b995a4c614e8e96b1",
+    "SKCOM.dll": "4a4a244e2cbe831bbea7bd83db40180544eebb9f6080ecfc43e3a3043f814818",
+    "SKCOMTester.exe": "d97d4fdaf228c298ae708d575529e0b8ae49e039a6f253d95ffafdbafaae5dd6",
+    "SKProxyLIB.dll": "18f80890a64baa46dcaa655b06d25ce34de8b7a80033367708fcae0d48bdf9eb",
+    "SKTradeLib.dll": "b62e3018edc0b170b4ce7ca32c28a7abeeaadb767abd47d177cd787848136c09",
+    "SKWebCALib.dll": "8f28e9bcd633fe9d52e0c5006f8a9d8d73f66653c7994bd9d8ba97b81eab2d28",
+    "Uninstall.bat": "b008c832af5792f48c819b9b5b8f396060f95ca97c54447fa43568b15cb4e6d6",
+}
 CAP_ZIP_MAX = 200 * 1024 * 1024
+CAP_FILE_MAX = 32 * 1024 * 1024   # per pinned file; the largest (SKCOM.dll) is ~10 MB
 VC_URL = "https://download.microsoft.com/download/1/6/5/165255E7-1014-4D0A-B094-B6A430A6BFFC/vcredist_x64.exe"
 VC_MAX = 64 * 1024 * 1024
 
@@ -570,9 +587,8 @@ def _retry_purge(now):
 
 # ── setup ────────────────────────────────────────────────────────────────────
 
-def _download(url, dest, max_bytes, sha256=None):
+def _download(url, dest, max_bytes):
     req = urllib.request.Request(url, headers={"User-Agent": "Blave"})
-    h = hashlib.sha256()
     n = 0
     with urllib.request.urlopen(req, timeout=120) as r, open(dest, "wb") as f:
         if not r.geturl().startswith("https://"):
@@ -584,10 +600,7 @@ def _download(url, dest, max_bytes, sha256=None):
             n += len(chunk)
             if n > max_bytes:
                 raise RuntimeError("too large")
-            h.update(chunk)
             f.write(chunk)
-    if sha256 and h.hexdigest() != sha256:
-        raise RuntimeError("sha256 mismatch")
 
 
 def _vc_present():
@@ -684,7 +697,7 @@ def _x64_members(zf):
     dirs = {i.filename.rsplit("/", 1)[0] for i in files if i.filename.endswith("/SKCOM.dll")
             and i.filename.rsplit("/", 1)[0].rsplit("/", 1)[-1] == "x64"}
     if len(dirs) != 1:
-        raise RuntimeError("SKCOM.dll not under exactly one x64 folder in the zip")
+        raise _StepFailed("changed")   # SKCOM.dll not under exactly one x64 folder
     d = dirs.pop()
     out = [i for i in files if i.filename.rsplit("/", 1)[0] == d]
     for i in out:
@@ -717,10 +730,31 @@ def _sha(data):
     return hashlib.sha256(data).hexdigest()
 
 
+def _pinned_members(path):
+    """{name: bytes} for every CAP_X64_SHA256 file in the zip at `path`, each hash checked. A missing, doubled
+    or different file is _StepFailed("changed"): 群益 shipped a component Blave has not pinned yet."""
+    out = {}
+    with zipfile.ZipFile(path) as zf:
+        for m in _x64_members(zf):
+            name = m.filename.rsplit("/", 1)[1]
+            if name not in CAP_X64_SHA256:
+                continue
+            if name in out or m.file_size > CAP_FILE_MAX:
+                raise _StepFailed("changed")
+            data = zf.read(m)
+            if _sha(data) != CAP_X64_SHA256[name]:
+                raise _StepFailed("changed")
+            out[name] = data
+    if set(out) != set(CAP_X64_SHA256):
+        raise _StepFailed("changed")
+    return out
+
+
 def _ensure_skcom(tmp):
-    """Every setup: the pinned zip (SHA256) is the source of truth — each installed file is compared
-    with its copy in the zip and rewritten when it differs or is missing (a swapped DLL is replaced,
-    never reused), then the per-user COM registration is pointed at it again."""
+    """Every setup: the pinned files (CAP_X64_SHA256) are the source of truth — each installed file is compared
+    with its pinned copy from the zip and rewritten when it differs or is missing (a swapped DLL is replaced,
+    never reused), then the per-user COM registration is pointed at it again. The installed bytes are the ones
+    hashed, never re-read from disk."""
     base = local_dir()
     if not base:
         raise RuntimeError("LOCALAPPDATA missing")
@@ -729,27 +763,35 @@ def _ensure_skcom(tmp):
     os.makedirs(cache, exist_ok=True)
     z = os.path.join(cache, "CapitalAPI_2.13.59.zip")
     try:
-        with open(z, "rb") as f:
-            ok = _sha(f.read()) == CAP_ZIP_SHA256
-    except OSError:
-        ok = False
-    if not ok:
+        files = _pinned_members(z)
+    except Exception:   # any broken cache (zlib.error, NotImplementedError, …) → fetch again; that copy is fully checked
+        files = None
+    if files is None:
         part = os.path.join(tmp, "capitalapi.zip")
-        _download(CAP_ZIP_URL, part, CAP_ZIP_MAX, CAP_ZIP_SHA256)
-        shutil.copyfile(part, z)
+        try:
+            _download(CAP_ZIP_URL, part, CAP_ZIP_MAX)
+        except urllib.error.HTTPError as e:
+            # the pinned version's zip is gone from the official URL: 群益 moved to a new version
+            raise _StepFailed("changed" if e.code in (404, 410) else "net") from None
+        except (OSError, http.client.HTTPException):
+            raise _StepFailed("net") from None
+        try:
+            files = _pinned_members(part)
+        except zipfile.BadZipFile:   # an HTML page or a cut-off body, not a zip
+            raise _StepFailed("net") from None
+        with atomic_file.replacing(z, "wb") as f:
+            f.write(atomic_file.read_bytes(part))
     os.makedirs(skdir, exist_ok=True)
-    with zipfile.ZipFile(z) as zf:
-        for m in _x64_members(zf):
-            data = zf.read(m)
-            dst = os.path.join(skdir, m.filename.rsplit("/", 1)[1])
-            try:
-                with open(dst, "rb") as f:
-                    same = _sha(f.read()) == _sha(data)
-            except OSError:
-                same = False
-            if not same:
-                with atomic_file.replacing(dst, "wb") as f:   # a loaded DLL cannot be replaced: setup fails, Blave restarts
-                    f.write(data)
+    for name, data in files.items():
+        dst = os.path.join(skdir, name)
+        try:
+            with open(dst, "rb") as f:
+                same = _sha(f.read()) == _sha(data)
+        except OSError:
+            same = False
+        if not same:
+            with atomic_file.replacing(dst, "wb") as f:   # a loaded DLL cannot be replaced: setup fails, Blave restarts
+                f.write(data)
     r = subprocess.run([_sys32("regsvr32.exe"), "/s", "/n", "/i:user", os.path.join(skdir, "SKCOM.dll")],
                        capture_output=True, timeout=120, **_cl()._child_kw())
     if r.returncode != 0:

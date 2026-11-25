@@ -6964,6 +6964,12 @@ msgstr "要重新開機才能裝完，開機後再試一次。"
 msgid "capl.setupFailCode"
 msgstr "群益元件沒裝好（代碼 {code}）。"
 
+msgid "capl.setupChanged"
+msgstr "群益更新了元件，要等 Blave 更新後才能安裝。"
+
+msgid "capl.setupNet"
+msgstr "連不上群益的下載網站。檢查網路後再試一次。"
+
 msgid "cap.tryAgain"
 msgstr "再試一次"
 

@@ -6941,6 +6941,12 @@ msgstr "Restart the computer to finish installing, then try again."
 msgid "capl.setupFailCode"
 msgstr "The Capital components didn’t install (code {code})."
 
+msgid "capl.setupChanged"
+msgstr "Capital updated its components. Install will work after Blave updates."
+
+msgid "capl.setupNet"
+msgstr "Couldn’t reach Capital’s download site. Check your connection and try again."
+
 msgid "cap.tryAgain"
 msgstr "Try Again"
 

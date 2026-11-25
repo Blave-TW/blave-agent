@@ -121,7 +121,7 @@ ok("精靈開著 / 找憑證中 / Mac:只有取消;私鑰用不了:只有關閉(
   ok("刪舊證要先過確認框;確認框不帶指紋或身分證(只有張數與留下那張的到期)", /confirmBox\(\{ title: t\("capl\.oldTitle"\)/.test(src) && /t\("capl\.oldBody", \{ n \}\)/.test(src) && /window\.blave\.caplOld\(true\)/.test(src.slice(src.indexOf("function caplOldConfirm("))));
 }
 
-// 安裝群益元件失敗那一句:setup.error 的 vcredist 原因(runtime capital_local._ensure_vc)→ 哪一句;讀不懂的照舊原本那句
+// 安裝群益元件失敗那一句:setup.error 的 vcredist / skcom 原因(runtime capital_local._ensure_vc / _ensure_skcom)→ 哪一句;讀不懂的照舊原本那句
 { const strings = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8"), sctx = {}; vm.createContext(sctx);
   vm.runInContext(strings.replace(/^\s*const STRINGS\s*=/m, "this.STRINGS =") + "\n" + fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "i18n.js"), "utf8").replace(/^let LANG\b/m, "var LANG") + "\nthis.t = t; this.setL = (l) => { LANG = l; };", sctx);
   const say = (err, lang) => { sctx.setL(lang); return sctx.t(...ctx.caplSetupFailMsg(err)); };
@@ -132,13 +132,17 @@ ok("精靈開著 / 找憑證中 / Mac:只有取消;私鑰用不了:只有關閉(
     ["SETUP_FAILED:vcredist:1603", "群益元件沒裝好（代碼 1603）。", "The Capital components didn’t install (code 1603)."],
     ["SETUP_FAILED:vcredist:1618,cryptography", "Windows 正在安裝其他程式或更新，等幾分鐘再試。", null],
     ["SETUP_FAILED:vcredist:sig", "群益元件沒裝好。", "The Capital components didn’t install."],
+    ["SETUP_FAILED:skcom:changed", "群益更新了元件，要等 Blave 更新後才能安裝。", "Capital updated its components. Install will work after Blave updates."],
+    ["SETUP_FAILED:skcom:net", "連不上群益的下載網站。檢查網路後再試一次。", "Couldn’t reach Capital’s download site. Check your connection and try again."],
+    ["SETUP_FAILED:skcom:changed,cryptography", "群益更新了元件，要等 Blave 更新後才能安裝。", null],
+    ["SETUP_FAILED:skcom:constructor", "群益元件沒裝好。", null], ["SETUP_FAILED:skcom:x", "群益元件沒裝好。", null], ["skcom:changed", "群益元件沒裝好。", null],
     ["SETUP_FAILED:vcredist", "群益元件沒裝好。", null], ["SETUP_FAILED:skcom", "群益元件沒裝好。", null], ["SETUP_FAILED:python64,cryptography", "群益元件沒裝好。", null],
     ["SETUP_FAILED:vcredist:<b>", "群益元件沒裝好。", null], ["vcredist:1618", "群益元件沒裝好。", null], [undefined, "群益元件沒裝好。", null], [null, "群益元件沒裝好。", null],
   ];
   for (const [err, zh, en] of SAY) ok(`setup 失敗那一句 ← ${JSON.stringify(err)}`, say(err, "zh") === zh && (en === null || say(err, "en") === en), [say(err, "zh"), say(err, "en")]);
   // 字數照 canon 文案密度 › 長度怎麼算:漢字一個一字、英數詞整個一字、標點不算
   const zhLen = (x) => (x.match(/[\u4e00-\u9fff]|[A-Za-z0-9]+/g) || []).length;
-  ok("setup 失敗那一句:zh 每句 ≤25 字、全形標點", ["capl.setupBusy", "capl.setupDenied", "capl.setupReboot", "capl.setupFailCode"].every((k) => { sctx.setL("zh"); const x = sctx.t(k, { code: "1603" }); return zhLen(x) <= 25 && !/[,:;()]/.test(x); }));
+  ok("setup 失敗那一句:zh 每句 ≤25 字、全形標點", ["capl.setupBusy", "capl.setupDenied", "capl.setupReboot", "capl.setupFailCode", "capl.setupChanged", "capl.setupNet"].every((k) => { sctx.setL("zh"); const x = sctx.t(k, { code: "1603" }); return zhLen(x) <= 25 && !/[,:;()]/.test(x); }));
   ok("l-setup-fail 那一列照 setup.error 講(不是寫死 cap.s.setupFail)", /view === "l-setup-fail"\) add\(capRow\("bad", t\("cap\.s\.setup"\), "", capFrag\(capDo\(t\(\.\.\.caplSetupFailMsg\(setup\.error\)\)\)/.test(src)); }
 
 // trade.js:設定 › 帳戶 那一列(開通中 / 開通過又停掉 → 「繼續」回框;解除綁定走主行程)

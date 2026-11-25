@@ -126,10 +126,13 @@ function caplFlowView(cc, ui, now) {
   if (probe.status === "ok" && probe.state === "ok") return "l-start";
   return "l-probe-idle";
 }
-// setup.error(SETUP_FAILED:vcredist:<原因>,…,runtime capital_local._ensure_vc)→ 失敗那一句的 [key, vars];讀不懂 = 原本那句
+// setup.error(SETUP_FAILED:vcredist:<原因> / skcom:<原因>,…,runtime capital_local._ensure_vc / _ensure_skcom)→ 失敗那一句的 [key, vars];讀不懂 = 原本那句
 const CAPL_VC_WHY = { 1618: "capl.setupBusy", denied: "capl.setupDenied", reboot: "capl.setupReboot" };
+const CAPL_SKCOM_WHY = { changed: "capl.setupChanged", net: "capl.setupNet" };
 function caplSetupFailMsg(err) {
   const s = String(err || ""), items = s.indexOf("SETUP_FAILED:") === 0 ? s.slice(13).split(",") : [];
+  const sk = items.find((x) => x.indexOf("skcom:") === 0);
+  if (sk && Object.prototype.hasOwnProperty.call(CAPL_SKCOM_WHY, sk.slice(6))) return [CAPL_SKCOM_WHY[sk.slice(6)]];
   const vc = items.find((x) => x.indexOf("vcredist:") === 0), why = vc ? vc.slice(9) : "";
   if (CAPL_VC_WHY[why]) return [CAPL_VC_WHY[why]];
   if (/^-?\d{1,10}$/.test(why)) return ["capl.setupFailCode", { code: why }];

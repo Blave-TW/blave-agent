@@ -8,6 +8,13 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+## 1.1.173 — 2026-11-25(群益元件改逐檔釘版;電腦版下一版帶)
+
+- **`capital_local._ensure_skcom` 改成逐檔釘版(`CAP_X64_SHA256`,11 個元件檔 → 完整 sha256)**:群益 10-27 重包同名 `CapitalAPI_2.13.59.zip`(新包 sha256 c07ebe2e…;根目錄 docx 換了、x64 多了 `SKCOM_x64.exe`、`vcredist_x64.exe`),11 個元件檔與 10-21 釘的那份 byte 相同,但舊的整包 `CAP_ZIP_SHA256` 比對失敗,Windows 電腦版開通群益「安裝元件」一律失敗。現在 zip 的 x64 那一層必須有白名單每個檔、各出現一次、hash 相符,只裝這 11 個(多的檔不裝);缺檔、重複、不符都失敗。快取的 zip 同樣看白名單成員,舊包新包都沿用;快取有任何毛病(含壓縮資料損壞的 `zlib.error`)一律重新下載。裝進去的 bytes 就是驗過的那份,不再從快取重讀;快取改用 `atomic_file.replacing` 寫。下載仍走官方 https 網址、整包 200 MB、每個元件檔 32 MB 上限。
+- **失敗原因分得出來**:元件變了(hash 不符、缺檔、x64 結構變了、官方網址 404／410)→ `setup.error` `SETUP_FAILED:skcom:changed`;連不上、逾時、5xx、傳到一半斷、下載到的不是 zip(HTML 頁) → `skcom:net`;其他照舊 `skcom`。舊版電腦版讀不懂新原因,照舊講「群益元件沒裝好。」。測試 `tests/check_capital_local.py` §10。
+- **電腦版(下一版)**:`caplSetupFailMsg` 認 `skcom:changed` →「群益更新了元件，要等 Blave 更新後才能安裝。」、`skcom:net` →「連不上群益的下載網站。檢查網路後再試一次。」(新 key `capl.setupChanged`／`capl.setupNet`,zh＋en)。測試 `tests/check_shell_capital_local_view.js`。`capital_local.py` 只在電腦版跑、runtime 隨電腦版打包,用戶要等下一版電腦版才拿到。
+- **(workspace,隨根 VERSION 2026-11-25)** `references/capital-broker.md`:電腦版顯示「群益更新了元件」時 agent 講明要等 Blave 更新,不自己下載或註冊元件。
+
 ## 1.1.172 — 2026-11-24(永豐開通最後一步不再把「登入中」當失敗;canary)
 
 - **`sinopac_connect.run_finish` 等過 worker 的「登入中」／重試中快照(29026 11-24 實測)**:worker 一起來同一秒先寫 `{"ok": false, "waiting": "login"}`,舊的等待迴圈只看 `read_at` 就拿它定案,開通最後一步判 `WORKER_FAILED`,之後 worker 照樣登入成功、快照 ok。現在 `waiting`(`login`／`login_retry`)當作還沒回答、繼續等到 `FINISH_WAIT_S`;到期還在登入照舊 `WORKER_FAILED`(用戶按〔再試一次〕),`login_stopped` 與一般讀取失敗立刻失敗。Linux 雲端的 `sinopac_finish`、本機 `sinopac_local` 的 start、換金鑰接回(`_resume_job`)、daemon 重啟後的 `_refinish_job` 共用這個等待迴圈。測試 `tests/check_sinopac_local.py` 8e。

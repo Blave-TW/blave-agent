@@ -77,6 +77,11 @@ prefer the near-month aliases, or the V2.13.54+ `bstrCIDTandem`(`FITX`) + `bstrS
       prompt while it installs, where a standard account needs an administrator password). Orders go out
       only while Blave is open and this Windows account is signed in; a sleeping or shut-down PC sends
       nothing, stops included.
+    - The app installs only the 群益 component files Blave has pinned (each checked by SHA256). When the
+      app says 「群益更新了元件，要等 Blave 更新後才能安裝。」 / "Capital updated its components. Install will
+      work after Blave updates.", 群益 changed a pinned file or dropped that version's zip: retrying will not
+      help until a new desktop app version ships. Do not download, extract or register the component yourself,
+      and do not point them at 群益's installer.
     - **Mac**: 「Mac 不能連群益（群益的元件只有 Windows 版）。可以在 Windows 電腦上用電腦版，或在網頁開雲端主機時選 Windows（開好之後不能換）。」
       / "Capital can't be connected on a Mac (its component is Windows-only). Use the desktop app on a
       Windows PC, or choose Windows when you launch a cloud machine on the web (it can't be changed afterward)."

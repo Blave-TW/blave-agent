@@ -17,7 +17,9 @@ local_daemon / command_listener wiring) — no network, no broker, no Windows, n
      LOGIN_FAILED:<state>; capital_worker exits 3 only on the desktop
   8. unbind: worker stopped, secrets dropped, probe / worker sections back to idle
   9. dispatch: refused off the desktop and off Windows; capital_local is a local-only daemon command
- 10. setup: a zip member that climbs out of the extraction dir is refused
+ 10. setup: only the 11 pinned SKCOM files are installed, each hash-checked (old and re-packed zip both
+     accepted; a changed / missing / doubled file → skcom:changed, a download failure → skcom:net); a zip
+     member that climbs out of the extraction dir is refused
 
 Run: cd blave-agent && /usr/bin/python3 tests/check_capital_local.py  (needs `cryptography` and node)
      Use /usr/bin/python3: blave-agent/.venv has no `cryptography`, so there the whole file SKIPs and exits 0
@@ -452,53 +454,176 @@ capl.IS_WINDOWS = True
 check("9 command_listener 有 capital_local handler、本機群益綁定走 bind gate", "capital_local" in cl.HANDLERS
       and 'elif vid == "CAPITAL":\n                # same reason as 統一' in open(os.path.join(ROOT, "runtime", "command_listener.py"), encoding="utf-8").read())
 
-# 10. setup: SKCOM per-user, every file compared with the pinned zip
+# 10. setup: SKCOM per-user, only the pinned files, every one compared with its pin
 import hashlib  # noqa: E402
+X = "CapitalAPI_2.13.59/\u5143\u4ef6/x64/"
+REAL_PINS = dict(capl.CAP_X64_SHA256)
+check("10 白名單就是那 11 個元件檔、每個都是完整 sha256;群益新包多的 SKCOM_x64.exe / vcredist_x64.exe 不在裡面",
+      sorted(REAL_PINS) == sorted(["CTSecuritiesATL.dll", "install.bat", "Interop.SKCOMLib.dll", "libsolclient_64.dll", "SecuCompx64.dll", "SKCOM.dll",
+                                   "SKCOMTester.exe", "SKProxyLIB.dll", "SKTradeLib.dll", "SKWebCALib.dll", "Uninstall.bat"])
+      and all(re.fullmatch(r"[0-9a-f]{64}", h) for h in REAL_PINS.values()) and len(set(REAL_PINS.values())) == 11
+      and not hasattr(capl, "CAP_ZIP_SHA256"))
+# 測試用的假元件:白名單名字照真的,內容與 pin 換成這裡的
+PIN_DATA = {n: ("v1:" + n).encode() for n in REAL_PINS}
+capl.CAP_X64_SHA256 = {n: hashlib.sha256(d).hexdigest() for n, d in PIN_DATA.items()}
+OLD_PACK = {X + n: d for n, d in PIN_DATA.items()}
+OLD_PACK.update({"CapitalAPI_2.13.59/x86/SKCOM.dll": b"x86", "readme.txt": b"r"})
+# 10-27 群益重包同名 zip:元件不變,x64 多兩個 exe、根目錄 docx 換了
+NEW_PACK = dict(OLD_PACK, **{X + "SKCOM_x64.exe": b"new-exe", X + "vcredist_x64.exe": b"redist", "doc.docx": b"d2"})
 
 
 def mkzip(path, members):
     with zipfile.ZipFile(path, "w") as zf:
         for name, data in members.items():
             zf.writestr(name, data)
-    return hashlib.sha256(open(path, "rb").read()).hexdigest()
+    return path
 
 
-good_zip = os.path.join(BASE, "good.zip")
-X = "CapitalAPI_2.13.59/\u5143\u4ef6/x64/"
-good_sha = mkzip(good_zip, {X + "SKCOM.dll": b"skcom-v1", X + "SKProxyLIB.dll": b"proxy-v1", "CapitalAPI_2.13.59/x86/SKCOM.dll": b"x86", "readme.txt": b"r"})
-capl.CAP_ZIP_SHA256 = good_sha
+def serve(path):
+    capl._download = lambda url, dest, max_bytes: (downloads.append((url, max_bytes)), shutil.copy(path, dest))
+
+
 downloads, restricted, regs = [], [], []
-capl._download = lambda url, dest, max_bytes, sha256=None: (downloads.append(url), shutil.copy(good_zip, dest))
+serve(mkzip(os.path.join(BASE, "new.zip"), NEW_PACK))
 capl._restrict_dir = lambda p: (restricted.append(p), os.makedirs(p, exist_ok=True))
 real_run = subprocess.run
 fake_run = lambda argv, **kw: (regs.append(argv), subprocess.CompletedProcess(argv, 0, b"", b""))[1]
 skdir = os.path.join(LAD, "Blave", "capital", "skcom", "x64")
+cached = os.path.join(LAD, "Blave", "capital", "dl", "CapitalAPI_2.13.59.zip")
 with um.patch.object(capl.subprocess, "run", fake_run):
     capl._ensure_skcom(tempfile.mkdtemp(dir=BASE))
-check("10 裝在 %LOCALAPPDATA%\\Blave\\capital(權限收窄)、只有 x64 那一層、per-user 註冊指到那裡",
-      sorted(os.listdir(skdir)) == ["SKCOM.dll", "SKProxyLIB.dll"] and restricted == [os.path.join(LAD, "Blave", "capital")]
-      and regs[-1] == ["C:\\Windows\\System32\\regsvr32.exe", "/s", "/n", "/i:user", os.path.join(skdir, "SKCOM.dll")] and len(downloads) == 1)
+check("10 新包:白名單全符 → 裝在 %LOCALAPPDATA%\\Blave\\capital(權限收窄)、只裝白名單那 11 個(多的 exe、x86、根目錄都不裝)、per-user 註冊指到那裡",
+      sorted(os.listdir(skdir)) == sorted(PIN_DATA) and all(open(os.path.join(skdir, n), "rb").read() == d for n, d in PIN_DATA.items())
+      and restricted == [os.path.join(LAD, "Blave", "capital")]
+      and regs[-1] == ["C:\\Windows\\System32\\regsvr32.exe", "/s", "/n", "/i:user", os.path.join(skdir, "SKCOM.dll")]
+      and downloads == [(capl.CAP_ZIP_URL, capl.CAP_ZIP_MAX)], [sorted(os.listdir(skdir)), downloads])
+check("10 下載仍走群益官方 https 網址、有大小上限", capl.CAP_ZIP_URL.startswith("https://www.capital.com.tw/") and 0 < capl.CAP_ZIP_MAX <= 200 * 1024 * 1024)
 with open(os.path.join(skdir, "SKCOM.dll"), "wb") as f:
     f.write(b"planted")
 os.remove(os.path.join(skdir, "SKProxyLIB.dll"))
 with um.patch.object(capl.subprocess, "run", fake_run):
     capl._ensure_skcom(tempfile.mkdtemp(dir=BASE))
-check("10 下一次 setup:被換掉的 DLL 照 zip 重寫、少的補回,快取的 zip 雜湊對就不再下載",
-      open(os.path.join(skdir, "SKCOM.dll"), "rb").read() == b"skcom-v1" and open(os.path.join(skdir, "SKProxyLIB.dll"), "rb").read() == b"proxy-v1"
+check("10 下一次 setup:被換掉的 DLL 照 pin 重寫、少的補回,快取的 zip 白名單全符就不再下載",
+      open(os.path.join(skdir, "SKCOM.dll"), "rb").read() == PIN_DATA["SKCOM.dll"] and open(os.path.join(skdir, "SKProxyLIB.dll"), "rb").read() == PIN_DATA["SKProxyLIB.dll"]
       and len(downloads) == 1)
-with open(os.path.join(LAD, "Blave", "capital", "dl", "CapitalAPI_2.13.59.zip"), "ab") as f:
+mkzip(cached, OLD_PACK)
+with um.patch.object(capl.subprocess, "run", fake_run):
+    capl._ensure_skcom(tempfile.mkdtemp(dir=BASE))
+check("10 快取裡是舊包(10-21 那份)→ 白名單全符照樣沿用、不重新下載", len(downloads) == 1 and sorted(os.listdir(skdir)) == sorted(PIN_DATA))
+with open(cached, "ab") as f:
     f.write(b"tamper")
 with um.patch.object(capl.subprocess, "run", fake_run):
     capl._ensure_skcom(tempfile.mkdtemp(dir=BASE))
-check("10 快取的 zip 被改過(雜湊不對)→ 重新下載", len(downloads) == 2)
-for bad_members, what in (({X + "SKCOM.dll": b"x", X + "..": b"x"}, "成員名是 .."), ({X + "SKCOM.dll": b"x", X + "a\\b.dll": b"x"}, "成員名帶反斜線"),
-                          ({X + "SKCOM.dll": b"x", "other/x64/SKCOM.dll": b"y"}, "兩個 x64 資料夾都有 SKCOM.dll")):
-    bz = os.path.join(BASE, "bad.zip")
-    capl.CAP_ZIP_SHA256 = mkzip(bz, bad_members)
+check("10 快取的 zip 尾巴被加料(元件沒變)→ 照樣沿用", len(downloads) == 1)
+mkzip(cached, dict(NEW_PACK, **{X + "SKTradeLib.dll": b"swapped"}))
+with um.patch.object(capl.subprocess, "run", fake_run):
+    capl._ensure_skcom(tempfile.mkdtemp(dir=BASE))
+check("10 快取的 zip 裡有元件被換過 → 重新下載、照官方那份裝", len(downloads) == 2 and open(os.path.join(skdir, "SKTradeLib.dll"), "rb").read() == PIN_DATA["SKTradeLib.dll"])
+with open(cached, "wb") as f:
+    f.write(b"not a zip")
+with um.patch.object(capl.subprocess, "run", fake_run):
+    capl._ensure_skcom(tempfile.mkdtemp(dir=BASE))
+check("10 快取的 zip 壞掉 → 重新下載", len(downloads) == 3)
+zc = os.path.join(BASE, "deflate.zip")
+with zipfile.ZipFile(zc, "w", zipfile.ZIP_DEFLATED) as zf:
+    for name, data in NEW_PACK.items():
+        zf.writestr(name, data)
+with zipfile.ZipFile(zc) as zf:
+    info = zf.getinfo(X + "SKCOM.dll")
+raw = bytearray(open(zc, "rb").read())
+off = info.header_offset + 30 + len(info.filename.encode("utf-8" if info.flag_bits & 0x800 else "cp437")) + len(info.extra)
+raw[off:off + 2] = b"\xff\xff"   # deflate stream garbage: zf.read raises zlib.error, not BadZipFile
+mkzip(cached, {})
+open(cached, "wb").write(bytes(raw))
+probe_err = None
+try:
+    with zipfile.ZipFile(cached) as zf:
+        zf.read(X + "SKCOM.dll")
+except Exception as e:
+    probe_err = type(e).__name__
+with um.patch.object(capl.subprocess, "run", fake_run):
+    capl._ensure_skcom(tempfile.mkdtemp(dir=BASE))
+check("10 快取成員壓縮資料損壞(zlib.error,不是 BadZipFile)→ 重新下載、照官方那份裝", probe_err == "error" and len(downloads) == 4
+      and open(os.path.join(skdir, "SKCOM.dll"), "rb").read() == PIN_DATA["SKCOM.dll"], [probe_err, len(downloads)])
+with open(cached, "rb") as f:
+    cache_ok = zipfile.ZipFile(f).testzip() is None
+check("10 重新下載後快取換成新那份(經 atomic_file 寫、沒留 .tmp)", cache_ok
+      and not [n for n in os.listdir(os.path.dirname(cached)) if n.endswith(".tmp")])
+check("10 每個元件檔上限 32 MB(真包最大的 SKCOM.dll 約 10 MB)、整包 200 MB", capl.CAP_FILE_MAX == 32 * 1024 * 1024 and capl.CAP_ZIP_MAX == 200 * 1024 * 1024)
+
+
+def setup_with(members, what, want):
+    serve(mkzip(os.path.join(BASE, "bad.zip"), members))
     shutil.rmtree(os.path.join(LAD, "Blave", "capital", "dl"), ignore_errors=True)
-    capl._download = lambda url, dest, max_bytes, sha256=None: shutil.copy(bz, dest)
+    shutil.rmtree(skdir, ignore_errors=True)
+    regs.clear()
     with um.patch.object(capl.subprocess, "run", fake_run):
-        check("10 zip 不像樣(" + what + ")→ 拒絕", code_of(lambda: capl._ensure_skcom(tempfile.mkdtemp(dir=BASE))) is not None)
+        got = code_of(lambda: capl._ensure_skcom(tempfile.mkdtemp(dir=BASE)))
+    check("10 " + what + " → " + str(want) + "、什麼都沒裝、沒註冊、沒進快取",
+          got == want and not os.path.exists(skdir) and regs == [] and not os.path.exists(cached), got)
+
+
+setup_with(dict(NEW_PACK, **{X + "SKCOM.dll": b"skcom-v2"}), "成員 hash 不符(SKCOM.dll 換了)", "changed")
+setup_with(dict(NEW_PACK, **{X + "install.bat": b"del *"}), "成員 hash 不符(install.bat 換了)", "changed")
+setup_with({k: v for k, v in NEW_PACK.items() if k != X + "SKWebCALib.dll"}, "缺一個白名單成員", "changed")
+setup_with({k: v for k, v in NEW_PACK.items() if not k.startswith(X)}, "x64 資料夾整個不見", "changed")
+setup_with({("CapitalAPI_2.13.60/x64/" + k[len(X):] if k.startswith(X) else k): v for k, v in NEW_PACK.items()} | {X + "SKCOM.dll": PIN_DATA["SKCOM.dll"]},
+           "兩個 x64 資料夾都有 SKCOM.dll", "changed")
+setup_with({k: v for k, v in NEW_PACK.items() if k != X + "SKProxyLIB.dll"} | {X + "sub/SKProxyLIB.dll": PIN_DATA["SKProxyLIB.dll"]},
+           "白名單成員不在 SKCOM.dll 那一層(在子資料夾)", "changed")
+with um.patch.object(capl, "CAP_FILE_MAX", 4):
+    setup_with(NEW_PACK, "元件檔超過每檔上限", "changed")
+html = os.path.join(BASE, "page.html")
+open(html, "wb").write(b"<html>maintenance</html>")
+serve(html)
+shutil.rmtree(os.path.join(LAD, "Blave", "capital", "dl"), ignore_errors=True)
+with um.patch.object(capl.subprocess, "run", fake_run):
+    check("10 下載到的不是 zip(HTML 頁)→ net、沒進快取", code_of(lambda: capl._ensure_skcom(tempfile.mkdtemp(dir=BASE))) == "net" and not os.path.exists(cached))
+for bad_members, what in ((dict(NEW_PACK, **{X + "..": b"x"}), "成員名是 .."), (dict(NEW_PACK, **{X + "a\\b.dll": b"x"}), "成員名帶反斜線")):
+    setup_with(bad_members, "zip 不像樣(" + what + ")", "unsafe zip member")
+dup = os.path.join(BASE, "dup.zip")
+mkzip(dup, NEW_PACK)
+with zipfile.ZipFile(dup, "a") as zf, um.patch("warnings.warn"):
+    zf.writestr(X + "SKCOM.dll", b"second")
+serve(dup)
+shutil.rmtree(os.path.join(LAD, "Blave", "capital", "dl"), ignore_errors=True)
+with um.patch.object(capl.subprocess, "run", fake_run):
+    check("10 同名成員出現兩次 → changed", code_of(lambda: capl._ensure_skcom(tempfile.mkdtemp(dir=BASE))) == "changed")
+
+
+def dl_fail(exc):
+    def boom(url, dest, max_bytes):
+        raise exc
+    capl._download = boom
+    shutil.rmtree(os.path.join(LAD, "Blave", "capital", "dl"), ignore_errors=True)
+    with um.patch.object(capl.subprocess, "run", fake_run):
+        return code_of(lambda: capl._ensure_skcom(tempfile.mkdtemp(dir=BASE)))
+
+
+import http.client  # noqa: E402
+import socket  # noqa: E402
+import urllib.error  # noqa: E402
+hx = lambda c: urllib.error.HTTPError(capl.CAP_ZIP_URL, c, "x", {}, None)
+check("10 下載失敗分得出來:連不上 / 逾時 / 5xx / 傳到一半斷 → net;官方網址 404 / 410(那一版下架)→ changed;超過上限 → 原本那句",
+      [dl_fail(e) for e in (urllib.error.URLError("dns"), socket.timeout("t"), ConnectionResetError(), hx(503), http.client.IncompleteRead(b""), hx(404), hx(410),
+                            RuntimeError("too large"))]
+      == ["net", "net", "net", "net", "net", "changed", "changed", "too large"])
+
+
+def setup_err(exc):
+    with um.patch.object(capl, "_ensure_vc", lambda tmp: None), um.patch.object(capl, "_ensure_comtypes", lambda: None), \
+            um.patch.object(capl, "_ensure_skcom", lambda tmp: (_ for _ in ()).throw(exc)), um.patch.object(capl, "_check_com", lambda: None):
+        try:
+            capl.run_setup()
+        except ValueError:
+            pass
+    return capl.read_status()["setup"].get("error")
+
+
+check("10 setup.error 帶 skcom 的原因(電腦版照它講)", setup_err(capl._StepFailed("changed")) == "SETUP_FAILED:skcom:changed"
+      and setup_err(capl._StepFailed("net")) == "SETUP_FAILED:skcom:net" and setup_err(RuntimeError("regsvr32 exit 5")) == "SETUP_FAILED:skcom",
+      [setup_err(capl._StepFailed("changed"))])
+capl.CAP_X64_SHA256 = REAL_PINS
 check("10 setup 只在缺 VC++ 2010 時才下載微軟的安裝程式、先驗簽章是 Microsoft", "if _vc_present():\n        return" in open(os.path.join(ROOT, "runtime", "capital_local.py"), encoding="utf-8").read()
       and "-ne 'Microsoft Corporation'" in capl._PS_VC)
 # 10c. VC++ 2010 安裝程式的結束碼 → setup.error 的原因。等 MSI 空閒與 1618 重試都在提權的那一個行程裡(PowerShell),
