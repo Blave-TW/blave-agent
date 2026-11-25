@@ -12218,6 +12218,12 @@ msgstr "No signal after 1 minute."
 msgid "tr.opt.catchRetry"
 msgstr "Refresh"
 
+msgid "tr.opt.catchPosLate"
+msgstr "{venue} hasn’t reported positions after 1 minute."
+
+msgid "tr.opt.catchReadErr"
+msgstr "Can’t read {venue} positions. Catch-up needs them."
+
 msgid "p3.set.used"
 msgstr "{p}% used"
 

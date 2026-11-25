@@ -105,7 +105,7 @@ const EV_PAIRS = {
   evStrategyFailed: "strategy_failed",
   evStrategyFailedNote: "strategy_failed_note",
   evRestartStopped: "restart_stopped",
-  evRestartStoppedNote: "restart_stopped_note",
+  // evRestartStoppedNote 不配對:事件列拿掉「什麼單都不送」後只剩電腦版 P1 通知內文在用,網頁沒有這一面(msgid 已刪)
   evRestartStopFailed: "restart_stop_failed",
   evManualClose: "manual_close",
   evManualCloseNote: "manual_close_note",
@@ -195,7 +195,10 @@ const START_PAIRS = { "tr.start": "workspace_pf_start", "tr.opt.legend": "worksp
   // 0.1.60 加入並啟動下單(spec add-then-start-0160 A-1、A-3;表面表要求字串配對):金額框主鈕、取消啟動框後說明行兩句
   "sp.cf.addStart": "workspace_sp_cf_add_start", "sp.addedIdle": "workspace_sp_added_idle", "sp.addedHalted": "workspace_sp_added_halted",
   // 0.1.60 永豐送單後等快照(SnapshotLag):部位表那一格;主機重開後沒連帳戶的狀態句(設計審 web-0160:兩句拆開、不用破折號)
-  "sp.posPending": "workspace_pf_sp_pos_pending", "tr.cloud.restartNoAccountZ": "workspace_pf_paused_restart_noacct", "tr.cloud.restartStopped": "workspace_pf_paused_restart" };
+  "sp.posPending": "workspace_pf_sp_pos_pending",
+  // 0.1.62 啟動框部位未知(spec 0162 a-start-catch §4):等交易所回報部位 1 分鐘逾時、讀帳失敗
+  "tr.opt.catchPosLate": "workspace_pf_opt_catch_pos_late", "tr.opt.catchReadErr": "workspace_pf_opt_catch_read_err",
+  "tr.cloud.restartNoAccountZ": "workspace_pf_paused_restart_noacct", "tr.cloud.restartStopped": "workspace_pf_paused_restart" };
 for (const lang of ["zh", "en"]) {
   const dp = poMap(path.join(__dirname, "..", "shell", "i18n", lang + ".po")), wp = poMap(path.join(webDir, "app", "translations", lang, "LC_MESSAGES", "messages.po"));
   const bad = Object.entries(START_PAIRS).filter(([d, w]) => typeof dp[d] !== "string" || dp[d] !== wp[w]);

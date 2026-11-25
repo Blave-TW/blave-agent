@@ -157,7 +157,7 @@ if (!process.versions.electron) {
     ok("②b 啟動框取消叫 spStartClosed;原地重畫不算取消", /const onCancel = \(\) => \{ if \(typeof spStartClosed === "function"\) spStartClosed\(\); \};/.test(fnOf(tr, "trAskStart"))
       && /const redraw = \(\) => \{ if \(\(changed \|\| refresh\) && delCtx && delCtx\.startBox\) delCtx\.acted = true; \};/.test(fnOf(tr, "trAskStart")));
     ok("②b 埋點 sp_start_chained 有送出點、在 telemetry.js 白名單 0.1.60 那段(首頁鈕 top_home 之前)", /trackFeature\(g\.chain \? "sp_start_chained" : "sp_start_opened"\)/.test(po)
-      && /"sp_start_chained",\n\s*\/\/ 0\.1\.60 中欄頂列首頁鈕[^\n]*\n\s*"top_home"\] \},/.test(fs.readFileSync(path.join(SHELL, "telemetry.js"), "utf8")));
+      && /"sp_start_chained",\n\s*\/\/ 0\.1\.60 中欄頂列首頁鈕[^\n]*\n\s*"top_home",\n/.test(fs.readFileSync(path.join(SHELL, "telemetry.js"), "utf8")));
   }
 
   const bin = GATE.bin(SHELL, "③");

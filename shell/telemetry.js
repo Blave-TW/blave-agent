@@ -430,7 +430,10 @@ const EVENTS = {
     // 這種開法不再記 sp_start_opened(那個只記按頁首鈕開的)
     "sp_start_chained",
     // 0.1.60 中欄頂列首頁鈕(renderer/trade.js envGoHome;spec home-button-0160 §5,api 白名單要先上):真的換了頁才送,已在歡迎頁按不送
-    "top_home"] },
+    "top_home",
+    // 0.1.62 啟動框開框時補齊因為部位未知停用(renderer/trade.js trAskStart;spec 0162 a-start-catch §6 的 start_pos_wait why:lag|err,
+    // feature_used 沒有 prop 拆兩個名字;api 白名單要先上):lag = 送單後等交易所回報部位(永豐 SnapshotLag)、err = 讀帳失敗。重畫不送
+    "start_pos_lag", "start_pos_err"] },
 };
 // `claude auth status` 的 authMethod 原值 → cli_auth 的 how(隨包 CLI 2.1.281 的 auth status 只會給這六個)。唯一的一份:
 // 主行程 detectAgents 算好放進 out.claude.how,畫面與主行程都讀那一欄。null／缺 = none,表外 = other

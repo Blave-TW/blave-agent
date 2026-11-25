@@ -12265,6 +12265,14 @@ msgstr "等了 1 分鐘還沒算出訊號。"
 msgid "tr.opt.catchRetry"
 msgstr "重新整理"
 
+# 啟動框〔補齊部位〕送單後等交易所回報部位(永豐 SnapshotLag)等了 1 分鐘:後面接〔重新整理〕。等的時候沿用 sp.posPending(spec 0162 a-start-catch §2)
+msgid "tr.opt.catchPosLate"
+msgstr "等了 1 分鐘，{venue}還沒回報部位。"
+
+# 啟動框〔補齊部位〕讀帳失敗(不是等快照):部位當未知、不列單、不轉圈(spec 0162 a-start-catch §3)
+msgid "tr.opt.catchReadErr"
+msgstr "讀不到{venue}的部位，讀到才能補齊。"
+
 msgid "p3.set.used"
 msgstr "已用 {p}%"
 

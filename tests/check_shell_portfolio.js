@@ -151,7 +151,7 @@ ok("必改 3:存金額框的策略列用 trCloseTag / trCtCloseTag(「平倉」�
   vm.runInContext(pure.replace(/^const /gm, "var ") + "\nvar trTipSeq = 0;\n" + ["trEl", "trSec", "trTipLabel", "poHelpGroup", "poCfgSec", "trHead", "trFmt", "trFmt2", "trFmtPrice", "trMoneyInto", "trReport", "trContracts", "trStored", "trBase", "trNamesOf", "trNames",
     "trListNames", "trDisplay", "trPickOff", "trPickBtn", "trVenueId", "trVenueLabel", "trVenueKind", "trTwBroker", "trStratName", "trTwNamesWant", "trTwName", "trTwNameEl", "trTwLotsText", "trTxfWant", "trRowTxf", "trRowTxfNew", "trCtPend", "trCtStored", "trCt", "trCtGate", "trCtDirty", "trCtRollTag",
     "trRowMoneyStored", "trCtPayload", "trRowIsLot", "trRowMoney", "trLotsFmt", "trLotsTgtFmt", "trLotsInto", "trQuoteMap", "trNoSignalYet", "trZoneOf", "trZoneLabel", "trZoneUnit", "trFxView", "trZoneSum", "trTotalText",
-    "trPaintPosCell", "trAmountTable", "trNoVenueYet", "trGoStartKey", "trTradableFunded", "trUnrouted", "trRouteDirty", "trCloseTag", "trStratHeld", "trPaperTwOk", "trPaperTw", "trCtCloseTag", "trCfOpen", "trCfBookBad", "trCfStates", "trCfHolds", "trMarks", "trCfQty", "trCfRows", "trCfTick", "trPvRequest", "trLivePositions", "trBook", "trTwClosedKeys", "trGatedKeys", "trAwaitKeys", "poPartStates", "poSigTable", "trPosDetail", "trManualPart", "trPlanTotal", "trTxfPrice", "trNetRows", "trWithUnit", "trCatchWill", "trCatchPlan", "trCatchSame", "trBookFresh", "trWaitStranded", "trGateSide", "trTradesSym", "trAppRestartQuiet", "trPaperCapOf", "trPaperAvailEl", "cxMonoNums"].map((n) => cutF(src, n)).join("\n"), ctx);
+    "trPaintPosCell", "trAmountTable", "trNoVenueYet", "trGoStartKey", "trTradableFunded", "trUnrouted", "trRouteDirty", "trCloseTag", "trStratHeld", "trPaperTwOk", "trPaperTw", "trCtCloseTag", "trCfOpen", "trCfBookBad", "trCfStates", "trCfHolds", "trMarks", "trCfQty", "trCfRows", "trCfTick", "trPvRequest", "trLivePositions", "trBook", "trTwClosedKeys", "trGatedKeys", "trAwaitKeys", "poPartStates", "poSigTable", "trPosDetail", "trManualPart", "trPlanTotal", "trTxfPrice", "trNetRows", "trWithUnit", "trCatchPlan", "trCatchSame", "trBookFresh", "trWaitStranded", "trGateSide", "trTradesSym", "trAppRestartQuiet", "trPaperCapOf", "trPaperAvailEl", "cxMonoNums"].map((n) => cutF(src, n)).join("\n"), ctx);
   const V = { credentials: true, pair: true, order: true, account: true };
   const bag = (venues, extra) => ({ env: "local", listLoaded: true, picked: null, sent: null, save: null, edits: { btc: 600 }, bad: {}, raw: {}, sig: {}, ct: { edits: {}, basis: {}, sent: null }, just: null,
     list: [{ name: "btc", displayName: "BTC", hasBacktest: true, symbol: "BTCUSDT" }, { name: "tw", displayName: "TW", hasBacktest: true, symbol: "2330" }],
@@ -300,7 +300,7 @@ ok("必改 3:存金額框的策略列用 trCloseTag / trCtCloseTag(「平倉」�
       rp.last_reconcile = { ts: now, actual: o.held ? { "2330@spot": { side: "long", size: o.held } } : {}, gates: o.gates || {} };
       vm.runInContext("TR = this.TR;", ctx); return rp; };
     pt({ noState: true, held: 100000 });
-    const cw = vm.runInContext("trCatchWill(TR.st.report)", ctx);
+    const cw = vm.runInContext("((trCatchPlan(TR.st.report) || {}).text || null)", ctx);
     ok("P2-1 (a) 還沒算出訊號的 swap 台股 Type A(沒有 state):補齊說明不講 2330(contribs 的 key 是 2330@spot,notYet 對得上)", !/2330/.test(cw || ""), J(cw));
     pt({ pos: 1, held: 100000 });
     const sh = vm.runInContext("trStratHeld('tw')", ctx);
@@ -468,10 +468,10 @@ ok("必改 3:存金額框的策略列用 trCloseTag / trCtCloseTag(「平倉」�
     ok("狀態行:halted 而且 trAppRestartQuiet → tr.notStarted(不講重開)", /if \(!ask && !done && trAppRestartQuiet\(r\)\) p = P\(t\("tr\.s\.off"\), t\("tr\.notStarted"\)\);/.test(src)); }
   // 第 8 列:補齊會送出的單(取自部位表的差額)
   { ctx.TR = bag({ binance: V }); ctx.TR.st.report.account.read_at = Math.floor(Date.now() / 1000);
-    const w = vm.runInContext("TR = this.TR; trCatchWill(TR.st.report)", ctx);
+    const w = vm.runInContext("TR = this.TR; ((trCatchPlan(TR.st.report) || {}).text || null)", ctx);
     ok("補齊說明:BTC 目標 500、帳上 400 → 「會買進 BTCUSDT 100 USDT」;台股(交易所不交易)不列", /tr\.opt\.catchWill \{"side":"tr\.opt\.buy","sym":" BTCUSDT","n":"100 USDT"\}/.test(w) && !/2330/.test(w), w);
     ctx.TR.st.report.config.amounts.btc = 400;   // 目標 = 帳上:差額 0 → 不講會送什麼單(沒有單)
-    ok("補齊說明:差額為 0(目標 400、帳上 400)→ 不出「會買進…」;有差額時才出", vm.runInContext("trCatchWill(TR.st.report)", ctx) === null);
+    ok("補齊說明:差額為 0(目標 400、帳上 400)→ 不出「會買進…」;有差額時才出", vm.runInContext("((trCatchPlan(TR.st.report) || {}).text || null)", ctx) === null);
     { const none = vm.runInContext("JSON.stringify(trCatchPlan(TR.st.report))", ctx); ctx.TR.st.report.config.amounts.btc = 500;
       const one = vm.runInContext("trCatchPlan(TR.st.report)", ctx); ctx.TR.st.report.config.amounts.btc = 400;
       const unknown = vm.runInContext("trCatchPlan(Object.assign({}, TR.st.report, { venues: {} }))", ctx);
@@ -502,7 +502,7 @@ ok("必改 3:存金額框的策略列用 trCloseTag / trCtCloseTag(「平倉」�
     // 0.1.27 模擬交易台股(can_paper_twstock):差額是台幣,照標的寫 TWD,BTC 那筆照舊帳戶幣
     { const PV = { paper: V }; ctx.TR = bag(PV, { can_paper_twstock: true });
       ctx.TR.st.report.account.venues = { paper: { ok: true, equity: 10000, currency: "USDT", positions: {} } };
-      const pw = vm.runInContext("TR = this.TR; trCatchWill(TR.st.report)", ctx) || "";
+      const pw = vm.runInContext("TR = this.TR; ((trCatchPlan(TR.st.report) || {}).text || null)", ctx) || "";
       ok("補齊說明(模擬交易台股):2330 寫「100,000 TWD」、BTC 寫 USDT,不把台股標成 USDT",
         /"sym":" 2330","n":"100,000 TWD"/.test(pw) && /"sym":" BTCUSDT","n":"500 USDT"/.test(pw) && !/"sym":" 2330","n":"[^"]*USDT"/.test(pw), pw); }
     // 實機 integ2 10-18:台股寫「代號 名字」、模擬盤照股數(同策略組合表那一格);休市時補一句「開盤後第一輪才成交」,開盤中不補;crypto 那筆不受影響
@@ -510,7 +510,7 @@ ok("必改 3:存金額框的策略列用 trCloseTag / trCtCloseTag(「平倉」�
       rp.account.venues = { paper: { ok: true, equity: 10000, currency: "USDT", positions: {} } }; rp.config.exchanges = { btc: "paper", tw: "paper" };
       rp.states.tw.raw_closes = { 2330: 1030 }; rp.states.tw.raw_close_dates = { 2330: "2026-10-16" };
       vm.runInContext("TR_TWN.names = { 2330: '台積電' };", ctx);
-      const at = (ms) => { const real = Date.now; Date.now = () => ms; try { return vm.runInContext("TR = this.TR; trCatchWill(TR.st.report)", ctx) || ""; } finally { Date.now = real; } };
+      const at = (ms) => { const real = Date.now; Date.now = () => ms; try { return vm.runInContext("TR = this.TR; ((trCatchPlan(TR.st.report) || {}).text || null)", ctx) || ""; } finally { Date.now = real; } };
       const sat = at(Date.UTC(2026, 9, 17, 3, 0)), mon = at(Date.UTC(2026, 9, 19, 2, 0)), monLate = at(Date.UTC(2026, 9, 19, 6, 0));
       vm.runInContext("TR_TWN.names = null;", ctx);
       ok("補齊說明(模擬交易台股):「買進 2330 台積電 97 股」(100,000 ÷ 1,030 捨去,同部位表);週六與 14:00 補休市句,週一 10:00 不補",
@@ -542,13 +542,13 @@ ok("必改 3:存金額框的策略列用 trCloseTag / trCtCloseTag(「平倉」�
     ok("等新訊號提醒:要加碼(目標 500、帳上 400)、帳上沒部位、差額沒過門檻(目標 395)、策略沒金額 → 0",
       ws(500, 1, 400) === 0 && ws(500, 0, null) === 0 && ws(395, 1, 400) === 0 && ws(0, 0, 400) === 0, J([ws(500, 1, 400), ws(500, 0, null), ws(395, 1, 400), ws(0, 0, 400)]));
     // 0.1.28 美股純代號(trUsNoAuto,同網頁 pfWaitStranded／pfCatchWill):不會自動下單,不算會開著的部位、補齊說明不列
-    { const us = (mk, fn, pos, held) => { ctx.TR = bag({ binance: V }); const r = ctx.TR.st.report; r.config.amounts.btc = 500; r.states.btc = { symbol: "AMZN", position: pos };
+    { const W = "((r) => (trCatchPlan(r) || {}).text || null)", us = (mk, fn, pos, held) => { ctx.TR = bag({ binance: V }); const r = ctx.TR.st.report; r.config.amounts.btc = 500; r.states.btc = { symbol: "AMZN", position: pos };
         r.strategy_kinds = { btc: { type: "A", market: mk } }; r.account.venues.binance.positions = { AMZN: { side: "long", size: held, entry_price: 200 } };
         return vm.runInContext("TR = this.TR; " + fn + "(TR.st.report)", ctx); };
       ok("美股:等新訊號提醒不算(us_stock 0、mixed 1);補齊說明不列(us_stock null、mixed 有)",
         us("us_stock", "trWaitStranded", 0, 400) === 0 && us("mixed", "trWaitStranded", 0, 400) === 1
-        && us("us_stock", "trCatchWill", 1, 100) === null && /AMZN/.test(us("mixed", "trCatchWill", 1, 100) || ""),
-        J([us("us_stock", "trWaitStranded", 0, 400), us("mixed", "trWaitStranded", 0, 400), us("us_stock", "trCatchWill", 1, 100), us("mixed", "trCatchWill", 1, 100)])); }
+        && us("us_stock", W, 1, 100) === null && /AMZN/.test(us("mixed", W, 1, 100) || ""),
+        J([us("us_stock", "trWaitStranded", 0, 400), us("mixed", "trWaitStranded", 0, 400), us("us_stock", W, 1, 100), us("mixed", W, 1, 100)])); }
     // 0.1.58 Wei 實機(模擬帳戶、第一次啟動前):對帳器從沒跑過(last_reconcile null)、模擬帳本空的、策略 state.json 已有 position 1。
     // 補齊的單只靠 states × 金額對讀到的帳算,不靠對帳快照:要列出「買進 BTCUSDT 1,000 USDT」。states 還沒有這支(報告在策略第一次寫 state.json 之前)才是 null
     { const b = bag({ paper: V }), r = b.st.report;

@@ -1368,6 +1368,14 @@ function trFirstReadPending(r) { return !r.last_reconcile && !trVenueIds(r).some
 /* 部位還沒讀到:第一次讀帳前,或有一家正在等送單後的快照(永豐 SnapshotLag,trPosPending;同部位表 posPend、網頁 pfCatchUnread)。
    那段時間 trLivePositions 跳過這家,帳上會被當成 0:補齊會列出整筆、預選補齊,機器送的卻是快照跟上後的差額(稽核 release-0160-e 必修 1) */
 function trPosUnread(r) { return trFirstReadPending(r) || trVenueIds(r).some((id) => trPosPending(trLiveEntry(r, id))); }
+/* 讀帳失敗(不是等快照)的那一家:trLivePositions 跳過它,帳上會被當成 0、補齊列出整筆(spec 0162 a-start-catch §3)。
+   對帳快照比讀帳新、或對帳器用帳本在比時數字是對的,不算(trCfBookBad)。只給啟動框用;部位表、差額照舊。沒有 = null */
+function trPosErrId(r) {
+  if (!trCfBookBad(r)) return null;
+  return trVenueIds(r).find((id) => { const e = trLiveEntry(r, id); return !!e && e.ok === false && !trPosPending(e); }) || null;
+}
+// 啟動框的部位未知:還沒讀到、等快照、讀帳失敗。兩家都綁時有一家未知就整個不知道(補齊的 resume 整台一起動)
+function trPosUnknown(r) { return trPosUnread(r) || !!trPosErrId(r); }
 /* 拒單要掛哪幾筆:`order_errors` 是「最近 5 筆下單失敗」,機器端**從來不清**(lib/portfolio._record_order_error 只 append),
    照最新那一筆畫 = 把歷史當現況(Wei 在 Electron 44 實機看到 22:26 那句掛在已經改好的表下面)。規則:只掛標的現在**仍欠著一張會觸發下單的差額**的;
    改了金額或補成交 → 差額進門檻內 → 那筆是歷史(總覽事件照舊逐筆列) */
@@ -3151,11 +3159,20 @@ const TR_CHANGED_ARM_MS = 600;
    trCatchPlan 算得出來之後原地重畫,補齊變可選。trPaint 每一輪叫;重畫不自動預選補齊(用戶要自己選),重畫後 600ms 內的點擊不算(同單變了)。
    讀到帳、等訊號那一段(spec add-then-start-0160 補記):框開著時 2 秒讀一次(trPoll 看 trStartWaitOn)、最多 1 分鐘,到了還算不出就原地換成逾時那句 */
 const TR_START_POLL_MS = 2000, TR_START_WAIT_MS = 60000;
+/* 補齊列不出單的原因(重畫時比這個,換了就原地重畫):rc 重算中、err 讀帳失敗、lag 等交易所回報部位、read 還沒讀到帳、sig 等訊號 */
+function trStartKind(r) {
+  if (trRecomputing(r)) return "rc";
+  if (trPosErrId(r)) return "err";
+  if (trVenueIds(r).some((id) => trPosPending(trLiveEntry(r, id)))) return "lag";
+  return !trHasAccount(r) || trPosUnread(r) ? "read" : "sig";
+}
 function trStartWaitOn(nowMs) { const w = TR.startUnread; return !!w && !!w.until && !w.late && nowMs < w.until && typeof delCtx !== "undefined" && delCtx === w.ctx; }
 function trStartReadRefresh() {
   const w = TR.startUnread; if (!w) return;
   if (typeof delCtx === "undefined" || delCtx !== w.ctx) { TR.startUnread = null; return; }
-  if (!trCatchPlan(trReport() || {})) {
+  const r = trReport() || {};
+  if (!trCatchPlan(r)) {
+    if (trStartKind(r) !== w.kind) { TR.startUnread = null; trAskStart(w.opener, true, false, w.pre, true); return; }   // 例如永豐回報到了、訊號還在算:換成那一態、重新計時
     if (w.until && !w.late && Date.now() >= w.until) trAskStart(w.opener, true, false, w.pre, true, { until: w.until, late: true });
     return;
   }
@@ -3196,7 +3213,7 @@ function trAskStart(opener, presOk, changed, pre0, refresh, wait) {
   const plan0 = trCatchPlan(r), will = plan0 ? plan0.text : null;
   /* 預選補齊(spec 0158-catchup-intro §1.3):補齊可選、讀過帳而且部位資料不超過 10 分鐘、算得出至少一筆單、訊號不是 Blave 關著時的舊訊號。
      少一條就預選等新訊號。保護靠單攤在選項裡、主鈕寫明補齊、焦點停在取消(confirmBox 預設) */
-  const read = trHasAccount(r) && !trPosUnread(r), known = read && trBookFresh(r);
+  const kind = trStartKind(r), read = trHasAccount(r) && !trPosUnknown(r), known = read && trBookFresh(r);
   // changed(按下時單變了,§1.5):預選不動錢的「等新訊號」,補齊照樣可選、選了要重新按一次(canon confirm-modal ❌「兩個都不選＋主鈕停用」;
   // 雙擊的第二下由 armMs／dblGuard 擋,稽核 0158 M1,同網頁)。pre 記的是第一次開框時的預選(埋點 trade_started.pre),重畫不改
   const preCatch = !changed && !refresh && !recomputing && known && !!plan0 && plan0.n > 0 && rkS !== "app";
@@ -3204,18 +3221,27 @@ function trAskStart(opener, presOk, changed, pre0, refresh, wait) {
   // 補齊停用、講原因,算得出來後 trStartReadRefresh 重畫——補齊永遠只送畫面上列過的單
   const catchOff = recomputing || !plan0;
   /* 讀到帳、訊號還沒算出來:轉圈＋「正在算訊號…」,1 分鐘還沒出來換「等了 1 分鐘還沒算出訊號。」＋〔重新整理〕(再等一輪,焦點回取消)。
+     送單後等交易所回報部位(SnapshotLag,spec 0162 a-start-catch §2)同一套:轉圈＋「等永豐回報中…」、逾時句講哪一家沒回報。
+     讀帳失敗(§3)不轉圈、不 2 秒一讀(不一定會自己好),下一份報告讀成功由 trStartReadRefresh 重畫。
      原因句本身就是停用的原因;轉圈 aria-hidden,字進 aria-describedby */
-  const sigWait = !recomputing && read && !plan0, wt = sigWait ? wait || { until: Date.now() + TR_START_WAIT_MS, late: false } : null;
-  const sigWhy = () => {
+  const vName = (id) => trPadLatin(trVenueLabel(id, true)), lagId = kind === "lag" ? trVenueIds(r).find((id) => trPosPending(trLiveEntry(r, id))) : null;
+  const sigWait = kind === "sig" && !plan0, posWait = kind === "lag";
+  const wt = sigWait || posWait ? wait || { until: Date.now() + TR_START_WAIT_MS, late: false } : null;
+  const waitWhy = (busy, late) => {
     const sp = trEl("span", "cf-wait");
     if (wt.late) {
       const rb = trEl("button", "btn-quiet", t("tr.opt.catchRetry")); rb.type = "button";
       rb.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); trAskStart(opener, true, false, pre, true); });
-      sp.append(t("tr.opt.catchLate") + (LANG === "zh" ? "" : " "), rb);
-    } else { const sn = trEl("span", "spin16"); sn.setAttribute("aria-hidden", "true"); sp.append(sn, t("tr.opt.catchComputing")); }
+      sp.append(late + (LANG === "zh" ? "" : " "), rb);
+    } else { const sn = trEl("span", "spin16"); sn.setAttribute("aria-hidden", "true"); sp.append(sn, busy); }
     return sp;
   };
-  const catchWhy = recomputing ? t("tr.cloud.recomputing") : !read ? t("tr.opt.catchNeedRead") : sigWait ? sigWhy() : null;
+  const catchWhy = recomputing ? t("tr.cloud.recomputing")
+    : kind === "err" ? trTidyZh(t("tr.opt.catchReadErr", { venue: vName(trPosErrId(r)) }))
+    : posWait ? waitWhy(t("sp.posPending"), trTidyZh(t("tr.opt.catchPosLate", { venue: vName(lagId) })))
+    : !read ? t("tr.opt.catchNeedRead") : sigWait ? waitWhy(t("tr.opt.catchComputing"), t("tr.opt.catchLate")) : null;
+  // 開框時補齊因為部位未知停用(spec 0162 §6;feature_used 沒有 prop,拆兩個名字)。重畫不算
+  if (!changed && !refresh && (kind === "lag" || kind === "err")) trackFeature(kind === "lag" ? "start_pos_lag" : "start_pos_err");
   const pre = pre0 || (preCatch ? "catch" : "wait");
   const stranded = trWaitStranded(r);
   // 照什麼、多少錢下單(設計 A6):跟自動下單 › 部位表底合計同一個格式(trPlanTotal),讀已存配置
@@ -3259,7 +3285,7 @@ function trAskStart(opener, presOk, changed, pre0, refresh, wait) {
     ok: t("tr.startCatchUp"), okDisabled: catchOff, okWhy: catchOff ? catchWhy : null, onOk: () => catchUp("single"),
   })));
   delCtx.startBox = true;
-  TR.startUnread = !plan0 ? { ctx: delCtx, opener, pre, until: wt ? wt.until : 0, late: !!(wt && wt.late) } : null;
+  TR.startUnread = !plan0 ? { ctx: delCtx, opener, pre, kind, until: wt ? wt.until : 0, late: !!(wt && wt.late) } : null;
   // 等訊號:這一輪起 2 秒讀一次;雲端另開爆發窗,主行程才會真的去重抓(它自己有 5 秒地板)
   if (wt && !wt.late) { if (cloud) ENV.burst = trBurstBump(ENV.burst, Date.now(), TR_START_WAIT_MS, TR_START_WAIT_MS); trPollSoon(TR_START_POLL_MS); }
 }
@@ -3291,7 +3317,7 @@ function trAwakeCloudGo() {
    有標的因為訊號還沒算出來被略過、又一筆單都沒有:回 null(不知道),不講「沒有要補的單」(稽核 0158 B1)
    (spec 0158-catchup-intro §1.3:預選補齊要分得出「沒有單」和「不知道」) */
 function trCatchPlan(r) {
-  if (!trHasAccount(r) || trPosUnread(r)) return null;
+  if (!trHasAccount(r) || trPosUnknown(r)) return null;
   const stored = trStored() || {}, st2 = poPartStates(stored, r.states || {}), target = trClientTargets(stored, st2, trContracts()), bk = trBook(r, target);
   const vk = trVenueKind(trVenueId()), gates = ((bk.last || {}).gates) || {}, contribs = trContribs(stored, st2, trContracts());
   // 列在前三筆的是現在就會成交的:休市中的台股要等開盤(lib/order_paper._check_session),排最後,不把唯一現在會下的那筆藏進「另外 N 檔」
@@ -3332,8 +3358,6 @@ function trCatchSame(a, b) {
   const A = (a.items || []).slice().sort((x, y) => (x.k < y.k ? -1 : 1)), B = (b.items || []).slice().sort((x, y) => (x.k < y.k ? -1 : 1));
   return A.length === B.length && A.every((x, i) => x.k === B[i].k && x.exact === B[i].exact && Math.round(x.q) === Math.round(B[i].q));
 }
-// 只要那一句(部位表、舊機的單鈕框):沒有單和不知道都是 null
-function trCatchWill(r) { const p = trCatchPlan(r); return p ? p.text : null; }
 /* 部位資料夠新(spec 0158-catchup-intro §1.3 ②):資料時間 = 對帳快照與帳戶讀取取較新的(同 trBook),不超過 TR_STALE_MS */
 function trBookFresh(r, nowMs) {
   const a = r && r.last_reconcile ? trMs(r.last_reconcile.ts) : null, b = r && r.account ? trMs(r.account.read_at) : null;
@@ -3343,9 +3367,9 @@ function trBookFresh(r, nowMs) {
 
 /* 選「等新訊號」會一直開著的部位(Wei 10-17):帳上有 Blave 的部位、策略的目標已經比它小(平倉、減碼、翻向)。
    resume_wait 把每條有金額策略的現在訊號記成基準,它的標的兩邊都不動,直到訊號方向再變——暫停中已經想平的部位就一直開著。
-   標的範圍照機器端的 gate:有金額的策略碰到的每個標的(投資組合權重 0 的成分也算);還沒算出訊號的不算;差額過門檻的才算(同 trCatchWill)。回幾檔 */
+   標的範圍照機器端的 gate:有金額的策略碰到的每個標的(投資組合權重 0 的成分也算);還沒算出訊號的不算;差額過門檻的才算(同 trCatchPlan)。回幾檔 */
 function trWaitStranded(r) {
-  if (!trHasAccount(r) || trPosUnread(r)) return 0;
+  if (!trHasAccount(r) || trPosUnknown(r)) return 0;
   const stored = trStored() || {}, st2 = poPartStates(stored, r.states || {}), contracts = trContracts();
   const target = trClientTargets(stored, st2, contracts), bk = trBook(r, target), vk = trVenueKind(trVenueId()), gates = ((bk.last || {}).gates) || {};
   const keys = new Set(), notYet = new Set(), names = {}, add = (k, n) => { keys.add(k); (names[k] = names[k] || []).push(n); };
@@ -4613,7 +4637,7 @@ function trCfOpen(o) {
     // 說明句只在表講不完時出,放表下(canon):列不出單、有策略算不出、用到不是最新那根的預覽
     if (nextOn) body.appendChild(trEl("p", "cf-note", t("tr.cf.nextRound")));
     if (closeMaybe) body.appendChild(trEl("p", "cf-note", t("tr.cf.closeMaybe")));
-    // 一句最多點名三檔,其餘「和另外 N 檔」(同補齊那句 trCatchWill)
+    // 一句最多點名三檔,其餘「和另外 N 檔」(同補齊那句 trCatchPlan)
     const syms = (ks) => { const ns = ks.map((k) => { const b = k.replace(/@spot$/, ""), sp = trTxfSpec(trCapitalCanon(b)), tw = sp ? "" : trTwName(k); return sp ? t(sp.prod) : b + (tw ? " " + tw : ""); });
       return ns.slice(0, 3).join(LANG === "zh" ? "、" : ", ") + (ns.length > 3 ? (LANG === "zh" ? "" : " ") + t("tr.opt.catchMore", { n: ns.length - 3 }) : ""); };
     if (hw.length) body.appendChild(trEl("p", "cf-note", t("tr.cf.held", { syms: syms(hw), names: list(held.names) })));

@@ -1485,9 +1485,10 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       /const recomputing = trRecomputing\(r\), rkS = trRestartKind\(r\);/.test(start)
       // 0.1.58 R1:停用條件多了「還沒讀到帳」,原因句重算中優先
       && /const catchOff = recomputing \|\| !plan0;/.test(start)
-      && /const catchWhy = recomputing \? t\("tr\.cloud\.recomputing"\) : !read \? t\("tr\.opt\.catchNeedRead"\) : sigWait \? sigWhy\(\) : null;/.test(start)
-      // 0.1.60 讀到帳、等訊號:轉圈＋正在算、1 分鐘後逾時句＋〔重新整理〕(行為在 check_shell_start_box.js)
-      && /const sigWait = !recomputing && read && !plan0,/.test(start) && /t\("tr\.opt\.catchComputing"\)/.test(start) && /t\("tr\.opt\.catchLate"\)/.test(start)
+      // 0.1.62(spec 0162 a-start-catch §2–3):重算中 → 讀帳失敗 → 等交易所回報部位 → 還沒讀到帳 → 等訊號,原因句各一種
+      && /const catchWhy = recomputing \? t\("tr\.cloud\.recomputing"\)\n\s*: kind === "err" \? trTidyZh\(t\("tr\.opt\.catchReadErr", \{ venue: vName\(trPosErrId\(r\)\) \}\)\)\n\s*: posWait \? waitWhy\(t\("sp\.posPending"\), trTidyZh\(t\("tr\.opt\.catchPosLate", \{ venue: vName\(lagId\) \}\)\)\)\n\s*: !read \? t\("tr\.opt\.catchNeedRead"\) : sigWait \? waitWhy\(t\("tr\.opt\.catchComputing"\), t\("tr\.opt\.catchLate"\)\) : null;/.test(start)
+      // 0.1.60 讀到帳、等訊號:轉圈＋正在算、1 分鐘後逾時句＋〔重新整理〕;0.1.62 等快照同一套(行為在 check_shell_start_box.js)
+      && /const sigWait = kind === "sig" && !plan0, posWait = kind === "lag";/.test(start) && /const kind = trStartKind\(r\), read = trHasAccount\(r\) && !trPosUnknown\(r\),/.test(start)
       && /disabled: catchOff, why: catchWhy, ok: t\("tr\.startCatchUp"\), onOk: \(\) => catchUp\("catch"\) \},/.test(start)
       // 0.1.58:按下去再查一次,重算中或單變了就不送、框留著重畫(行為在 check_shell_start_box.js)
       && /if \(trRecomputing\(r2\) \|\| !p2 \|\| !trCatchSame\(p2, plan0\)\) \{ trackFeature\("start_catch_chg"\); trAskStart\(opener, true, true, pre\); return; \}/.test(start)
