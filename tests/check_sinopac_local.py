@@ -8,7 +8,7 @@
   3. desktop, gate open: the child gets SJ_LOG_PATH = the null device and STOP_ON_EOF; an unbind
      closes its stdin and it leaves on its own (no kill); one that ignores the close is killed only
      past STOP_GRACE_S.
-  4. respawn: RESPAWN_S after an exit, UNVERIFIED_RESPAWN_S after UNVERIFIED_EXIT; none while STOP.
+  4. respawn: RESPAWN_S after an exit (SESSION_LOST_EXIT included), UNVERIFIED_RESPAWN_S after UNVERIFIED_EXIT; none while STOP.
   5. daemon shutdown asks and waits briefly, never kills; the next start's reap waits for a worker
      still logging out and kills one still there past the grace.
   6. the real worker leaves on stdin EOF when STOP_ON_EOF is set (gate shut: it exits at once, so
@@ -247,7 +247,8 @@ check(alive_in_grace and wait_exit(p) is not None,
 
 # ── 4. respawn spacing ──
 bind()
-for rc_, gap in ((1, sl.RESPAWN_S), (5, sl.RESPAWN_S), (4, sl.UNVERIFIED_RESPAWN_S)):
+# 7 = lib/sinopac_worker.SESSION_LOST_EXIT (a session gone after a good login): restarted like a crash
+for rc_, gap in ((1, sl.RESPAWN_S), (5, sl.RESPAWN_S), (7, sl.RESPAWN_S), (4, sl.UNVERIFIED_RESPAWN_S)):
     mode(f"exit:{rc_}")
     w = sl._Worker()
     w.tick(now)

@@ -52,6 +52,13 @@
    streak, then every 2 h, none under HALT; any credential / certificate /
    signing / unidentified failure stops with one P1. A start past the gate
    writes the durable futures-enabled marker (venue_traits bound_marker).
+5b. A session lost after a good login (29026 11-25): a token refused at once, the Solace session
+   not established for READ_RELOGIN_NOT_READY_S, any other failed read (500, 503 maintenance) for
+   READ_RELOGIN_S → a `waiting: login` snapshot with the last good rows, logout, SESSION_LOST_EXIT
+   (no STOP). Meanwhile a 503 or not-established read — and a 500 inside MAINTENANCE_TW (Taipei
+   time, any TZ) — is `waiting: session` (skipped, never a halt), any other a failed read; the outage's exchange_unreachable is the worker's, its clock carried over the
+   re-login until a read answers. A session lost inside LOGIN_STABLE_S keeps the ladder record, so the restart waits its
+   spacing; an order meanwhile is rejected with the error, nothing placed.
 6. account_sinopac: missing / stale / error snapshots raise; two months of one
    root raise; positions in lots.
 7. flatten's TW-broker names (format_qty, close_position_partial) exist.
@@ -1712,6 +1719,337 @@ w.WORKSPACE = TMP
 raises(SystemExit, w.main)
 w.WORKSPACE = real_ws
 check(holder["api"].logged_out, "the daemon stopped mid-loop logs out")
+os.remove(os.path.join(TMP, ".env"))
+
+# 5b. a session lost after a good login (29026 11-24/25: 500s at 永豐's maintenance, then 503s, then
+# "Token is expired" 24 h in and SessionNotEstablished for a day — 1,157 failed reads, never a login)
+_SysMaint = type("SystemMaintenance", (ShioajiError,), {})
+_ServerErr = type("ServerError", (ShioajiError,), {})
+_ConnErr = type("ShioajiConnectionError", (ShioajiError, ConnectionError), {})
+_TOKEN = _sdk_err("TokenError", AuthError)
+_TOKEN.args = ("StatusCode: 401, Detail: Token is expired",)
+_NOT_READY = _ConnErr("margin: Shioaji error Session error SolClient send request api/v1/portfolio/margin, "
+                      "code: NotReady, SubCode(SessionNotEstablished)")
+_PARAM = _ServerErr("margin: code: 500, detail: Please check param.")
+_MAINT = _SysMaint("StatusCode: 503")
+check([w.session_lost(e) for e in (_TOKEN, RuntimeError("HTTP 401: token expired"), _NOT_READY, _PARAM, _MAINT,
+                                   TimeoutError("timed out"))] == ["token", "token", "not_ready", None, None, None],
+      "session_lost: TokenError / a 401 on the token → token, SessionNotEstablished → not_ready; 500, 503, a "
+      "timeout are not a lost session")
+check(w.relogin_due("token", 100.0, 100.0) and not w.relogin_due("not_ready", 100.0, 100.0 + w.READ_RELOGIN_NOT_READY_S - 1)
+      and w.relogin_due("not_ready", 100.0, 100.0 + w.READ_RELOGIN_NOT_READY_S)
+      and not w.relogin_due(None, 100.0, 100.0 + w.READ_RELOGIN_S - 1) and w.relogin_due(None, 100.0, 100.0 + w.READ_RELOGIN_S)
+      and w.READ_RELOGIN_S >= w.LOGIN_RETRY_LONG_S and w.READ_RELOGIN_NOT_READY_S >= 120,
+      "relogin_due: a token at once, not_ready after READ_RELOGIN_NOT_READY_S, anything else (500, 503 maintenance) "
+      "after READ_RELOGIN_S ≥ the ladder's longest wait — never a login per failed read")
+check(w.SESSION_LOST_EXIT not in (0, w.LOGIN_STOPPED_EXIT, w.UNVERIFIED_EXIT, w.NOT_BOUND_EXIT, w.STATE_EXIT)
+      and f"for code in (LOGIN_STOPPED_EXIT, UNVERIFIED_EXIT, NOT_BOUND_EXIT)" in inspect.getsource(w.install),
+      "SESSION_LOST_EXIT is non-zero and not one of NSSM's stay-down codes: every supervisor restarts it")
+
+
+# the window is Taipei time whatever the machine's zone; [05:00, 06:00) — 11-25 05:00 TW = 11-24 21:00 UTC
+_T5 = 1795554000.0  # 2026-11-24T21:00:00Z
+assert time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(_T5)) == "2026-11-24T21:00:00"
+_tz0 = os.environ.get("TZ")
+_edges = {}
+for _tz in ("UTC", "America/New_York", "Asia/Taipei"):
+    os.environ["TZ"] = _tz
+    time.tzset()
+    _edges[_tz] = [w.in_maintenance(_T5 + d) for d in (-1, 0, 3599, 3600)]
+if _tz0 is None:
+    os.environ.pop("TZ", None)
+else:
+    os.environ["TZ"] = _tz0
+time.tzset()
+check(w.MAINTENANCE_TW == ((5, 0), (6, 0)) and all(v == [False, True, True, False] for v in _edges.values()),
+      "in_maintenance: 04:59:59 no, 05:00:00 yes, 05:59:59 yes, 06:00:00 no (Taipei), the same under every TZ", _edges)
+_in, _out = _T5 + 600, _T5 + 3600 + 600
+check(w.read_waits(_PARAM, None, _in) and not w.read_waits(_PARAM, None, _out)
+      and not w.read_waits(_PARAM, None, _T5 - 1) and w.read_waits(_PARAM, None, _T5)
+      and w.read_waits(_MAINT, None, _out) and w.read_waits(_NOT_READY, "not_ready", _out)
+      and not w.read_waits(RuntimeError("code: 500 x"), None, _in) and not w.read_waits(TimeoutError("t"), None, _in),
+      "read_waits: a ServerError (500) waits inside the window only, a 503 / not established at any hour; "
+      "anything else (an unknown error, a timeout) is a counted failure even inside it")
+
+
+class _LostApi(FakeApi):
+    """margin(): the queued outcomes in turn (None = a good read), the last one for good; past
+    `cap` reads it asks the loop to stop (a worker that never leaves fails the check, not the file)."""
+
+    def __init__(self, outcomes, cap=400, **kw):
+        super().__init__(positions=[("TXFL6", 2)], **kw)
+        self.outcomes, self.reads, self.cap, self.logins, self.read_at = list(outcomes), 0, cap, 0, []
+
+    def login(self, **kw):
+        self.logins += 1
+        return super().login(**kw)
+
+    def margin(self, acct):
+        self.reads += 1
+        self.read_at.append(time.time())
+        if self.reads > self.cap:
+            w._STOP.set()
+        o = self.outcomes.pop(0) if len(self.outcomes) > 1 else self.outcomes[0]
+        if o is not None:
+            raise o
+        return super().margin(acct)
+
+
+_lknobs = ("LOGIN_RETRY_S", "LOGIN_RETRY_LONG_S", "POLL_S", "REQUEST_CHECK_S", "READ_RELOGIN_S",
+           "READ_RELOGIN_NOT_READY_S", "LOGIN_STABLE_S", "UNREACHABLE_AFTER_S")
+_lknobs += ("MAINTENANCE_TW", "LOGIN_CONFIRM_S")
+_lsaved = {k: getattr(w, k) for k in _lknobs}
+_NO_WINDOW, _ALL_DAY = ((0, 0), (0, 0)), ((0, 0), (24, 0))
+w.MAINTENANCE_TW = _NO_WINDOW  # the cases below must not depend on the hour the file runs at
+w.LOGIN_RETRY_S, w.LOGIN_RETRY_LONG_S, w.POLL_S, w.REQUEST_CHECK_S = (0.3, 0.6), 0.6, 0.02, 0.005
+w.READ_RELOGIN_S, w.READ_RELOGIN_NOT_READY_S, w.UNREACHABLE_AFTER_S = 0.4, 0.15, 3600
+w.LOGIN_CONFIRM_S = 0.05
+w.events.emit = lambda t, **p: emitted.append((t, p)) or 1
+_lost_snaps, _real_write = [], w._write_snapshot
+w._write_snapshot = lambda snap: _lost_snaps.append(dict(snap)) or _real_write(snap)
+_bind_store()
+w.WORKSPACE = TMP
+_drop(w.RETRY_PATH)
+emitted.clear()
+
+
+def _lost_serve(api):
+    holder["api"] = api
+    _lost_snaps.clear()
+    t0 = time.time()
+    try:
+        return w._serve(dict(_c)), time.time() - t0
+    finally:
+        w._STOP.clear()
+
+
+try:
+    # the token expires on a session that held LOGIN_STABLE_S: logged out, waiting, exit — and the
+    # positions of the last good read ride along, never read as positions (ok false)
+    w.LOGIN_STABLE_S = 0.0
+    _a = _LostApi([None, None, _PARAM, _TOKEN])
+    rc, _ = _lost_serve(_a)
+    last = _lost_snaps[-1] if _lost_snaps else {}
+    check(rc == w.SESSION_LOST_EXIT and _a.reads == 4 and _a.logged_out and _a.logins == 1
+          and last.get("ok") is False and last.get("waiting") == "login"
+          and [(r["productid"], r["net"]) for r in last.get("positions", [])] == [("TXFL6", 2)]
+          and not os.path.exists(w.STOP_PATH) and not [t for t, _ in emitted if t == "venue_login_blocked"],
+          "a token expired after a good login: logout, a `waiting: login` snapshot carrying the last good "
+          "read's rows, exit SESSION_LOST_EXIT — no STOP, no P1", (rc, _a.reads, last))
+    check(account_sinopac.waiting() == "login"
+          and isinstance(raises(RuntimeError, account_sinopac.position_rows), RuntimeError),
+          "…the reconciler reads that snapshot as waiting (round skipped), and a position read raises — "
+          "never an empty book")
+    rec = _rec()
+    check(rec.get("failures") == 0 and rec.get("retry_at", 1e18) <= time.time()
+          and abs((rec.get("since") or 0) - _a.read_at[2]) < 0.05,
+          "…the session had held LOGIN_STABLE_S: no ladder climb, no wait — only the outage clock (from the "
+          "first failed read) carried in the record", rec)
+    # the restart after it: one login, at once, and a session read again
+    _a = _LostApi([None], cap=2)
+    rc, _ = _lost_serve(_a)
+    check(rc == 0 and _a.logins == 1 and _a.reads >= 2,
+          "…the restarted worker logs in once and reads again", (rc, _a.logins, _a.reads))
+    _drop(w.RETRY_PATH)
+
+    def _kinds(snaps):
+        """per failed read in the window: 'session' (waiting), 'failed' (counted), the exit's 'login' left out"""
+        return [s.get("waiting") or "failed" for s in snaps if not s.get("ok") and s.get("waiting") != "login"]
+
+    # SessionNotEstablished: the Solace session's own reconnect is waited out first, every round a
+    # `waiting: session` snapshot (the reconciler skips it, never halts on it), then the exit
+    _a = _LostApi([None, _NOT_READY])
+    rc, took = _lost_serve(_a)
+    nr = _a.read_at[1:]
+    k = _kinds(_lost_snaps)
+    check(rc == w.SESSION_LOST_EXIT and len(nr) >= 2 and nr[-1] - nr[0] >= w.READ_RELOGIN_NOT_READY_S - 0.01
+          and _a.logins == 1 and k and set(k) == {"session"},
+          "SessionNotEstablished: reads go on for READ_RELOGIN_NOT_READY_S on the one session as `waiting: "
+          "session` snapshots, then the exit", (rc, len(nr), sorted(set(k))))
+    _drop(w.RETRY_PATH)
+
+    # 503 (maintenance) and 500 after a good login: the session is kept for READ_RELOGIN_S — no login
+    # per failed read — then one exit. A 503 round is `waiting` (skipped); a 500 one a failed read the
+    # reconciler counts as today
+    for name, err, want in (("503 maintenance", _MAINT, {"session"}), ("500 Please check param", _PARAM, {"failed"})):
+        _a = _LostApi([None, err])
+        rc, took = _lost_serve(_a)
+        k = _kinds(_lost_snaps)
+        check(rc == w.SESSION_LOST_EXIT and _a.logins == 1 and _a.reads >= 5
+              and _a.read_at[-1] - _a.read_at[1] >= w.READ_RELOGIN_S - 0.01 and k and set(k) == want,
+              f"{name} after a good login: one session for READ_RELOGIN_S ({_a.reads} reads, one login), "
+              f"{'waiting' if want == {'session'} else 'failed'} snapshots, then the exit", (rc, _a.logins, sorted(set(k))))
+        _drop(w.RETRY_PATH)
+    # 500 then 503 outside the maintenance window: the 500 rounds stay failed reads, the 503 ones wait
+    _a = _LostApi([None, _PARAM, _PARAM, _MAINT])
+    rc, _ = _lost_serve(_a)
+    k = _kinds(_lost_snaps)
+    check(rc == w.SESSION_LOST_EXIT and k[:2] == ["failed", "failed"] and set(k[2:]) == {"session"},
+          "500 then 503 outside MAINTENANCE_TW: the 500 rounds stay failed reads, the 503 ones turn waiting", k[:4])
+    _drop(w.RETRY_PATH)
+    # 29026's night (05:10 500s, 05:35 503s TW) inside the window: every round waits, none counted —
+    # and READ_RELOGIN_S still ends the session (the window never keeps it silent)
+    w.MAINTENANCE_TW = _ALL_DAY
+    _a = _LostApi([None, _PARAM, _PARAM, _MAINT])
+    rc, _ = _lost_serve(_a)
+    k = _kinds(_lost_snaps)
+    w.MAINTENANCE_TW = _NO_WINDOW
+    check(rc == w.SESSION_LOST_EXIT and k and set(k) == {"session"}
+          and _a.read_at[-1] - _a.read_at[1] >= w.READ_RELOGIN_S - 0.01,
+          "500 then 503 inside MAINTENANCE_TW: every round `waiting: session`, then the READ_RELOGIN_S exit", k[:4])
+    _drop(w.RETRY_PATH)
+    _real_write({"ok": False, "waiting": "session", "error": "x"})
+    check(account_sinopac.waiting() == "session"
+          and isinstance(raises(RuntimeError, account_sinopac.position_rows), RuntimeError),
+          "account_sinopac.waiting() names a `waiting: session` snapshot (the reconciler's ReadSkipped); "
+          "a position read on it raises")
+
+    # not silent: the outage's exchange_unreachable comes from this worker, on a clock that survives
+    # the re-login — a maintenance that outlasts READ_RELOGIN_S still reaches 25 / 150 min
+    emitted.clear()
+    w.UNREACHABLE_AFTER_S = 0.1
+    _a = _LostApi([None, _MAINT])
+    rc, _ = _lost_serve(_a)
+    rec, first = _rec(), list(emitted)
+    since0 = _a.read_at[1]
+    check(rc == w.SESSION_LOST_EXIT and [(t, p.get("code")) for t, p in first] == [("exchange_unreachable", "session")]
+          and first[0][1]["venue"] == "sinopac"
+          and abs((rec.get("since") or 0) - since0) < 0.05 and rec.get("announced_at"),
+          "503 past UNREACHABLE_AFTER_S on a live session: one exchange_unreachable (code session), and the "
+          "outage's start and notice go into the login record at the exit", (first, rec))
+    _b = _LostApi([_MAINT])
+    rc, _ = _lost_serve(_b)
+    rec2 = _rec()
+    check(rc == w.SESSION_LOST_EXIT and emitted == first and abs((rec2.get("since") or 0) - since0) < 0.05,
+          "…the next process logs in, reads 503 again: the same outage (no second 25-min notice), its "
+          "start kept for the 150-min one", (emitted, rec2))
+    _drop(w.RETRY_PATH)
+    _c2 = _LostApi([None, _MAINT])
+    rc, _ = _lost_serve(_c2)
+    check(abs((_rec().get("since") or 0) - _c2.read_at[1]) < 0.05,
+          "…a good read ends the outage: the next one is dated from its own first failure")
+    w.UNREACHABLE_AFTER_S = 3600
+    _drop(w.RETRY_PATH)
+    emitted.clear()
+    w.LOGIN_STABLE_S = _lsaved["LOGIN_STABLE_S"]
+
+    # a session lost soon after its login keeps the ladder record: the restart waits the spacing,
+    # not an immediate login (the national id's 1000 a day, 451)
+    _a = _LostApi([_TOKEN])
+    t_login = time.time()
+    rc, _ = _lost_serve(_a)
+    rec = _rec()
+    check(rc == w.SESSION_LOST_EXIT and rec.get("failures") == 1 and rec.get("retry_at", 0) >= t_login + w.LOGIN_RETRY_S[0] - 0.05,
+          "a token refused right after the login: the exit keeps the login record (failures 1, the first spacing)", rec)
+    check(abs((rec.get("since") or 0) - _a.read_at[0]) < 0.05 and rec.get("error") == w.SESSION_LOST_ERR,
+          "…a 401 on the very first read still dates the outage from it, and the record's error names the lost "
+          "session (not 「上一次登入沒有結果」)", rec)
+    _b = _LostApi([_TOKEN])
+    retry_at = rec.get("retry_at", 0)
+    rc, _ = _lost_serve(_b)
+    rec2 = _rec()
+    waits = [s for s in _lost_snaps if s.get("waiting") == "login_retry"]
+    check(waits and all(s["error"].startswith("永豐連線中斷") and "程序中斷" not in s["error"] for s in waits),
+          "…its waiting snapshot says the connection dropped", waits[:1])
+    check(rc == w.SESSION_LOST_EXIT and _b.logins == 1 and _b.read_at and _b.read_at[0] >= retry_at - 0.01
+          and rec2.get("failures") == 2 and waits and all(not s["ok"] for s in waits),
+          "…the restart waits for that retry_at with a `waiting` snapshot, then climbs (failures 2): a session "
+          "that dies again and again is spaced by the ladder", (rec2, len(waits)))
+    _drop(w.RETRY_PATH)
+
+    # audit M1 / S1: a login answered 500 inside the maintenance window climbs the ladder (no STOP, no
+    # P1); outside it, or any other ServerError inside it, stops as before
+    _S500 = _ServerErr("StatusCode: 500, Detail: Please check param.")
+    _S502 = _ServerErr("StatusCode: 502, Detail: bad gateway")
+    w.MAINTENANCE_TW = _ALL_DAY
+    emitted.clear()
+    holder["api"] = _FlakyApi([_S500, _S500])
+    _out = w._login_with_retry(dict(_c))
+    in_ok = (holder["api"].logins == 3 and _out is not None and not os.path.exists(w.STOP_PATH)
+             and not [t for t, _ in emitted if t == "venue_login_blocked"])
+    _drop(w.RETRY_PATH)
+    holder["api"] = _FlakyApi([_S502])
+    e502 = raises(SystemExit, lambda: w._login_with_retry(dict(_c)))
+    stop502 = os.path.exists(w.STOP_PATH)
+    _drop(w.STOP_PATH)
+    _drop(w.RETRY_PATH)
+    k502 = w.read_waits(_S502, None, time.time())
+    w.MAINTENANCE_TW = _NO_WINDOW
+    holder["api"] = _FlakyApi([_S500])
+    e500 = raises(SystemExit, lambda: w._login_with_retry(dict(_c)))
+    stop500 = os.path.exists(w.STOP_PATH)
+    _drop(w.STOP_PATH)
+    _drop(w.RETRY_PATH)
+    emitted.clear()
+    _S500c = _ServerErr("server said no")
+    _S500c.status_code = 500
+    check(in_ok, "a login answered 500 inside MAINTENANCE_TW: retried on the ladder, no STOP, no P1")
+    check(e502 is not None and e502.code == w.LOGIN_STOPPED_EXIT and stop502 and not k502,
+          "…a ServerError that is not a 500 stops the login and counts as a failed read, inside the window too")
+    check(e500 is not None and e500.code == w.LOGIN_STOPPED_EXIT and stop500,
+          "…a 500 login outside the window stops as before (STOP + P1)")
+    w.MAINTENANCE_TW = _ALL_DAY
+    check(w.maintenance_500(_S500c, time.time()) and not w.maintenance_500(RuntimeError("500"), time.time())
+          and not w.maintenance_500(_ServerErr("code 5000"), time.time()),
+          "maintenance_500: a ServerError's status_code 500 or a whole 500 in its text; never another class or 5000")
+    w.MAINTENANCE_TW = _NO_WINDOW
+
+    # audit S3: after a login nothing is published until two reads LOGIN_CONFIRM_S apart show the same
+    # positions — a one-off empty read right after a re-login never reaches the reconciler as flat
+    class _SeqApi(FakeApi):
+        def __init__(self, books, cap=60):
+            super().__init__()
+            self.books, self.n, self.cap = list(books), 0, cap
+
+        def list_positions(self, acct, unit=None, timeout=None):
+            self.n += 1
+            if self.n >= self.cap:
+                w._STOP.set()
+            self.positions = self.books.pop(0) if len(self.books) > 1 else self.books[0]
+            return super().list_positions(acct, unit, timeout)
+
+    _cs = w.LOGIN_CONFIRM_S
+    w.LOGIN_CONFIRM_S = 0.05
+    try:
+        _sq = _SeqApi([[], [("TXFL6", 2)], [("TXFL6", 2)]], cap=12)
+        _lost_serve(_sq)
+        reads = [x for x in _lost_snaps if "query_started_at" in x or x.get("waiting") == "login"][1:]
+        oks = [x for x in _lost_snaps if x.get("ok")]
+        flat_ok = [x for x in oks if not x.get("positions")]
+        first_ok = next((i for i, x in enumerate(_lost_snaps) if x.get("ok")), None)
+        check(oks and not flat_ok and all(x.get("ok") is False for x in _lost_snaps[:first_ok])
+              and _lost_snaps[first_ok - 1].get("waiting") == "login",
+              "S3: an empty first read after the login, then TXFL6 +2 twice: nothing published until two "
+              "reads LOGIN_CONFIRM_S apart agree; the empty one never goes out as ok",
+              [(x.get("ok"), x.get("waiting"), len(x.get("positions") or [])) for x in _lost_snaps[:6]])
+        _sq = _SeqApi([[("TXFL6", 2)]], cap=12)
+        _lost_serve(_sq)
+        oks = [x for x in _lost_snaps if x.get("ok")]
+        check(oks and [(r["productid"], r["net"]) for r in oks[0]["positions"]] == [("TXFL6", 2)],
+              "S3: a normal start (the same book every read) is published once the second read agrees — never "
+              "waiting for good")
+        _drop(w.RETRY_PATH)
+    finally:
+        w.LOGIN_CONFIRM_S = _cs
+    check(21 < _lsaved["LOGIN_CONFIRM_S"] and w.CONTRACTS_WAIT_S + _lsaved["LOGIN_CONFIRM_S"] < 120,
+          "LOGIN_CONFIRM_S: past M0-b's ~21 s fill lag; the contract wait plus it stays inside the desktop's 120 s "
+          "「連接中」 grace (and the connect flow's 300 s finish wait)")
+    _drop(w.RETRY_PATH)
+    # orders while the session is gone: refused with the error, never sent and never silent
+    _o = _LostApi([_TOKEN])
+    resp = w.execute(_o, _o.futopt_account, req("reduce", action="sell"), simulation=True)
+    check(resp["status"] == "rejected" and "Token is expired" in resp["error"]
+          and not any(isinstance(x, tuple) and x[0] == "place_order" for x in _o.calls),
+          "an order while the token is expired: rejected with the error, nothing placed", resp)
+finally:
+    _drop(w.RETRY_PATH)
+    _drop(w.STOP_PATH)
+    w._write_snapshot = _real_write
+    w.events.emit = real_emit
+    w.WORKSPACE = real_ws
+    for k, v in _lsaved.items():
+        setattr(w, k, v)
+    w._STOP.clear()
 os.remove(os.path.join(TMP, ".env"))
 
 # shioaji's native session line goes to fd 1 with the national id: quiet_sdk masks it

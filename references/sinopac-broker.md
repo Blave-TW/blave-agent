@@ -281,6 +281,15 @@ workspace whose `lib/venue_traits.py` lacks `"futures"` for SinoPac refuses with
   150 minutes, then every 2 hours. Any other failed login (key, certificate, not signed, no futures account)
   stops SinoPac only — no HALT — and the user is told once; only the user's
   confirmed login on the platform restarts it.
+- A session that goes after a good login logs in again by itself: an expired token at once (the
+  token lasts about a day and SinoPac does not renew it), the connection not re-established within
+  2 minutes, any other read failing for 30 minutes (SinoPac's maintenance, taken as 05:00–06:00 Taiwan
+  time each day — measured on one night, to be confirmed with SinoPac). The worker
+  restarts and logs in on the same spacing as above. While SinoPac is in maintenance or reconnecting,
+  trading on it skips those rounds without pausing the machine, and the user is told 25 minutes into
+  the outage, at 150 minutes, then every 2 hours — re-logins do not restart that clock. An order
+  meanwhile is refused with the error — nothing is sent. After every login the account is shown again only
+  once two reads 30 seconds apart agree. Do not restart the worker by hand for this.
 - No broker-side stop or take-profit: Shioaji's touch-price order runs in the client process, so
   `place_stop_order` refuses. No limit layer: a chase setting degrades to market, loudly.
 - Outcomes: `'filled'` (book `fill_qty`, never a later position read), `'sent'` (no fill seen in
