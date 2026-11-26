@@ -44,6 +44,26 @@ function libSampleYears(s) {
 }
 function libCreated(s) { const t0 = s && typeof s.created_at === "string" ? Date.parse(s.created_at.replace(" ", "T")) : NaN; return isFinite(t0) ? t0 : null; }
 function libListedDays(s, now) { const c = libCreated(s); return c === null ? null : Math.max(0, Math.floor((now - c) / LIB_DAY)); }
+/* 上架以來(library-oos SPEC-v3 §4.2、§4.4、api OOS-PHASE2-CONTRACT;逐行同 web library_rules.since,兩邊同一份 fixture):
+   只在 ?since_listing=1 的回應裡、只有官方有值。欄位只認契約位置:rep = /report 回應的頂層(分界 = equity_split),否則清單那份的 report
+   (spark_split)。null = 沒有 listed_at / since_listing(付費、舊 api),照舊畫。官方但還沒有上架後的日子(上架當天、曲線停在上架日之前)
+   數字是 null,畫面寫「—」。百分比、回撤照 api 給的(≤ 0) */
+const LIB_SINCE_RE = /^\d{4}-\d{2}-\d{2}$/;
+function libTaipeiDate(ms) { return new Date(ms + 8 * 3600000).toISOString().slice(0, 10); }
+function libSince(s, rep, now) {
+  const r = rep || (s && s.report && typeof s.report === "object" ? s.report : null);
+  if (!r) return null;
+  const sl = r.since_listing, listed = r.listed_at;
+  if (!sl || typeof sl !== "object" || !LIB_SINCE_RE.test(String(listed))) return null;
+  const upd = r.updated_to, days = libNum(sl.days), split = libNum(rep ? r.equity_split : r.spark_split);
+  return { listedAt: listed, updatedTo: LIB_SINCE_RE.test(String(upd)) && upd > listed ? upd : null, today: listed === libTaipeiDate(now || Date.now()),
+    days: days !== null && days > 0 ? days : null, ret: libNum(sl.return), mdd: libNum(sl.max_drawdown), split: split !== null && split % 1 === 0 ? split : null };
+}
+// 曲線最後一天(時間軸):延伸回應讀 updated_to,否則 equity_to——equity_to 一律是回測結束日(逐行同 web library_rules.curveEnd)
+function libCurveEnd(s, rep) {
+  const r = rep || (s && s.report && typeof s.report === "object" ? s.report : null) || {};
+  return LIB_SINCE_RE.test(String(r.updated_to)) ? r.updated_to : r.equity_to;
+}
 function libIsFree(s) { return !(s && typeof s.price === "number" && s.price > 0); }
 // 這支要不要 Blave 資料(api 的 blave_data;spec-0.1.13 §1.1):"none" / "required" / null(未標)。用到它的判斷一律把 null 當 required
 function libNeeds(s) { return s && (s.blave_data === "none" || s.blave_data === "required") ? s.blave_data : null; }
@@ -309,6 +329,12 @@ function libCurve(spark, from, to) {
     else out.push({ time: d, value: spark[i] });
   }
   return out.length >= 2 ? out : null;
+}
+/* 上架日在曲線時間軸上的那一天(libCurve 同一套均勻分布);分界不在曲線裡面(第一點、最後一點、超出)→ null 不畫(同 web equityCurve splitOk) */
+function libSplitDay(spark, from, to, split) {
+  const days = libDays(from, to), n = Array.isArray(spark) ? spark.length : 0;
+  if (days === null || n < 3 || !Number.isInteger(split) || split <= 0 || split >= n - 1) return null;
+  return new Date(Date.parse(from) + Math.round((split * days) / (n - 1)) * LIB_DAY).toISOString().slice(0, 10);
 }
 // 這一語言的成功筆記 id / 標題(spec-0.1.12-library-notes §2.2):缺就是缺,不拿另一個語言頂
 function libNoteId(s, lang) { const m = s && s.success_note_ids; const v = m && typeof m === "object" ? m[lang] : null; return Number.isInteger(v) && v > 0 ? v : null; }
@@ -1036,7 +1062,8 @@ function libBack() {
 }
 function libKv(rows) {
   const kv = libEl("div", "lib-kv");
-  rows.forEach(([k, v]) => { kv.appendChild(libEl("div", "k", k)); const d = libEl("div", "v mono"); if (v instanceof Node) d.appendChild(v); else d.textContent = v; kv.appendChild(d); });
+  // 缺值「—」走 --ink-disabled(canon color.md › 語意角色變數),不跟有值的格同一個墨色
+  rows.forEach(([k, v]) => { kv.appendChild(libEl("div", "k", k)); const d = libEl("div", "v mono" + (v === "—" ? " na" : "")); if (v instanceof Node) d.appendChild(v); else d.textContent = v; kv.appendChild(d); });
   return kv;
 }
 function libPaintDetail(s) {
@@ -1059,11 +1086,12 @@ function libPaintDetail(s) {
   if (r && r.spark) { chartHost = libEl("div", "chart"); chartHost.id = "lib-chart"; c1.appendChild(chartHost); }
   else c1.appendChild(libEl("p", "chart-none", t("lib.noCurve")));
   const split = libEl("div", "lib-split"), colA = libEl("div", "lib-kvcol"), colB = libEl("div", "lib-kvcol");
-  const y = libYears(s), days = libListedDays(s, now);
+  const y = libYears(s), days = libListedDays(s, now), sn = libSince(s, null, now);
   colA.append(libEl("div", "gh", t("lib.kv.bt")), libKv([
     [t("lib.kv.total"), libPct(r ? r.total_return : null)], [t("lib.kv.ann"), libPct(r ? r.annual_return : null)], [t("lib.kv.sharpe"), libFixed(r ? r.sharpe : null, 2)],
     [t("lib.kv.mdd"), libPct(r ? r.max_drawdown : null)], [t("lib.kv.sample"), y === null ? "—" : t("lib.sampleYrs", { n: y.toFixed(1) })]]));
-  colB.append(libEl("div", "gh", t("lib.kv.listed")), libKv([[t("lib.kv.days"), days === null ? "—" : String(days)], [t("lib.kv.installs"), String(s.purchase_count)]]));
+  if (sn) libSinceCol(colB, sn, s);
+  else colB.append(libEl("div", "gh", t("lib.kv.listed")), libKv([[t("lib.kv.days"), days === null ? "—" : String(days)], [t("lib.kv.installs"), String(s.purchase_count)]]));
   split.append(colA, colB); c1.appendChild(split); det.appendChild(c1);
   // 成功筆記入口卡(spec-0.1.12-library-notes §2.3):回測卡正下方;這一語言沒有筆記就整張不出
   if (libNoteId(s, LANG)) det.appendChild(libNoteLink(s));
@@ -1100,7 +1128,11 @@ function libPaintDetail(s) {
   if (s.direction && LIB_DIR_KEYS[s.direction]) dd(t("lib.meta.direction"), t(LIB_DIR_KEYS[s.direction]));
   if (typeof s.max_exposure === "number") dd(t("lib.meta.exposure"), libRich("lib.exposure", { n: libMono(String(+s.max_exposure.toFixed(2))) }));
   c3.appendChild(dl); det.appendChild(c3);
-  if (chartHost) libChartDraw(chartHost, r);
+  if (chartHost) {
+    const curve = Object.assign({}, r, { to: libCurveEnd(s), split: sn && sn.updatedTo ? sn.split : null });
+    libChartDraw(chartHost, curve);
+    if (chartHost.isConnected) libLegendPut(chartHost, null, libZoneShown(curve) ? sn : null);   // 畫不出來時 host 已換成「沒有曲線」
+  }
   if (r) libReportLoad(s);   // 兩段式:先用 64 點 spark 畫,/report 回來換 400 點——同一支才動、只換曲線與回測期間,不整頁重畫
 }
 function libReportLoad(s) {
@@ -1113,14 +1145,14 @@ function libReportLoad(s) {
   p.then((rep) => { if (rep && !$("lib").hidden && libBag().detail === s.id) libReportApply(rep, s); });
 }
 function libReportApply(rep, s) {
-  const det = $("lib-det"), bm = rep.benchmark && typeof rep.benchmark === "object" ? rep.benchmark : null;
-  const curve = rep.equity ? { spark: rep.equity, equity_from: rep.equity_from, equity_to: rep.equity_to, bench: bm ? bm.equity : null } : null;
-  if (curve && libCurve(curve.spark, curve.equity_from, curve.equity_to)) {   // 先確認畫得出來:換不成就留著 spark,不能從有圖退成沒圖
+  const det = $("lib-det"), bm = rep.benchmark && typeof rep.benchmark === "object" ? rep.benchmark : null, sn = libSince(s, rep);
+  const curve = rep.equity ? { spark: rep.equity, equity_from: rep.equity_from, equity_to: rep.equity_to, to: libCurveEnd(s, rep), split: sn && sn.updatedTo ? sn.split : null, bench: bm ? bm.equity : null } : null;
+  if (curve && libCurve(curve.spark, curve.equity_from, curve.to)) {   // 先確認畫得出來:換不成就留著 spark,不能從有圖退成沒圖
     let host = $("lib-chart");
     if (host) libChartDrop();
     else { const none = det.querySelector(".lib-card .chart-none"); if (none) { host = libEl("div", "chart"); host.id = "lib-chart"; none.replaceWith(host); } }
-    // 圖例跟著第二條線一起出(spec library-benchmark §2 兩段式):線沒畫成就不出,不預留空的圖例列
-    if (host && libChartDraw(host, curve) && host.isConnected) host.before(libBenchLegend(bm));
+    // 圖例跟著第二條線(spec library-benchmark §2 兩段式)或上架分界一起出:都沒畫成就不出,不預留空的圖例列
+    if (host) { const drew = libChartDraw(host, curve); if (host.isConnected) libLegendPut(host, drew ? bm : null, libZoneShown(curve) ? sn : null); }
   }
   if (bm) libBenchTable(bm, s);
   const per = $("lib-period");
@@ -1741,11 +1773,29 @@ function libGateTip(node, text, id) {
   return tw;
 }
 function libBenchLabel(bm) { return libRich("bt.benchmarkBh", { sym: libMono(libBenchSym(bm)) }); }
-function libBenchLegend(bm) {
-  const lg = libEl("div", "bt-label lib-legend"), bh = libEl("span", "bt-legend bh");
-  bh.appendChild(libBenchLabel(bm));
-  lg.append(libEl("span", "bt-legend", t("bt.equity")), bh);
+function libBenchLegend(bm, sn) {
+  const lg = libEl("div", "bt-label lib-legend");
+  lg.id = "lib-legend";
+  // 「權益」只在有基準線、要分兩條線時才放(設計裁決 oos-phase2 §4,同網頁);只有上架那段就只放那一項
+  if (bm) { const bh = libEl("span", "bt-legend bh"); bh.appendChild(libBenchLabel(bm)); lg.append(libEl("span", "bt-legend", t("bt.equity")), bh); }
+  if (sn) { const z = libEl("span", "bt-legend zone"); z.appendChild(libRich("lib.since.zone", { from: libMono(sn.listedAt), to: libMono(sn.updatedTo) })); lg.appendChild(z); }
   return lg;
+}
+// 曲線上方的圖例:基準線畫上了、或上架分界畫上了才出;換曲線時舊的那列先拿掉
+function libLegendPut(host, bm, sn) {
+  const old = $("lib-legend"); if (old) old.remove();
+  if (bm || sn) host.before(libBenchLegend(bm, sn));
+}
+function libZoneShown(curve) { return !!libSplitDay(curve.spark, curve.equity_from, curve.to || curve.equity_to, curve.split); }
+/* 「上架以來」那一欄(SPEC-v3 §4.4):標題掛提示泡、旁邊天數或「今天上架」;報酬與最大回撤從上架日起算,還沒有上架後的日子就是「—」。
+   安裝數照舊留在這一欄 */
+function libSinceCol(col, sn, s) {
+  const gh = libEl("div", "gh lib-since-h");
+  gh.appendChild(libGateTip(document.createTextNode(t("lib.since.title")), t("lib.since.tip"), "lib-since-tip"));
+  if (sn.days !== null) gh.append(" · ", libRich("lib.since.days", { n: libMono(String(sn.days)) }));
+  else if (sn.today) gh.append(" · ", t("lib.since.today"));
+  // 數字不上色:同一張卡「回測」那欄也不上色
+  col.append(gh, libKv([[t("lib.since.return"), libPct(sn.ret)], [t("lib.kv.mdd"), libPct(sn.mdd)], [t("lib.kv.installs"), String(s.purchase_count)]]));
 }
 // 「回測」欄的兩欄 kv 換成 指標｜策略｜{sym} 持有;樣本年數併進表頭。策略欄同 kv 不上色,基準欄是比較對象、也不上色
 function libBenchTable(bm, s) {
@@ -1773,13 +1823,19 @@ function libBenchTable(bm, s) {
 /* ── 曲線(lightweight-charts;顏色接法同 report-trades.js buildChart)── */
 function libChartDrop() { if (LIB.chart) { try { LIB.chart.remove(); } catch (_) { } LIB.chart = null; } }   // remove 丟例外 = 已經拆了
 // 回傳基準線有沒有畫上(r.bench:跟 r.spark 同長、同一段日期的買進持有倍數)
+// r.to = 曲線最後一天(延伸過的是 updated_to);r.split = 上架日在 r.spark 的第幾點(libSince;null = 不畫分界)
 function libChartDraw(host, r) {
-  const data = libCurve(r.spark, r.equity_from, r.equity_to), bench = r.bench ? libCurve(r.bench, r.equity_from, r.equity_to) : null;
+  const to = r.to || r.equity_to, data = libCurve(r.spark, r.equity_from, to), bench = r.bench ? libCurve(r.bench, r.equity_from, to) : null;
+  host.querySelectorAll(".lib-zone, .lib-cut").forEach((n) => n.remove());
   if (!data || typeof LightweightCharts === "undefined") { host.replaceWith(libEl("p", "chart-none", t("lib.noCurve"))); return false; }
   const LWC = LightweightCharts, tok = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const cutAt = libSplitDay(r.spark, r.equity_from, to, r.split);
+  // 上架後的淡底墊在圖下面(底色透明、卡面透上來;線不變色),分界虛線壓在上面——方向 A,同 web equityCurve 的 split
+  const zone = cutAt ? libEl("div", "lib-zone") : null, cut = cutAt ? libEl("div", "lib-cut") : null;
+  if (zone) { zone.setAttribute("aria-hidden", "true"); cut.setAttribute("aria-hidden", "true"); host.prepend(zone); }
   const chart = LWC.createChart(host, {
     autoSize: true,
-    layout: { textColor: tok("--ink-3"), background: { type: "solid", color: tok("--surface-card") }, attributionLogo: false },
+    layout: { textColor: tok("--ink-3"), background: { type: "solid", color: "transparent" }, attributionLogo: false },
     leftPriceScale: { visible: true, borderVisible: false, mode: LWC.PriceScaleMode.Logarithmic, entireTextOnly: true, scaleMargins: { top: 0.08, bottom: 0.06 } },   // 頂端軸標不被裁、起點不貼底
     rightPriceScale: { visible: false },
     timeScale: { borderVisible: false, fixLeftEdge: true, fixRightEdge: true, timeVisible: false,
@@ -1798,9 +1854,23 @@ function libChartDraw(host, r) {
     const one = series.createPriceLine({ price: 1, color: tok("--ink-3"), lineWidth: 1, lineStyle: LWC.LineStyle.Dashed, axisLabelVisible: false });
     chart.timeScale().fitContent();
     LIB.chart = chart;
-    // 換主題只改色(策略線是綠,亮暗同值;基準的 greyMedium 亮暗不同)
+    if (zone) {
+      host.appendChild(cut);
+      // 淡底不到 6px 寬就不畫;詳情的虛線照畫(圖例講了它是什麼)。座標跟著圖的尺寸重算(autoSize 換寬、左軸換寬)
+      const place = () => {
+        const ts = chart.timeScale(), x = ts.timeToCoordinate(cutAt);
+        if (x === null || !host.isConnected) { zone.hidden = true; cut.hidden = true; return; }
+        const left = chart.priceScale("left").width() + x, w = ts.width() - x, h = Math.max(0, host.clientHeight - ts.height());
+        zone.hidden = w < 6; cut.hidden = false;
+        Object.assign(zone.style, { left: left + "px", width: Math.max(0, w) + "px", height: h + "px" });
+        Object.assign(cut.style, { left: Math.round(left) + "px", height: h + "px" });
+      };
+      chart.timeScale().subscribeSizeChange(() => requestAnimationFrame(place));
+      requestAnimationFrame(place);
+    }
+    // 換主題只改色(策略線是綠,亮暗同值;基準的 greyMedium 亮暗不同);淡底與虛線是 CSS 變數,自己跟著換
     chart.blaveRetheme = () => {
-      chart.applyOptions({ layout: { textColor: tok("--ink-3"), background: { type: "solid", color: tok("--surface-card") } }, grid: { horzLines: { color: tok("--border-hairline") } } });
+      chart.applyOptions({ layout: { textColor: tok("--ink-3") }, grid: { horzLines: { color: tok("--border-hairline") } } });
       one.applyOptions({ color: tok("--ink-3") });
       if (bs) bs.applyOptions({ color: tok("--color-greyMedium") });
     };

@@ -126,6 +126,26 @@ if (!process.versions.electron) {
     P.libBuyBranch(200, { status: "ok" }) === "ok" && P.libBuyBranch(400, { error: "already purchased" }) === "ok" && P.libBuyBranch(409, {}) === "inProgress" && P.libBuyBranch(409, { error_code: "SOURCE_CHANGED" }) === "changed" && P.libBuyBranch(409, { error_code: "PRICE_CONFIRM_REQUIRED" }) === "changed"
     && P.libBuyBranch(402, { needs_topup: true, has_card: true }) === "topup" && P.libBuyBranch(402, { needs_topup: true, has_card: false }) === "noCard" && P.libBuyBranch(402, { error: "no card bound", has_card: false }) === "noCard"
     && P.libBuyBranch(402, { error: "card charge failed" }) === "failed" && P.libBuyBranch(402, { error: "insufficient credits" }) === "failed" && P.libBuyBranch(0, null) === "failed" && P.libBuyBranch(200, { status: "nope" }) === "failed" && P.libBuyBranch(401, { error_code: "INVALID_CREDENTIALS" }) === "failed");
+  // 上架以來(library-oos SPEC-v3 §4.4;逐行同 web library_rules.since):網頁那份 fixture(tests/library_since_fixture.json)的案例抄在這裡,
+  // 兩邊實際跑同一份在 check_web_desktop_parity.js 比
+  { const NOW = Date.parse("2026-11-26T04:00:00Z");   // 台北 11-26 12:00
+    const SR = (o) => S({ report: Object.assign(REP({}), { equity_to: "2026-07-13", updated_to: "2026-11-25", listed_at: "2026-07-13", spark_split: 59, since_listing: { days: 135, return: 6.21, max_drawdown: -8.4 } }, o) });
+    const a1 = P.libSince(SR({}), null, NOW);
+    ok("① libSince:有上架後的日子 → 天數、報酬、回撤照 api、分界", JSON.stringify(a1) === '{"listedAt":"2026-07-13","updatedTo":"2026-11-25","today":false,"days":135,"ret":6.21,"mdd":-8.4,"split":59}', JSON.stringify(a1));
+    const NUL = { days: null, return: null, max_drawdown: null };
+    const td = P.libSince(SR({ equity_to: "2026-11-26", updated_to: "2026-11-26", listed_at: "2026-11-26", spark_split: 63, since_listing: NUL }), null, NOW);
+    ok("① libSince:今天上架 → today、數字 null、沒有 updatedTo(不畫淡底與虛線)", !!td && td.today === true && td.days === null && td.ret === null && td.mdd === null && td.updatedTo === null, JSON.stringify(td));
+    const ps = P.libSince(SR({ equity_to: "2026-07-30", updated_to: "2026-07-30", listed_at: "2026-08-01", spark_split: null, since_listing: NUL }), null, NOW);
+    ok("① libSince:曲線停在上架日之前(暫停中那型)→ 照樣有這一組、數字 null、不畫分界", !!ps && ps.today === false && ps.days === null && ps.split === null && ps.updatedTo === null, JSON.stringify(ps));
+    ok("① libSince:付費 / 舊 api / 欄位不在 report 裡 → null", P.libSince(SR({ since_listing: null, listed_at: null }), null, NOW) === null && P.libSince(S({ report: REP({}) }), null, NOW) === null && P.libSince(S({}), null, NOW) === null
+      && P.libSince(Object.assign(S({ report: REP({}) }), { listed_at: "2026-07-13", since_listing: { days: 1 } }), null, NOW) === null);
+    ok("① libSince:有 rep 時只讀 rep 頂層、分界讀 equity_split", P.libSince(SR({}), { updated_to: "2026-11-25", listed_at: "2026-07-13", equity_split: 390, since_listing: { days: 135, return: 6.21, max_drawdown: -8.4 } }, NOW).split === 390
+      && P.libSince(SR({}), { equity: [1, 2] }, NOW) === null);
+    ok("① libCurveEnd:有 updated_to 讀它、沒有讀 equity_to", P.libCurveEnd(SR({})) === "2026-11-25" && P.libCurveEnd(S({ report: REP({}) })) === "2026-06-30");
+    ok("① libSplitDay:分界那點的日期跟 libCurve 同一套均勻分布;第一點、最後一點、超出、非整數 → null",
+      P.libSplitDay(SPARK, "2026-01-01", "2026-03-04", 21) === "2026-01-22" && P.libCurve(SPARK, "2026-01-01", "2026-03-04").some((x) => x.time === "2026-01-22")
+      && P.libSplitDay(SPARK, "2026-01-01", "2026-03-04", 0) === null && P.libSplitDay(SPARK, "2026-01-01", "2026-03-04", 63) === null && P.libSplitDay(SPARK, "2026-01-01", "2026-03-04", 64) === null
+      && P.libSplitDay(SPARK, "2026-01-01", "2026-03-04", 2.5) === null && P.libSplitDay(SPARK, null, "2026-03-04", 5) === null); }
   const cv = P.libCurve(SPARK, "2020-01-01", "2026-06-30");
   ok("① 曲線:64 點均勻落在區間、時間嚴格遞增、首尾對齊;區間太短就併點;壞輸入 null", cv && cv.length === 64 && cv[0].time === "2020-01-01" && cv[63].time === "2026-06-30" && cv.every((p, i) => !i || p.time > cv[i - 1].time)
     && P.libCurve(SPARK, "2026-01-01", "2026-01-10").length === 10 && P.libCurve(SPARK, "2026-01-10", "2026-01-01") === null && P.libCurve([1], "2020-01-01", "2021-01-01") === null && P.libCurve([1, 0], "2020-01-01", "2021-01-01") === null && P.libCurve(SPARK, null, "2021-01-01") === null);
@@ -213,7 +233,7 @@ if (!process.versions.electron) {
 
   // ── ② 主行程 ──
   const M = {}; vm.createContext(M);
-  vm.runInContext(["LIB_TITLE_MAX", "LIB_DAY_RE", "LIB_MARKETS", "libFin", "libDay", "libCurveOk", "LIB_NAME_RE"].map((n) => mainSrc.match(new RegExp("^const " + n + " = [^\\n]*$", "m"))[0].replace(/^const /, "var ")).join("\n") + "\n" + cutFn(mainSrc, "libSanitize") + "\n" + cutFn(mainSrc, "libNoteLangs") + "\n" + cutFn(mainSrc, "libInstalledClean") + "\n" + cutFn(mainSrc, "libReportSanitize")
+  vm.runInContext(["LIB_TITLE_MAX", "LIB_DAY_RE", "LIB_MARKETS", "libFin", "libDay", "libCurveOk", "LIB_NAME_RE"].map((n) => mainSrc.match(new RegExp("^const " + n + " = [^\\n]*$", "m"))[0].replace(/^const /, "var ")).join("\n") + "\n" + cutFn(mainSrc, "libSanitize") + "\n" + cutFn(mainSrc, "libSinceFields") + "\n" + cutFn(mainSrc, "libNoteLangs") + "\n" + cutFn(mainSrc, "libInstalledClean") + "\n" + cutFn(mainSrc, "libReportSanitize")
   + (mainSrc.includes("function libBenchSanitize(") ? "\n" + mainSrc.match(/^const LIB_BENCH_SYM_RE = [^\n]*$/m)[0].replace(/^const /, "var ") + "\n" + cutFn(mainSrc, "libBenchSanitize") : ""), M);
   ok("② 清單不是陣列 / body 不是物件 → null", M.libSanitize(null) === null && M.libSanitize({}) === null && M.libSanitize({ strategies: "x" }) === null && M.libSanitize([]) === null);
   const good = M.libSanitize({ strategies: LIST });
@@ -222,7 +242,7 @@ if (!process.versions.electron) {
   ok("② gates 有格壞 / 缺格 → 那格 null、其餘照收;gates 不是物件 → null;total_return 不是數 → null", JSON.stringify(M.libSanitize({ strategies: [S({ report: REP({ total_return: "9", gates: { mcpt_p: "x", robust: 5, fee: { rate: 0.0005 } } }) })] })[0].report.gates) === '{"mcpt_p":null,"robust":{"ratio":null},"fee":{"rate":0.0005,"actual":null}}'
     && M.libSanitize({ strategies: [S({ report: REP({ total_return: "9", gates: [] }) })] })[0].report.gates === null && M.libSanitize({ strategies: [S({ report: REP({ total_return: "9" }) })] })[0].report.total_return === null);
   const rep = M.libReportSanitize(REPORT);
-  ok("② libReportSanitize:只留 400 點曲線 + 兩組日期、其餘欄位不帶;曲線 401 點 / 有 0 / 不是陣列 → null;日期只認 YYYY-MM-DD;body 不是物件 → null", JSON.stringify(Object.keys(rep)) === '["equity","equity_from","equity_to","backtest_start","backtest_end","benchmark"]' && rep.benchmark === null && rep.equity.length === 400 && rep.backtest_start === "2019-12-02" && rep.equity_to === "2026-06-30"
+  ok("② libReportSanitize:只留 400 點曲線 + 兩組日期、其餘欄位不帶;曲線 401 點 / 有 0 / 不是陣列 → null;日期只認 YYYY-MM-DD;body 不是物件 → null", JSON.stringify(Object.keys(rep)) === '["equity","equity_from","equity_to","backtest_start","backtest_end","benchmark","updated_to","listed_at","equity_split","since_listing"]' && rep.benchmark === null && rep.equity.length === 400 && rep.backtest_start === "2019-12-02" && rep.equity_to === "2026-06-30"
     && M.libReportSanitize(Object.assign({}, REPORT, { equity: Array(401).fill(1) })).equity === null && M.libReportSanitize(Object.assign({}, REPORT, { equity: [1, 0] })).equity === null && M.libReportSanitize(Object.assign({}, REPORT, { equity: null, backtest_start: "2019-12-02 00:00:00" })).backtest_start === null
     && M.libReportSanitize(null) === null && M.libReportSanitize("x") === null);
   // 買進持有基準(spec library-benchmark-2026-10-27;api marketplace._benchmark_payload):逐欄驗,壞一欄就整個 null、報告照收
@@ -238,6 +258,22 @@ if (!process.versions.electron) {
     ok("② benchmark 選填欄壞了只那格 null(年化 / 回撤 / Sharpe / as_of),其餘照收", !!opt && !!opt.benchmark && opt.benchmark.annual_return === null && opt.benchmark.max_drawdown === null && opt.benchmark.sharpe === null && opt.benchmark.as_of === null && opt.benchmark.total_return === 794, JSON.stringify(opt && opt.benchmark && Object.assign({}, opt.benchmark, { equity: 0 }))); }
   ok("② 全空的報告(200 + 全 null,S3 暫時讀不到)→ null、不進快取;只有回測期間也算有東西", M.libReportSanitize({}) === null && M.libReportSanitize({ equity: null, equity_from: null, equity_to: null, backtest_start: null, backtest_end: null }) === null
     && M.libReportSanitize({ equity: [1, 0], backtest_start: "2020-01-01", backtest_end: "2021-01-01" }).equity === null && M.libReportSanitize({ backtest_start: "2020-01-01", backtest_end: "2021-01-01" }).backtest_end === "2021-01-01");
+  // 上架以來(library-oos SPEC-v3 §4.2;api ?since_listing=1):清單與 /report 都收四欄,壞一欄那欄 null;舊 api 沒有 → 全 null(畫面照舊)
+  { const SL = { updated_to: "2026-11-25", listed_at: "2026-06-10", since_listing: { days: 168, return: 12.5, max_drawdown: -4.2 } };
+    const lr = M.libSanitize({ strategies: [S({ report: REP(Object.assign({ spark_split: 60 }, SL)) })] })[0].report, rr = M.libReportSanitize(Object.assign({}, REPORT, SL, { equity_split: 390 }));
+    ok("② 上架以來:清單收 updated_to / listed_at / spark_split / since_listing,/report 收 equity_split",
+      lr.updated_to === "2026-11-25" && lr.listed_at === "2026-06-10" && lr.spark_split === 60 && JSON.stringify(lr.since_listing) === '{"days":168,"return":12.5,"max_drawdown":-4.2}'
+      && rr.equity_split === 390 && rr.updated_to === "2026-11-25" && rr.since_listing.days === 168, JSON.stringify([lr, rr.equity_split]));
+    const bad1 = M.libSanitize({ strategies: [S({ report: REP({ updated_to: "2026-11-25 00:00", listed_at: 5, spark_split: 64, since_listing: { days: -1, return: "1", max_drawdown: 3 } }) })] })[0].report;
+    ok("② 上架以來壞形狀:日期不是 YYYY-MM-DD、分界超出曲線或不是整數、天數負、報酬不是數、回撤 > 0 → 那格 null;since_listing 是陣列 → null",
+      bad1.updated_to === null && bad1.listed_at === null && bad1.spark_split === null && JSON.stringify(bad1.since_listing) === '{"days":null,"return":null,"max_drawdown":null}'
+      && M.libSanitize({ strategies: [S({ report: REP({ since_listing: [1], spark_split: 1.5 }) })] })[0].report.since_listing === null
+      && M.libSanitize({ strategies: [S({ report: REP({ spark_split: 1.5 }) })] })[0].report.spark_split === null
+      && M.libReportSanitize(Object.assign({}, REPORT, { equity_split: 400 })).equity_split === null, JSON.stringify(bad1));
+    const old = M.libSanitize({ strategies: [S({ report: REP({}) })] })[0].report, oldR = M.libReportSanitize(REPORT);
+    ok("② 上架以來:舊 api 沒有這幾欄 → 全 null", old.updated_to === null && old.listed_at === null && old.spark_split === null && old.since_listing === null && oldR.equity_split === null && oldR.since_listing === null); }
+  ok("② 清單與報告都帶 ?since_listing=1(只認 1;不帶 = 曲線停在回測結束日、沒有上架以來)",
+    /strategies\?lang=\$\{lang\}&since_listing=1`/.test(mainSrc) && /\/report\?lang=\$\{lang\}&since_listing=1`/.test(mainSrc));
   ok("② blave_data:只收 none / required,其餘(缺、布林、大小寫錯)一律 null", M.libSanitize({ strategies: [S({ id: 1, blave_data: "none" }), S({ id: 2, blave_data: "required" }), S({ id: 3 }), S({ id: 4, blave_data: true }), S({ id: 5, blave_data: "None" })] }).map((x) => x.blave_data).join() === "none,required,,,");
   ok("② market:只收 crypto / txf / twstock / usstock,其餘(缺、舊值 tw、大小寫錯、數字)一律 null;category 照舊收", M.libSanitize({ strategies: ["crypto", "txf", "twstock", "usstock", undefined, "tw", "TXF", 3].map((m, i) => S({ id: i + 1, market: m, category: "TW Stock" })) }).map((x) => x.market + ":" + x.category).join()
     === "crypto:TW Stock,txf:TW Stock,twstock:TW Stock,usstock:TW Stock,null:TW Stock,null:TW Stock,null:TW Stock,null:TW Stock");

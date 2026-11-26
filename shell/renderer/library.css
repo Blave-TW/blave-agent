@@ -126,6 +126,13 @@
 .lib-card h6 { margin: 0 0 var(--space-8); font-size: 12px; font-weight: 400; color: var(--ink-3); }
 .lib-card .chart { width: 100%; height: clamp(200px, 22cqi, 320px); }   /* lightweight-charts 容器(autoSize):下限 182 圖 + 18 年份軸;寬欄時長高(同 .bt-canvas 係數),cqi 量的是 .lib */
 .lib-card .chart-none { margin: 0; font-size: 12px; color: var(--ink-3); }
+/* 上架以來(library-oos 方向 A):淡底墊在圖下(z -1,圖的底色是透明的),分界虛線壓在圖上;位置由 libChartDraw 照時間軸算 */
+.lib-card .chart { position: relative; isolation: isolate; }
+.lib-zone { position: absolute; top: 0; z-index: -1; background: var(--ink); opacity: var(--chart-zone-alpha); pointer-events: none; }
+.lib-cut { position: absolute; top: 0; width: 0; border-left: 1px dashed var(--chart-cutoff); pointer-events: none; }
+.lib-legend .bt-legend.zone::before { width: 12px; height: 10px; border-radius: 0; border-left: 1px dashed var(--chart-cutoff);
+  background: color-mix(in srgb, var(--ink) calc(var(--chart-zone-alpha) * 100%), transparent); }
+.lib-since-h .mp-tip { font-size: inherit; }
 .lib-split { margin-top: var(--space-12); display: grid; grid-template-columns: 1fr 1fr; }
 .lib-kvcol { min-width: 0; padding: 0 var(--space-12); }
 .lib-kvcol:first-child { padding-left: 0; }
@@ -134,9 +141,10 @@
 .lib-kv { display: grid; grid-template-columns: auto 1fr; gap: var(--space-4) var(--space-12); align-items: baseline; }
 .lib-kv .k { font-size: 12px; color: var(--ink-3); }
 .lib-kv .v { font-size: 13px; text-align: right; color: var(--ink); }
+.lib-kv .v.na { color: var(--ink-disabled); }
 /* 跟基準比(spec library-benchmark-2026-10-27 B):圖例借回測分頁的 .bt-legend,策略線在這裡是綠;
    對照表不畫橫線、只靠列距,值字級同 .lib-kv .v;窄於 560(同 web 工作頁 .lib-split.is-cmp)上架欄落到表下 */
-.lib-legend .bt-legend:not(.bh)::before { background: var(--color-green); }
+.lib-legend .bt-legend:not(.bh):not(.zone)::before { background: var(--color-green); }
 .lib-split.wide { grid-template-columns: minmax(0, 1.9fr) minmax(0, 1fr); }
 .lib-cmp { width: 100%; border-collapse: collapse; }
 .lib-cmp th, .lib-cmp td { padding: var(--space-2) 0; font-weight: 400; text-align: right; white-space: nowrap; }

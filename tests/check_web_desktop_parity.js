@@ -716,6 +716,38 @@ for (const lang of ["zh", "en"]) {
     const bad = dF && wF ? CASES.filter(([, rep]) => call(dF, rep) !== call(wF, rep)).map(([n, rep]) => n + ":電腦版 " + call(dF, rep) + " / 網頁 " + call(wF, rep)) : ["切不出函式" + err];
     ok("策略庫基準畫不畫、代號寫什麼兩邊同一個答案(" + CASES.length + " 組)", !dParts.includes(null) && bad.length === 0, bad.join(";"));
   } }
+// 策略庫「上架以來」(library-oos SPEC-v3 §4.4、§5;參照面 web 策略庫詳情):提示兩句、「上架以來」標籤與其餘幾句 zh / en 逐字同網頁 bc_mp_since_*;
+// 判斷(畫不畫、天數、報酬、回撤、分界、今天上架、曲線停在上架日之前)電腦版 libSince 與網頁 library_rules.since 跑同一組案例要同一個答案。網頁那顆還沒上線(沒有 msgid / since)就 SKIP 講原因
+{ const SINCE_PAIRS = { "lib.since.title": "bc_mp_since_title", "lib.since.tip": "bc_mp_since_tip", "lib.since.days": "bc_mp_since_days", "lib.since.line": "bc_mp_since_line",
+    "lib.since.today": "bc_mp_since_today", "lib.since.return": "bc_mp_since_return", "lib.since.zone": "bc_mp_since_zone" };
+  for (const lang of ["zh", "en"]) {
+    const w = poRaw(path.join(webDir, "app", "translations", lang, "LC_MESSAGES", "messages.po")), d = poRaw(path.join(__dirname, "..", "shell", "i18n", lang + ".po"));
+    const missD = Object.keys(SINCE_PAIRS).filter((k) => !d[k]);
+    ok("上架以來:電腦版字串齊(" + lang + ")", missD.length === 0, missD.join(","));
+    for (const [dk, wk] of Object.entries(SINCE_PAIRS)) {
+      if (!(wk in w)) console.log("SKIP  上架以來 " + dk + " ↔ " + wk + "(" + lang + ";網頁 messages.po 還沒有這個 msgid:web 那顆還沒上線)");
+      else ok("上架以來:" + dk + " = " + wk + "(" + lang + ")", w[wk] === d[dk], "電腦版「" + d[dk] + "」 vs 網頁「" + w[wk] + "」");
+    }
+  }
+  const lib = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "library.js"), "utf8");
+  const dfn = (n) => { const a = lib.indexOf("\nfunction " + n + "(") + 1; if (a < 1) return null; let i = lib.indexOf("{", a), dd = 0; for (; i < lib.length; i++) { if (lib[i] === "{") dd++; else if (lib[i] === "}" && --dd === 0) break; } return lib.slice(a, i + 1) + "\n"; };
+  const dc = (n) => { const m = new RegExp("^const " + n + " = [^\\n]*;$", "m").exec(lib); return m ? m[0] + "\n" : null; };
+  let BL = null; try { globalThis.window = globalThis; const rp = path.join(webDir, "app", "static", "js", "library_rules.js"); delete require.cache[require.resolve(rp)]; require(rp); BL = globalThis.BlaveLibrary; } catch (_) { BL = null; }
+  if (!BL || typeof BL.since !== "function") console.log("SKIP  上架以來判斷兩邊同一個答案(網頁 library_rules.js 還沒有 since:web 那顆還沒上線)");
+  else {
+    const parts = [dc("LIB_DAY"), dc("LIB_SINCE_RE"), dfn("libNum"), dfn("libTaipeiDate"), dfn("libSince"), dfn("libCurveEnd")];
+    let D = null, err = "";
+    try { D = new Function(parts.join("") + "return { since: libSince, end: libCurveEnd };")(); } catch (e) { err = e.message; }
+    // 案例:網頁 tests/library_since_fixture.json(網頁 since 與 ssr._since 共用的那份),外加兩組 /report(rep 頂層、equity_split)
+    const fxPath = path.join(webDir, "tests", "library_since_fixture.json"), fx = fs.existsSync(fxPath) ? JSON.parse(fs.readFileSync(fxPath, "utf8")) : null;
+    const NOW = fx ? Date.parse(fx.now) : 0, REPS = [["/report 頂層", { updated_to: "2026-11-25", listed_at: "2026-07-13", equity_split: 390, since_listing: { days: 135, return: 6.21, max_drawdown: -8.4 } }], ["/report 沒有新欄位", { equity: [1, 2] }]];
+    const CASES = fx ? fx.strategies.map((x) => ["fixture #" + x.id, x, null, fx.expect[String(x.id)], fx.curve_end[String(x.id)]]).concat(REPS.map(([n, rep]) => [n, fx.strategies[0], rep, undefined, undefined])) : [];
+    const call = (f, s, rep) => { try { return JSON.stringify(f(JSON.parse(JSON.stringify(s)), rep ? JSON.parse(JSON.stringify(rep)) : rep, NOW)); } catch (e) { return "例外 " + e.message; } };
+    const bad = !fx ? ["找不到 " + fxPath] : !D ? ["切不出函式 " + err] : CASES.filter(([, s, rep, exp, end]) => call(D.since, s, rep) !== call(BL.since, s, rep) || call(D.end, s, rep) !== call(BL.curveEnd, s, rep)
+        || (exp !== undefined && call(D.since, s, rep) !== JSON.stringify(exp)) || (end !== undefined && call(D.end, s, rep) !== JSON.stringify(end)))
+      .map(([n, s, rep, exp]) => n + ":電腦版 " + call(D.since, s, rep) + " / 網頁 " + call(BL.since, s, rep) + " / fixture " + JSON.stringify(exp));
+    ok("上架以來判斷兩邊同一個答案(網頁 fixture " + CASES.length + " 組含兩組 /report;libSince ↔ since、libCurveEnd ↔ curveEnd,也對 fixture 的 expect)", !parts.includes(null) && CASES.length > 2 && bad.length === 0, bad.join(";"));
+  } }
 // ── 側欄策略資料夾(spec strategy-sidebar-folders §10 信任邊界:清單的每一份副本——api、main.js、renderer、web——同一份,改動同 commit)──
 {
   const apiDir = process.env.BLAVE_API_DIR || path.join(__dirname, "..", "..", "api"), apiPy = path.join(apiDir, "openclaw", "agent_strategies.py");

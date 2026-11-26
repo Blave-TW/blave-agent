@@ -134,6 +134,8 @@
   --surface-overlay: var(--color-surface);       /* tooltip 這類暫態浮層的實心底;light 跟卡同值、靠 --shadow-overlay 分開 */
   --chart-band: #818f97;                         /* 隨機帶與它的色票;alpha 由消費端給(.55) */
   --chart-rest: #aab4bf;                         /* 堆疊圖合併的「其他 N 支」;.85 下對卡面 1.79:1,低於 data-3 */
+  --chart-cutoff: var(--color-greyMedium);       /* 「資料到這裡／上架那天」的分界虛線;同 web main.css */
+  --chart-zone-alpha: 0.06;                      /* 策略庫曲線上架後的淡底 = --ink 乘這個透明度(library-oos 方向 A;canon 提案值,同 web) */
   --tag-neutral-bg: var(--surface-muted);      /* Mini tag 中性款(canon 語意角色變數);同在 :root,dark 隨這兩個角色重映射 */
   --tag-neutral-text: var(--ink-2);
   /* in-app 功能動作鈕(canon › Interaction states › 橘的邊界):中性反白,不用橘 */
@@ -205,6 +207,7 @@
   --surface-overlay: var(--color-darkBorder);
   --chart-band: var(--color-greyDark);
   --chart-rest: var(--color-greyDark);
+  --chart-zone-alpha: 0.07;
   --control-fill: var(--color-darkText);
   --control-fill-text: var(--color-darkBody);
   --ink-on-primary: var(--color-darkBody);

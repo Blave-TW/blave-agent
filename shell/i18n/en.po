@@ -5542,6 +5542,28 @@ msgstr "Installs"
 msgid "lib.sampleYrs"
 msgstr "{n} yrs"
 
+# Strategy library "since listing" (library-oos SPEC-v3 §4.4, direction A). Same as web bc_mp_since_*
+msgid "lib.since.title"
+msgstr "Since Listing"
+
+msgid "lib.since.tip"
+msgstr "Code is locked once listed. If it changes, we catch it and stop updating. Recomputed daily by the backtest's rules, not real fills."
+
+msgid "lib.since.days"
+msgstr "{n} days"
+
+msgid "lib.since.line"
+msgstr "{n} days since listing"
+
+msgid "lib.since.today"
+msgstr "Listed today"
+
+msgid "lib.since.return"
+msgstr "Return"
+
+msgid "lib.since.zone"
+msgstr "Since listing, {from} to {to}"
+
 # 策略庫詳情「回測」對照表的欄名(spec library-benchmark-2026-10-27 B):指標｜策略｜{sym} 持有;只在 /report 有買進持有基準時出現。同 web workspace_lib_cmp_strategy
 msgid "lib.cmp.strategy"
 msgstr "Strategy"

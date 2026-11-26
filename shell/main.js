@@ -2941,6 +2941,7 @@ function libSanitize(body) {
       report = { total_return: fin(r.total_return), annual_return: fin(r.annual_return), sharpe: fin(r.sharpe), max_drawdown: fin(r.max_drawdown), symbol: str(r.symbol, LIB_STR_MAX), interval: str(r.interval, LIB_STR_MAX),
         gate_checks: gc && gc.mcpt && gc.robust && gc.fee ? gc : null, gates: gw ? { mcpt_p: fin(gw.mcpt_p), robust: { ratio: fin(rob.ratio) }, fee: { rate: fin(fee.rate), actual: fin(fee.actual) } } : null,
         spark: libCurveOk(r.spark, LIB_SPARK_MAX), equity_from: day(r.equity_from), equity_to: day(r.equity_to) };
+      Object.assign(report, libSinceFields(r, "spark_split", report.spark));
     }
     out.push({ id, title, summary: str(s.summary, LIB_TEXT_MAX, true), description: str(s.description, LIB_TEXT_MAX, true), price, category: str(s.category, LIB_STR_MAX),
       market: LIB_MARKETS.includes(s.market) ? s.market : null,   // 策略庫市場選單;舊 api 沒有 → null,renderer 退回 category
@@ -2953,6 +2954,15 @@ function libSanitize(body) {
       success_note_titles: libNoteLangs(s.success_note_titles, (v) => { const x = (str(v, LIB_TITLE_MAX) || "").trim(); return x || null; }) });
   }
   return out;
+}
+/* 上架以來(library-oos SPEC-v3 §4.2;只在 ?since_listing=1 的回應裡、只有官方有值):曲線延伸到哪天、上架日、分界在第幾點、
+   上架以來的天數／報酬／回撤(百分比,回撤 ≤ 0)。哪一欄壞了那欄 null;分界點要落在曲線裡;舊 api 沒有這幾欄 = 全 null,畫面照舊 */
+function libSinceFields(r, splitKey, curve) {
+  const sl = r.since_listing && typeof r.since_listing === "object" && !Array.isArray(r.since_listing) ? r.since_listing : null;
+  const split = r[splitKey], days = sl ? sl.days : null, mdd = sl ? libFin(sl.max_drawdown) : null;
+  return { updated_to: libDay(r.updated_to), listed_at: libDay(r.listed_at),
+    [splitKey]: curve && Number.isInteger(split) && split >= 0 && split < curve.length ? split : null,
+    since_listing: sl ? { days: Number.isInteger(days) && days >= 0 ? days : null, return: libFin(sl.return), max_drawdown: mdd !== null && mdd <= 0 ? mdd : null } : null };
 }
 // 成功筆記兩欄(spec-0.1.12-library-notes §2.2):只收 zh / en,值過 pick;一個都不剩 → null(舊 api 沒有 titles 那欄也是 null)
 function libNoteLangs(v, pick) {
@@ -2971,7 +2981,7 @@ async function libraryList(langRaw, force) {
   // why:拿不到資料的原因(no_card / no_balance / no_plan / plan_failed / unknown)——renderer 的 CTA 照它分流,不自己從 acct 再算一套
   const why = dataAccess && dataAccess !== "included" && dataAccess !== "billed" ? dataAccessWhy(signedIn) : null;
   if (!force && libCache && libCache.lang === lang && libCache.signedIn === signedIn && Date.now() - libCache.at < ACCT_FRESH_MS) return { strategies: libCache.strategies, signedIn, dataAccess, why };
-  const url = `${API_BASE}/openclaw/marketplace/strategies?lang=${lang}`;
+  const url = `${API_BASE}/openclaw/marketplace/strategies?lang=${lang}&since_listing=1`;
   const key = signedIn ? loadDataKey() : null;
   const ver = libVerHeader();   // api 拿它分新舊外殼:沒帶版本的匿名清單 blave_data 回 null(舊外殼才看得到登入鈕),新版一定要帶
   let r = null;
@@ -2985,12 +2995,13 @@ async function libraryList(langRaw, force) {
   libCache = { at: Date.now(), lang, signedIn, strategies };
   return { strategies, signedIn, dataAccess, why };
 }
-/* 詳情的完整報告:GET /openclaw/marketplace/strategies/<id>/report——只取 400 點權益曲線與回測期間(總報酬、關卡數值走清單:
+/* 詳情的完整報告:GET /openclaw/marketplace/strategies/<id>/report——只取 400 點權益曲線、回測期間與上架以來那幾欄(總報酬、關卡數值走清單:
    一支資料一個來源)。公開策略匿名也拿得到;內容不隨身分變,快取 5 分鐘 per (id, lang)、登出 / 購買不用清。非 200 / 形狀不對 → null。 */
 function libReportSanitize(body) {
   if (!body || typeof body !== "object") return null;
   const r = { equity: libCurveOk(body.equity, LIB_EQUITY_MAX), equity_from: libDay(body.equity_from), equity_to: libDay(body.equity_to), backtest_start: libDay(body.backtest_start), backtest_end: libDay(body.backtest_end) };
   r.benchmark = libBenchSanitize(body.benchmark, r.equity);
+  Object.assign(r, libSinceFields(body, "equity_split", r.equity));
   return r.equity || r.backtest_start || r.backtest_end ? r : null;   // 全空(S3 暫時讀不到時 api 回 200 + 全 null)= 沒東西可套:當失敗、不進快取,下次再問
 }
 /* 買進持有基準(api marketplace._benchmark_payload):哪一欄壞了就整個 null、報告照用;曲線要跟策略那條同長,第 i 點才是同一天。
@@ -3007,7 +3018,7 @@ async function libraryReport(id, langRaw) {
   if (!Number.isInteger(id) || id <= 0) return null;
   const lang = langRaw === "en" ? "en" : "zh", ck = `${id}:${lang}`, hit = libReportCache.get(ck);
   if (hit && Date.now() - hit.at < ACCT_FRESH_MS) return hit.report;
-  const url = `${API_BASE}/openclaw/marketplace/strategies/${id}/report?lang=${lang}`;
+  const url = `${API_BASE}/openclaw/marketplace/strategies/${id}/report?lang=${lang}&since_listing=1`;
   const key = loadToken() ? loadDataKey() : null;
   let r = null;
   try {
