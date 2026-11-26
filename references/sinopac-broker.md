@@ -262,6 +262,8 @@ workspace whose `lib/venue_traits.py` lacks `"futures"` for SinoPac refuses with
   Shioaji login. The platform starts and stops it while SinoPac is bound (cloud:
   `blave-agent-sinopac.timer`; desktop: the app's daemon). **Never start the worker yourself** —
   each start is a real login.
+  A cloud update restarts it (`manager/update_workspace.py`, at a safe moment) when a file it imports
+  changes; the desktop app starts a fresh one after its own update.
 - Market `IOC`, sent to a specific month (the held month for an add or a close, else the near
   month), never to `TXFR1`. `book_months=` (the months the bot's book holds; the reconciler and
   the close-all both send it) limits that to the bot's own months: a month the user opened in the SinoPac

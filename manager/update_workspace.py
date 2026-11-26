@@ -50,6 +50,13 @@ Rules (the same as the references):
   The gap between that check and the restart is closed by state/execution/hold:
   written before the copy, removed however the run ends; the reconciler starts
   no round while it exists (and drops one older than 15 min as a dead script).
+- 永豐 worker (restart_sinopac): restarted when a file it imports was written or the running one
+  started before its files last changed (Linux /proc, Windows the NSSM child's creation time); an
+  earlier run's debt (state/sinopac_restart_pending.json) counts only when that start is unknown.
+  Only one that is running, and only the same process (pid + start) read again right before the
+  signal. Its safe moment is sinopac_busy (trading_busy, or
+  a request in state/sinopac_orders/ not answered yet) inside the same --wait-busy; busy / failed
+  → "sinopac_worker" says so, outcome restart_deferred / restart_failed, owed, VERSION not written.
 - Under HALT with a restart due, state/paper_tw_close.json (a 0.1.53 close-all deferred
   to the TW open) is dropped before the copy and again after it, with the clone's
   lib/portfolio rows: a restart that does not happen leaves the old lib running, and it
@@ -78,10 +85,12 @@ Rules (the same as the references):
 import argparse
 import hashlib
 import json
+import math
 import os
 import platform
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -111,6 +120,22 @@ NSSM_SERVICE = "blaveclaw-reconciler"
 CAPITAL_SERVICE = "blave-agent-capital"
 CAPITAL_WORKER_FILES = ("lib/capital_worker.py", "lib/capital_vault.py", "lib/capital_quote.py",
                         "lib/twf_feed.py", "lib/president_contracts.py", "lib/winreplace.py")
+# The 永豐 futures worker is its own service too (Linux blave-agent-sinopac.service, started only by
+# its timer; Windows NSSM blave-agent-sinopac) and runs the code it started with until a reboot
+# (29026 11-26: the update landed, the worker stayed on the old one). It places orders, so its
+# restart waits for sinopac_busy like the reconciler's. Linux: the agent user has no sudo for this
+# unit but owns the process — SIGTERM (the worker logs out, exits 0) and the timer starts the new
+# one within two minutes; its login ladder spaces that login.
+SINOPAC_UNIT = "blave-agent-sinopac.service"
+SINOPAC_SERVICE = "blave-agent-sinopac"  # = lib/sinopac_worker.SERVICE
+SINOPAC_WORKER_FILES = ("lib/__init__.py", "lib/sinopac_worker.py", "lib/sinopac_vault.py", "lib/guard.py", "lib/events.py",
+                        "lib/president_contracts.py", "lib/tw_clock.py", "lib/venue_traits.py",
+                        "lib/winreplace.py", "lib/secret_imports.py")
+SINOPAC_ORDERS = "state/sinopac_orders"  # = lib/order_sinopac.ORDERS_DIR
+SINOPAC_PENDING = "state/sinopac_restart_pending.json"
+SINOPAC_REQUEST_GRACE_S = 60  # past expires_at the worker's confirm is over and the requester gave up
+SINOPAC_STOP_WAIT_S = 45      # its logout waits at most 15 s (lib/sinopac_worker.LOGOUT_WAIT_S)
+STALE_MARGIN_S = 2            # /proc start times are whole seconds off the boot time
 IS_WINDOWS = platform.system() == "Windows"
 # String twins of lib/execute._INFLIGHT_DIR and manager/reconciler.ROUND_MARKER_PATH:
 # this script runs from the clone and never imports the workspace's own code.
@@ -326,6 +351,86 @@ def restart_capital_worker():
     return False
 
 
+def restart_sinopac(workspace, written, refused_paths, pending, wait_s, result, version):
+    """The 永豐 worker's restart, when one is due: a file it imports written by this run, or a
+    worker older than its files on disk; an earlier run's debt (SINOPAC_PENDING) only when its start
+    time cannot be read — a known start newer than the files is already the new code. Never starts
+    one that is not running. Busy / failed / refused (part of its files new, part old) owe it to the
+    next run, like the reconciler's; VERSION stays old meanwhile."""
+    try:
+        worker = sinopac_worker(workspace)
+    except Unreadable as e:
+        worker = e
+    known = isinstance(worker, dict) and worker.get("started") is not None
+    due = bool(written & set(SINOPAC_WORKER_FILES)) or (known and sinopac_stale(workspace, worker)) or (
+        pending and not known)
+    if not due:
+        if known:
+            drop_sinopac_pending(workspace)
+        return None
+    if isinstance(worker, Unreadable):
+        out = "failed"
+        result["sinopac_error"] = str(worker)[:120]
+    elif worker is None:
+        out = None  # nothing runs the old code: the next start reads the disk
+    elif refused_paths & set(SINOPAC_WORKER_FILES):
+        out = "refused"
+    else:
+        set_hold(workspace)  # main() drops it
+        busy = wait_not_busy(workspace, wait_s, sinopac_busy)
+        if busy:
+            result["sinopac_busy"] = busy
+            out = "busy"
+        else:
+            out = restart_checked(workspace, worker, result)
+    result["sinopac_worker"] = out
+    if out in ("busy", "failed", "refused"):
+        path = os.path.join(workspace, SINOPAC_PENDING)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp = path + ".update-tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump({"version": version, "at": time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())}, f)
+        os.replace(tmp, path)
+    else:
+        drop_sinopac_pending(workspace)
+    return out
+
+
+def restart_checked(workspace, worker, result):
+    """The wait can take --wait-busy: the worker is read again right before the signal, and only
+    the same process (pid and start) is restarted. Another one that is not older than its files is
+    already the new code (None); none any more, None too."""
+    try:
+        now = sinopac_worker(workspace)
+    except Unreadable as e:
+        result["sinopac_error"] = str(e)[:120]
+        return "failed"
+    if now is None:
+        return None
+    if (now.get("pid"), now.get("started")) != (worker.get("pid"), worker.get("started")):
+        if not sinopac_stale(workspace, now):
+            return None
+        worker = now
+    return restart_sinopac_worker(worker)
+
+
+def sinopac_pending_version(workspace):
+    """The clone VERSION the owed 永豐 restart was recorded for, or None."""
+    try:
+        with open(os.path.join(workspace, SINOPAC_PENDING), encoding="utf-8") as f:
+            v = json.load(f).get("version")
+    except (OSError, ValueError, AttributeError):
+        return None
+    return v if isinstance(v, str) else None
+
+
+def drop_sinopac_pending(workspace):
+    try:
+        os.remove(os.path.join(workspace, SINOPAC_PENDING))
+    except OSError:
+        pass
+
+
 def trading_busy(workspace):
     """Why a restart would cut an order right now, or None: an async execution
     in flight, or the reconciler inside reconcile() (its synchronous legs)."""
@@ -346,14 +451,193 @@ def trading_busy(workspace):
     return "reconciler mid-round" if age < ROUND_STALE_S else None
 
 
-def wait_not_busy(workspace, seconds):
+def wait_not_busy(workspace, seconds, busy=trading_busy):
     """The reason it is still busy after `seconds`, or None once clear."""
     deadline = time.time() + max(0, seconds)
     while True:
-        why = trading_busy(workspace)
+        why = busy(workspace)
         if why is None or time.time() >= deadline:
             return why
         time.sleep(min(BUSY_POLL_S, max(0.1, deadline - time.time())))
+
+
+def sinopac_busy(workspace):
+    """trading_busy, or a 永豐 request the worker has not answered: one waiting to be taken
+    (.req.json) or one it is sending (.taken with no .resp.json). A restart then would cut the
+    send between the order and its answer — never a second send (.taken is never taken again),
+    but an order the requester can only read as unconfirmed. A request counts until expires_at +
+    SINOPAC_REQUEST_GRACE_S, never past ROUND_STALE_S from its file time (a bad expires_at cannot
+    hold the restart off for good); unreadable, by its file time alone."""
+    why = trading_busy(workspace)
+    if why:
+        return why
+    d = os.path.join(workspace, SINOPAC_ORDERS)
+    try:
+        names = sorted(os.listdir(d))
+    except OSError:
+        return None
+    now, open_ids = time.time(), []
+    for n in names:
+        if n.endswith(".req.json"):
+            rid = n[:-len(".req.json")]
+        elif n.endswith(".taken") and not os.path.exists(os.path.join(d, n[:-len(".taken")] + ".resp.json")):
+            rid = n[:-len(".taken")]
+        else:
+            continue
+        path = os.path.join(d, n)
+        try:
+            until = os.path.getmtime(path) + ROUND_STALE_S
+        except OSError:
+            continue  # gone meanwhile: answered or cancelled
+        try:
+            with open(path, encoding="utf-8") as f:
+                expires = float(json.load(f)["expires_at"])
+            if math.isfinite(expires):
+                until = min(until, expires + SINOPAC_REQUEST_GRACE_S)
+        except (OSError, ValueError, TypeError, KeyError):
+            pass
+        if now < until:
+            open_ids.append(rid)
+    return "永豐 order in flight: " + ", ".join(open_ids[:8]) if open_ids else None
+
+
+class Unreadable(Exception):
+    pass
+
+
+# Every process NSSM runs for the service (nssm.exe is the service's own PID; the worker is its
+# child, and a venv python.exe launcher may put one more python under it) with its creation time. No double
+# quote in it: plain -Command, as runtime/sdk_sync and reconciler_presence run theirs.
+SINOPAC_WIN_PROCS = (
+    "$ErrorActionPreference='Stop';"
+    "$s=Get-CimInstance Win32_Service|Where-Object{$_.Name -eq '" + SINOPAC_SERVICE + "'};"
+    "if(-not $s -or $s.State -ne 'Running' -or -not $s.ProcessId){@{service=0}|ConvertTo-Json -Compress;exit 0};"
+    "$all=@(Get-CimInstance Win32_Process);$ids=@([int]$s.ProcessId);$out=@();"
+    "for($i=0;$i -lt $ids.Count -and $i -lt 64;$i++){foreach($p in $all){"
+    "if($p.ParentProcessId -eq $ids[$i] -and $ids -notcontains [int]$p.ProcessId){"
+    "$ids+=[int]$p.ProcessId;$out+=@{pid=[int]$p.ProcessId;cmd=[string]$p.CommandLine;"
+    "started=[DateTimeOffset]::new($p.CreationDate).ToUnixTimeMilliseconds()/1000}}}};"
+    "@{service=[int]$s.ProcessId;procs=$out}|ConvertTo-Json -Compress -Depth 3")
+
+
+def sinopac_worker(workspace):
+    """The running 永豐 worker here: None when there is none (not bound, not running, no such
+    service, no service manager, the Linux shim before its exec — it runs the disk's code), else
+    {"pid", "started"} (epoch seconds; Windows: the worker process under NSSM, the earliest when a
+    venv launcher adds one). Unreadable when its state cannot be read, never None for that."""
+    worker = os.path.realpath(os.path.join(workspace, "lib", "sinopac_worker.py"))
+    try:
+        if IS_WINDOWS:
+            r = subprocess.run(["nssm", "status", SINOPAC_SERVICE], capture_output=True, timeout=30)
+            if r.returncode != 0 or nssm_text(r.stdout) != "SERVICE_RUNNING":
+                return None
+            r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", SINOPAC_WIN_PROCS],
+                               capture_output=True, text=True, timeout=60)
+        else:
+            r = subprocess.run(["systemctl", "show", "-p", "MainPID", "--value", SINOPAC_UNIT],
+                               capture_output=True, text=True, timeout=30)
+    except FileNotFoundError:
+        if IS_WINDOWS:
+            raise Unreadable("powershell not found") from None
+        return None
+    except (OSError, subprocess.SubprocessError) as e:
+        raise Unreadable(type(e).__name__) from None
+    s = (r.stdout or "").strip()
+    if IS_WINDOWS:
+        return _win_worker(r.returncode, s, worker)
+    if r.returncode != 0 or not s.isdigit():
+        raise Unreadable(f"systemctl show MainPID {s[:40]!r}")
+    pid = int(s)
+    if not pid:
+        return None
+    try:
+        with open(f"/proc/{pid}/cmdline", "rb") as f:
+            argv = [os.fsdecode(x) for x in f.read().split(b"\0") if x]
+        if any(os.path.realpath(x) == worker for x in argv):
+            return {"pid": pid, "started": proc_started(pid)}
+    except (OSError, ValueError, IndexError, StopIteration):
+        if not os.path.exists(f"/proc/{pid}"):
+            return None  # gone meanwhile
+        raise Unreadable(f"/proc/{pid} unreadable") from None
+    if any(os.path.basename(x) == "sinopac_service.py" for x in argv):
+        return None
+    raise Unreadable(f"MainPID {pid} runs neither the worker nor its shim")
+
+
+def _win_worker(rc, out, worker):
+    try:
+        doc = json.loads(out) if rc == 0 else None
+        procs = doc.get("procs") or []
+        procs = [procs] if isinstance(procs, dict) else procs  # ConvertTo-Json unwraps a one-item list
+        if not doc.get("service"):
+            return None  # stopped between nssm status and here
+        mine = [(float(p["started"]), int(p["pid"])) for p in procs
+                if os.path.normcase(worker) in os.path.normcase(str(p.get("cmd") or ""))]
+    except (ValueError, TypeError, KeyError, AttributeError):
+        raise Unreadable(f"service processes unreadable (rc {rc}): {out[:80]!r}") from None
+    if not mine:
+        if procs:
+            raise Unreadable("the service runs no lib/sinopac_worker.py process")
+        return None  # NSSM between two runs of it (its restart delay): nothing runs old code
+    started, pid = min(mine)
+    if not math.isfinite(started):
+        raise Unreadable("worker start time unreadable")
+    return {"pid": pid, "started": started}
+
+
+def proc_started(pid):
+    """Linux: when `pid` started (epoch seconds), from /proc."""
+    with open(f"/proc/{pid}/stat", encoding="ascii", errors="replace") as f:
+        ticks = int(f.read().rsplit(")", 1)[1].split()[19])
+    with open("/proc/stat", encoding="ascii", errors="replace") as f:
+        btime = next(int(line.split()[1]) for line in f if line.startswith("btime "))
+    return btime + ticks / os.sysconf("SC_CLK_TCK")
+
+
+def sinopac_stale(workspace, worker):
+    """A worker started before one of its files last changed runs older code than the disk: an
+    update whose restart never happened (29026 11-26) is caught by the next run, whatever it writes."""
+    started = worker.get("started")
+    if started is None:
+        return False
+    newest = None
+    for rel in SINOPAC_WORKER_FILES:
+        try:
+            m = os.path.getmtime(os.path.join(workspace, rel))
+        except OSError:
+            continue
+        newest = m if newest is None else max(newest, m)
+    return newest is not None and started + STALE_MARGIN_S < newest
+
+
+def restart_sinopac_worker(worker):
+    """"ok" (Windows: running again) | "stopped" (Linux: the old one ended or was already gone; its
+    timer starts the new one within two minutes) | "failed"."""
+    try:
+        if IS_WINDOWS:
+            subprocess.run(["nssm", "restart", SINOPAC_SERVICE], capture_output=True, timeout=120)
+            for _ in range(10):
+                r = subprocess.run(["nssm", "status", SINOPAC_SERVICE], capture_output=True, timeout=30)
+                if nssm_text(r.stdout) == "SERVICE_RUNNING":
+                    return "ok"
+                time.sleep(1)
+            return "failed"
+        os.kill(worker["pid"], signal.SIGTERM)
+    except ProcessLookupError:
+        return "stopped"
+    except (OSError, subprocess.SubprocessError):
+        return "failed"
+    deadline = time.time() + SINOPAC_STOP_WAIT_S
+    while True:
+        try:
+            os.kill(worker["pid"], 0)
+        except ProcessLookupError:
+            return "stopped"
+        except OSError:
+            return "stopped"  # the pid is someone else's now: ours is gone
+        if time.time() >= deadline:
+            return "failed"  # never SIGKILL: that skips the logout
+        time.sleep(0.5)
 
 
 def set_hold(workspace):
@@ -453,6 +737,10 @@ def status_doc(result, v_from=None, v_to=None):
             x["path"] for x in result.get("refused") or [] if x["path"].split("/")[0] in CODE_DIRS)
     elif restart in ("failed", "not_running_anymore", "skipped_not_gated"):
         reason = restart
+    elif result.get("sinopac_worker") == "busy":
+        reason = result.get("sinopac_busy")
+    elif result.get("sinopac_worker") == "failed":
+        reason = "sinopac_worker_failed"
     elif outcome in ("stopped", "error"):
         reason = result.get("reason") or result.get("error")
     elif outcome == "partial":
@@ -471,6 +759,7 @@ def status_doc(result, v_from=None, v_to=None):
         "backup_dir": result.get("backup"),
         "restart_stopped": bool(result.get("restart_stopped")),
         "version_written": bool(result.get("version_written")),
+        "sinopac_worker": result.get("sinopac_worker"),
     }
 
 
@@ -660,8 +949,10 @@ def _run(a, clone, workspace, result):
     # official file already equals the clone: someone copied them and never
     # got the restart or the VERSION write done. A restart that failed says
     # so itself, whatever is left to replace alongside it.
+    # an owed 永豐 restart alone keeps VERSION behind too: that gap is not the reconciler's
+    sinopac_pending = os.path.exists(os.path.join(workspace, SINOPAC_PENDING))
     unfinished = pending or (not (p["old_official"] or p["changed_here"] or p["missing"])
-                             and v_old != v_new)
+                             and v_old != v_new and sinopac_pending_version(workspace) != v_new)
     needs_restart = state == "running" and (touches_code or unfinished)
     result["needs_restart"] = needs_restart
     result["busy"] = trading_busy(workspace)
@@ -711,7 +1002,7 @@ def _run(a, clone, workspace, result):
         tw = drop_tw_deferred(clone, workspace)
         if tw:
             result["tw_deferred_again"] = tw
-    restarted = None
+    restarted = wait_until = None
     if needs_restart and any(x["path"].split("/")[0] in CODE_DIRS for x in refused):
         # lib/ or manager/ is now part new, part old: the new files may import
         # what the old ones lack, and a process started on that tree would not
@@ -722,6 +1013,7 @@ def _run(a, clone, workspace, result):
         gated = os.path.isfile(os.path.join(workspace, "manager", "reconciler.py")) and \
             "RESTART_STOP_PATH" in open(os.path.join(workspace, "manager", "reconciler.py"),
                                         encoding="utf-8", errors="replace").read()
+        wait_until = time.time() + max(0, a.wait_busy)
         busy = wait_not_busy(workspace, a.wait_busy)
         result["busy"] = busy
         now = reconciler_state()
@@ -747,17 +1039,22 @@ def _run(a, clone, workspace, result):
     refused_paths = {x["path"] for x in refused}
     if written & set(CAPITAL_WORKER_FILES) and not refused_paths & set(CAPITAL_WORKER_FILES):
         result["capital_worker"] = restart_capital_worker()
+    sinopac = restart_sinopac(workspace, written, refused_paths, sinopac_pending,
+                              a.wait_busy if wait_until is None else max(0, wait_until - time.time()), result, v_new)
     if restarted in ("failed", "busy", "refused"):
         set_pending(workspace, v_new)
     elif restarted in ("ok", "not_running_anymore") or state != "running":
         drop_pending(workspace)
-    complete = not kept and not refused and restarted not in ("failed", "busy")
+    complete = (not kept and not refused and restarted not in ("failed", "busy")
+                and sinopac not in ("failed", "busy", "refused"))
     if complete and v_old != v_new:
         write_atomic(os.path.join(clone, "VERSION"), os.path.join(workspace, "VERSION"))
     result["version_written"] = complete and v_old != v_new
     result["version_after"] = read_version(os.path.join(workspace, "VERSION"))
     result["outcome"] = ("restart_failed" if restarted == "failed" else
                          "restart_deferred" if restarted in ("busy", "refused") else
+                         "restart_failed" if sinopac == "failed" else
+                         "restart_deferred" if sinopac == "busy" else
                          "partial" if not complete else
                          "updated" if (replaced or added or v_old != v_new) else "up_to_date")
 

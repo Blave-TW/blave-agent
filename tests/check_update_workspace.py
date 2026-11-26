@@ -434,6 +434,305 @@ try:
     uw.IS_WINDOWS = False
     check(uw.restart_capital_worker() is None, "Linux: no 群益 worker service to restart")
 
+    # 7f. the 永豐 worker (29026 11-26: the update landed, blave-agent-sinopac kept the old code)
+    import ast
+    seen, todo = set(), ["lib/sinopac_worker.py"]
+    while todo:
+        rel = todo.pop()
+        if rel in seen:
+            continue
+        seen.add(rel)
+        for n in ast.walk(ast.parse(read(os.path.join(ROOT, rel)))):
+            names = ([f"lib/{a.name}.py" for a in n.names] if isinstance(n, ast.ImportFrom) and n.module == "lib"
+                     else [n.module.replace(".", "/") + ".py"] if isinstance(n, ast.ImportFrom)
+                     and (n.module or "").startswith("lib.") else [])
+            todo += [x for x in names if os.path.exists(os.path.join(ROOT, x))]
+    check(seen <= set(uw.SINOPAC_WORKER_FILES) and "lib/secret_imports.py" in uw.SINOPAC_WORKER_FILES,
+          f"SINOPAC_WORKER_FILES holds every lib module the real worker imports ({sorted(seen - set(uw.SINOPAC_WORKER_FILES))})")
+
+    real_open_builtin = open
+    sp_ws = tempfile.mkdtemp(prefix="sp-ws-", dir=TMP)
+    wpath = os.path.realpath(os.path.join(sp_ws, "lib", "sinopac_worker.py"))
+    sp_orders = os.path.join(sp_ws, "state", "sinopac_orders")
+    os.makedirs(sp_orders)
+    sp_pending = os.path.join(sp_ws, "state", "sinopac_restart_pending.json")
+    restarts = []
+    real_worker, real_restart = uw.sinopac_worker, uw.restart_sinopac_worker
+    uw.restart_sinopac_worker = lambda w: restarts.append(w) or "stopped"
+
+    def sp(written=(), refused=(), wait=0, worker={"pid": 42, "started": None}):
+        uw.sinopac_worker = (lambda _ws: (_ for _ in ()).throw(worker)) if isinstance(worker, Exception) \
+            else (lambda _ws: worker)
+        res = {}
+        out = uw.restart_sinopac(sp_ws, set(written), set(refused), os.path.exists(sp_pending), wait, res, "v")
+        return out, res
+
+    restarts.clear()
+    out, res = sp(written={"lib/data.py"})
+    check(out is None and not restarts and "sinopac_worker" not in res,
+          "永豐: none of its files written, nothing owed, not older than its files → not restarted")
+    out, res = sp(written={"lib/sinopac_worker.py"})
+    check(out == "stopped" and restarts == [{"pid": 42, "started": None}] and res["sinopac_worker"] == "stopped"
+          and not os.path.exists(sp_pending),
+          "永豐: a file it imports written → the running worker restarted, nothing owed")
+    restarts.clear()
+    out, res = sp(written={"lib/guard.py"}, worker=None)
+    check(out is None and not restarts and res["sinopac_worker"] is None and not os.path.exists(sp_pending),
+          "永豐: no worker running here (not bound / no service) → skipped, no error, nothing owed")
+
+    def order_file(name, expires_in):
+        write(os.path.join(sp_orders, name), json.dumps({"expires_at": time.time() + expires_in}))
+
+    order_file("r1.taken", 20)  # being sent right now: no answer yet
+    out, res = sp(written={"lib/sinopac_vault.py"})
+    check(out == "busy" and not restarts and "r1" in res["sinopac_busy"] and os.path.exists(sp_pending),
+          "永豐: an order the worker is sending (.taken, no answer) → not restarted, owed (pending record)")
+    st = uw.status_doc(dict(res, outcome="restart_deferred", restart=None))
+    check(st["sinopac_worker"] == "busy" and "r1" in (st["reason"] or "") and st["state"] == "done"
+          and st["restarted"] is False,
+          "…workspace_update.json carries sinopac_worker and the busy reason")
+    write(os.path.join(sp_orders, "r1.resp.json"), "{}")
+    order_file("r2.req.json", 20)  # waiting to be taken
+    out, res = sp()
+    check(out == "busy" and "r2" in res["sinopac_busy"] and "r1" not in res["sinopac_busy"] and not restarts,
+          "…an answered one no longer counts; one waiting to be taken still does (owed run, nothing written)")
+    os.remove(os.path.join(sp_orders, "r2.req.json"))
+    order_file("r3.req.json", -3600)  # expired an hour ago: the worker refuses it, the requester gave up
+    out, res = sp()
+    check(out == "stopped" and restarts and not os.path.exists(sp_pending),
+          "…the owed restart is done by the next run with nothing written, past an expired request; record cleared")
+    restarts.clear()
+    os.remove(os.path.join(sp_orders, "r3.req.json"))
+    write(os.path.join(sp_ws, "state/execution/round"), "")
+    out, res = sp(written={"lib/tw_clock.py"})
+    check(out == "busy" and res["sinopac_busy"] == "reconciler mid-round" and not restarts,
+          "…the reconciler mid-round is busy for the 永豐 restart too")
+    os.remove(os.path.join(sp_ws, "state/execution/round"))
+    threading_timer = __import__("threading").Timer
+    order_file("r4.taken", 20)
+    threading_timer(0.6, lambda: write(os.path.join(sp_orders, "r4.resp.json"), "{}")).start()
+    out, res = sp(wait=10)
+    check(out == "stopped" and restarts and os.path.exists(os.path.join(sp_ws, "state/execution/hold")),
+          "…--wait-busy waits the order out, then restarts (the hold is up meanwhile; main() drops it)")
+    restarts.clear()
+    out, res = sp(written={"lib/sinopac_worker.py"}, refused={"lib/sinopac_worker.py"})
+    check(out == "refused" and not restarts and os.path.exists(sp_pending),
+          "…one of its files refused (part new, part old) → not restarted, owed")
+    out, res = sp(worker=uw.Unreadable("x"))
+    check(out == "failed" and not restarts and os.path.exists(sp_pending),
+          "…its state unreadable while a restart is owed → failed, still owed")
+    out, res = sp(worker=None)
+    check(out is None and not os.path.exists(sp_pending), "…owed but no worker running any more → record cleared")
+    sp_lib = os.path.join(sp_ws, "lib")
+    write(os.path.join(sp_lib, "guard.py"), "x\n")
+    mt = os.path.getmtime(os.path.join(sp_lib, "guard.py"))
+    out, res = sp(worker={"pid": 42, "started": mt - 60})
+    check(out == "stopped" and restarts,
+          "…a worker started before its files last changed runs old code → restarted with nothing written (29026)")
+    restarts.clear()
+    out, res = sp(worker={"pid": 42, "started": mt + 1})
+    check(out is None and not restarts, "…one started after them → left alone")
+    # S1: a debt owed, but the worker's start is known and newer than its files → it is the new code
+    write(sp_pending, json.dumps({"version": "x"}))
+    restarts.clear()
+    out, res = sp(worker={"pid": 42, "started": time.time() + 5})
+    check(out is None and not restarts and not os.path.exists(sp_pending),
+          "…owed, but the running worker started after its files changed → not killed, record cleared")
+    # M1: the worker is read again right before the signal
+    old_w, seq = {"pid": 42, "started": mt - 60}, []
+
+    def next_worker(_ws):
+        w = seq.pop(0)
+        if isinstance(w, Exception):
+            raise w
+        return w
+    uw.sinopac_worker = next_worker
+    for later, want_restart, label in (
+            ({"pid": 43, "started": time.time() + 5}, False, "replaced meanwhile by a newer worker → done, no signal"),
+            (None, False, "gone meanwhile → done, no signal"),
+            ({"pid": 42, "started": mt - 60}, True, "the same process (pid and start) → signalled"),
+            ({"pid": 42, "started": mt - 30}, True, "pid reused by another old worker → that one is checked as stale")):
+        restarts.clear()
+        seq[:] = [old_w, later]
+        res = {}
+        out = uw.restart_sinopac(sp_ws, {"lib/sinopac_worker.py"}, set(), False, 0, res, "v")
+        check(bool(restarts) == want_restart and (out is None) != want_restart
+              and (not want_restart or restarts[0] == later),
+              f"M1: {label} ({out})")
+    seq[:] = [old_w, uw.Unreadable("y")]
+    restarts.clear()
+    res = {}
+    out = uw.restart_sinopac(sp_ws, {"lib/sinopac_worker.py"}, set(), False, 0, res, "v")
+    check(out == "failed" and not restarts and os.path.exists(sp_pending)
+          and json.loads(read(sp_pending)).get("version") == "v",
+          "M1: unreadable right before the signal → failed, owed, the record names this run's VERSION (S2)")
+    os.remove(sp_pending)
+    uw.sinopac_worker, uw.restart_sinopac_worker = real_worker, real_restart
+    # low: a request whose expires_at is not finite counts by its file time, capped
+    for name, exp, age, want in (("q1.taken", float("inf"), 2000, False), ("q2.taken", float("nan"), 0, True),
+                                 ("q3.taken", time.time() + 1e9, 2000, False)):
+        fp = os.path.join(sp_orders, name)
+        write(fp, json.dumps({"expires_at": exp}))
+        os.utime(fp, (time.time() - age, time.time() - age))
+        check(bool(uw.sinopac_busy(sp_ws)) == want,
+              f"expires_at {exp!r}, file {age}s old → {'busy' if want else 'not busy'} (never past ROUND_STALE_S)")
+        os.remove(fp)
+    check("lib/__init__.py" in uw.SINOPAC_WORKER_FILES, "lib/__init__.py (run by every `from lib import`) is in the list")
+    # S3: MainPID alive, cmdline neither the worker nor its shim → Unreadable; the shim → None
+    real_open, real_started = getattr(uw, "open", None), uw.proc_started
+    uw.proc_started = lambda pid: 5.0
+    for argv, want in (([sys.executable, wpath], {"pid": 77, "started": 5.0}),
+                       ([sys.executable, "/opt/blave-agent/current/sinopac_service.py"], None),
+                       (["/usr/bin/sleep", "100"], "unreadable")):
+        uw.open = lambda path, mode="r", *a, _argv=argv, **k: (
+            __import__("io").BytesIO(b"\0".join(x.encode() for x in _argv)) if path == "/proc/77/cmdline"
+            else real_open_builtin(path, mode, *a, **k))
+        uw.subprocess.run = lambda *a, **k: FakeRun("77\n")
+        try:
+            got = uw.sinopac_worker(sp_ws)
+        except uw.Unreadable:
+            got = "unreadable"
+        check(got == want, f"S3: MainPID running {os.path.basename(argv[-1]) if argv[-1] != '100' else 'sleep'} → {want!r} ({got!r})")
+    del uw.open
+    uw.proc_started = real_started
+    uw.subprocess.run = real_run
+
+    # M1: the pid already gone when the signal goes → stopped, not failed
+    gone = subprocess.Popen([sys.executable, "-c", "pass"])
+    gone.wait()
+    check(uw.restart_sinopac_worker({"pid": gone.pid, "started": None}) == "stopped",
+          "Linux: SIGTERM finds the worker already gone (ProcessLookupError) → stopped, not failed")
+    # the Linux stop itself: SIGTERM to the worker's own PID (the agent user has no sudo for its unit)
+    child_src = os.path.join(TMP, "fake_sp_worker.py")
+    write(child_src, "import signal, sys, time\nif sys.argv[1] == 'ignore': signal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
+                     "print('up', flush=True)\ntime.sleep(60)\n")
+    for mode, want in (("term", "stopped"), ("ignore", "failed")):
+        child = subprocess.Popen([sys.executable, child_src, mode], stdout=subprocess.PIPE)
+        child.stdout.readline()
+        __import__("threading").Thread(target=child.wait, daemon=True).start()  # systemd reaps; here we do
+        uw.SINOPAC_STOP_WAIT_S = 1.5
+        got = uw.restart_sinopac_worker({"pid": child.pid, "started": None})
+        alive = child.poll() is None
+        child.kill()
+        check(got == want and alive == (mode == "ignore"),
+              f"Linux: SIGTERM to the worker → {want} ({'never SIGKILLed' if mode == 'ignore' else 'it ended'})")
+    real_systemctl = uw.subprocess.run
+    uw.subprocess.run = lambda *a, **k: FakeRun("0\n")
+    check(uw.sinopac_worker(sp_ws) is None, "Linux: MainPID 0 (unit not running / not installed) → no worker")
+    uw.subprocess.run = lambda *a, **k: FakeRun("active\n")
+    try:
+        uw.sinopac_worker(sp_ws)
+        unread = False
+    except uw.Unreadable:
+        unread = True
+    check(unread, "Linux: a MainPID that is not a number → unreadable, never 'no worker'")
+    uw.subprocess.run = real_systemctl
+    uw.IS_WINDOWS = True
+
+    def fake_win(ps_out, nssm=("SERVICE_RUNNING", "SERVICE_RUNNING"), ps_rc=0):
+        states = list(nssm)
+
+        def f(argv, *a, **k):
+            if argv[0] == "powershell":
+                calls.append(["powershell"])
+                return FakeRun(ps_out, ps_rc)
+            calls.append(argv[1:])
+            return FakeRun(states.pop(0).encode("utf-16-le") if argv[1] == "status" else b"")
+        return f
+    procs = [{"pid": 7, "cmd": f'"C:\\py\\python.exe" "{wpath}"', "started": 1000.0},   # the venv launcher
+             {"pid": 8, "cmd": f'"C:\\base\\python.exe" "{wpath}"', "started": 1000.4},  # the real python
+             {"pid": 9, "cmd": "conhost.exe 0x4", "started": 999.0}]
+    calls.clear()
+    uw.subprocess.run = fake_win(json.dumps({"service": 6, "procs": procs}))
+    w = uw.sinopac_worker(sp_ws)
+    got = uw.restart_sinopac_worker(w)
+    check(w == {"pid": 7, "started": 1000.0} and got == "ok"
+          and calls == [["status", "blave-agent-sinopac"], ["powershell"], ["restart", "blave-agent-sinopac"],
+                        ["status", "blave-agent-sinopac"]],
+          f"Windows: the worker under NSSM (its child, not nssm.exe) with its start time; the service is restarted ({w})")
+    uw.subprocess.run = fake_win(json.dumps({"service": 6, "procs": procs[1]}))
+    check(uw.sinopac_worker(sp_ws) == {"pid": 8, "started": 1000.4},
+          "Windows: one process (ConvertTo-Json unwraps the list) still reads")
+    write(os.path.join(sp_ws, "lib/sinopac_vault.py"), "v\n")
+    check(uw.sinopac_stale(sp_ws, uw.sinopac_worker(sp_ws)),
+          "Windows: a worker started before its files changed reads as stale (the 11-26 Windows box is reached)")
+    uw.subprocess.run = fake_win("not json")
+    try:
+        uw.sinopac_worker(sp_ws)
+        unread = False
+    except uw.Unreadable:
+        unread = True
+    check(unread, "Windows: service processes unreadable → Unreadable, never passed as 'no worker'")
+    uw.subprocess.run = fake_win(json.dumps({"service": 6, "procs": [procs[2]]}))
+    try:
+        uw.sinopac_worker(sp_ws)
+        unread = False
+    except uw.Unreadable:
+        unread = True
+    check(unread, "Windows: the service runs something but no lib/sinopac_worker.py → Unreadable")
+    uw.subprocess.run = fake_win(json.dumps({"service": 6, "procs": []}))
+    check(uw.sinopac_worker(sp_ws) is None, "Windows: NSSM between two runs (no child) → no worker")
+    uw.subprocess.run = lambda argv, *a, **k: FakeRun(b"", rc=3)
+    check(uw.sinopac_worker(sp_ws) is None, "Windows: no blave-agent-sinopac service → no worker, no error")
+    uw.subprocess.run = real_run
+    uw.IS_WINDOWS = False
+
+    # the whole run: a 永豐 restart deferred keeps VERSION old, and the next run restarts it without
+    # restarting the reconciler again for the VERSION gap that alone leaves
+    repoS, v1s, _headS = make_official()
+    write(os.path.join(repoS, "lib/sinopac_worker.py"), "w = 2\n")
+    write(os.path.join(repoS, "VERSION"), "2026-09-24\n")
+    g(repoS, "add", "-A")
+    g(repoS, "commit", "-qm", "v3")
+    headS = g(repoS, "rev-parse", "HEAD")
+    wsS = make_workspace(repoS, v1s)
+    specS = importlib.util.spec_from_file_location("uw_sp", os.path.join(repoS, "manager/update_workspace.py"))
+    uwS = importlib.util.module_from_spec(specS)
+    specS.loader.exec_module(uwS)
+    sp_restarts = []
+    uwS.sinopac_worker = lambda _ws: {"pid": 42, "started": None}
+    uwS.restart_sinopac_worker = lambda w: sp_restarts.append(w) or "stopped"
+    write(os.path.join(wsS, "state/sinopac_orders/r9.taken"), json.dumps({"expires_at": time.time() + 600}))
+    unit("active")
+    clear_sudo()
+    real_path = os.environ["PATH"]
+    os.environ["PATH"] = ENV["PATH"]
+    try:
+        r1 = uwS.main(["apply", "--clone", repoS, "--workspace", wsS, "--expect-head", headS,
+                       "--restart-ok", "--allow", "AGENTS.md"])
+        st1 = json.loads(read(os.path.join(wsS, STATUS)))
+        recon1 = [c for c in sudo_calls() if "reconciler" in c]
+        sp1, ver1 = list(sp_restarts), read(os.path.join(wsS, "VERSION")).strip()
+        clear_sudo()
+        os.remove(os.path.join(wsS, "state/sinopac_orders/r9.taken"))
+        r2 = uwS.main(["apply", "--clone", repoS, "--workspace", wsS, "--expect-head", headS, "--restart-ok"])
+        recon2 = [c for c in sudo_calls() if "reconciler" in c]
+    finally:
+        os.environ["PATH"] = real_path
+    check(r1["outcome"] == "restart_deferred" and r1["restart"] == "ok" and r1["sinopac_worker"] == "busy"
+          and recon1 and not sp1 and r1["version_written"] is False
+          and ver1 == "2026-09-01-a"
+          and st1["sinopac_worker"] == "busy" and st1["outcome"] == "restart_deferred",
+          f"apply: reconciler restarted, 永豐 busy → restart_deferred, VERSION old ({r1.get('outcome')}, {r1.get('sinopac_worker')})")
+    # S2: a debt recorded for another VERSION does not explain this run's VERSION gap
+    write(os.path.join(wsS, "VERSION"), "2026-09-01-a\n")
+    write(os.path.join(wsS, "state/sinopac_restart_pending.json"), json.dumps({"version": "2026-09-01-z"}))
+    uwS.sinopac_worker = lambda _ws: None
+    clear_sudo()
+    os.environ["PATH"] = ENV["PATH"]
+    try:
+        r3 = uwS.main(["apply", "--clone", repoS, "--workspace", wsS, "--expect-head", headS, "--restart-ok"])
+    finally:
+        os.environ["PATH"] = real_path
+    check(r3["restart"] == "ok" and [c for c in sudo_calls() if "reconciler" in c],
+          f"S2: an owed 永豐 restart for another VERSION → the gap is the reconciler's: restarted ({r3.get('restart')})")
+    clear_sudo()
+    check(r2["outcome"] == "updated" and r2["sinopac_worker"] == "stopped" and sp_restarts
+          and r2["restart"] is None and not recon2 and r2["version_written"] is True
+          and read(os.path.join(wsS, "VERSION")).strip() == "2026-09-24"
+          and not os.path.exists(os.path.join(wsS, "state/sinopac_restart_pending.json")),
+          f"…next run: the owed 永豐 restart, no second reconciler restart, VERSION written ({r2.get('outcome')}, {r2.get('restart')})")
+
     unit("inactive")
     real_plan, real_path = uw.plan, os.environ["PATH"]
     uw.plan = lambda *a, **k: (_ for _ in ()).throw(ValueError("boom"))

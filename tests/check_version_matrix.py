@@ -1007,6 +1007,8 @@ def alive():
 def log(m):
     open(LOG, "a").write(f"{{time.time():.3f}} {{m}}\\n")
 a = [x for x in sys.argv[1:] if not x.startswith("-")]
+if a and a[0] == "show":  # no 永豐 unit in this matrix: real systemd answers MainPID 0
+    print(0); sys.exit(0)
 if a and a[0] == "is-active":
     print("active" if alive() else "inactive"); sys.exit(0 if alive() else 3)
 if a and a[0] in ("restart", "start", "stop"):
