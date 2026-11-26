@@ -298,7 +298,7 @@ const PV = { agent: { monthly_twd: 888, annual_twd: 8880, period_days: 30, ai_cr
       confirmBox: (o) => boxes.push(o), delClose: () => calls.push("close"), delOkBusy: () => {}, srSay: () => {},
       faultCard: () => { const c = { el: mkEl("div"), b1: mkEl("button"), last: null, set(x) { this.last = x; } }; cards.push(c); return c; },
       sysLz: (fn) => fn(), trackFeature: (n) => calls.push("t:" + n), trackEvent: (ev, pr) => evs.push(ev + ":" + J(pr || {})), acctCheck: () => calls.push("acctCheck"), planPaint: () => {}, sidePaint: () => {},
-      planOpen: () => calls.push("planOpen"), pubLoad: async () => {}, planSignIn: async () => ({ ok: false }), acctUrl: () => "U", planPayUrl: () => "P",
+      planOpen: () => calls.push("planOpen"), pubLoad: async () => {}, planSignIn: async () => ({ ok: false }), acctUrl: () => "U", planPayUrl: () => "P", planWebUrl: () => "https://blave.org/agent/zh",
       // 加密付款的網址用 app.js 的真函式(Wei 實測:舊版開的是 planPayUrl,網頁把 from=desktop 換成綁卡頁)
       planCryptoUrl: new Function("LANG", "return " + (app.match(/^const planCryptoUrl = (\(o\) => [^;]*);/m) || [])[1] + ";")("zh"),
       window: { addEventListener() {}, blave: {
@@ -384,9 +384,10 @@ const PV = { agent: { monthly_twd: 888, annual_twd: 8880, period_days: 30, ai_cr
       const tx = (wt.last && wt.last.text) || "";
       ok("④ 試用綁卡回 wallet(舊 api 帶 888):講「這張卡用過試用」＋記號的 10,不出 888、不出付費那句、不出退款句",
         /^p3\.w\.trialCardUsed\{"v":"?10"?\}$/.test(tx) && !/888|p3\.w\.wallet|p3\.w\.refund/.test(tx), tx);
-      ok("④ 試用綁卡 wallet:埋點記 trial_wallet(不跟付費單的 wallet 混);卡上一顆〔看方案〕開 888 方案框(from retry)",
-        evs.includes('plan_bind_res:{"step":"trial_wallet"}') && !evs.includes('plan_bind_res:{"step":"wallet"}') && wt.last.label === "data.seePlan" && typeof wt.last.on === "function"
-        && /else if \(v\.plan\) w\.card\.set\(sysLz\(\(\) => \(\{ calm: v\.calm, text: text\(\), label: t\("data\.seePlan"\), on: \(\) => p3OpenAgent\(w\.card\.b1, null, "retry"\) \}\)\)\);/.test(src));
+      ok("④ 試用綁卡 wallet:埋點記 trial_wallet(不跟付費單的 wallet 混);卡上一顆〔開通方案〕(同網頁 bc_plan_activate_btn)開 888 方案框(from retry),並記下這一行等回前景重查",
+        evs.includes('plan_bind_res:{"step":"trial_wallet"}') && !evs.includes('plan_bind_res:{"step":"wallet"}') && wt.last.label === "p3.w.cuPlan" && typeof wt.last.on === "function"
+        && /label: t\("p3\.w\.cuPlan"\), on: \(\) => p3OpenAgent\(w\.card\.b1, null, "retry"\)/.test(src) && C.P3.cu && C.P3.cu.card === wt
+        && STR.zh["p3.w.cuPlan"] === "開通方案" && STR.en["p3.w.cuPlan"] === "Start Plan");
       ok("④ TRIAL_NOT_ELIGIBLE 那句不寫「再」(沒試用過、付過方案或有大主機的人也是這個碼)", /不符合試用資格/.test(STR.zh["p3.w.trialNoElig"]) && !/再/.test(STR.zh["p3.w.trialNoElig"] + STR.zh["p3.w.trialNoEligNoNum"])
         && /isn't eligible for a trial/.test(STR.en["p3.w.trialNoElig"]));
       const R = (res, pay) => C.p3ResultView(Object.assign({ status: "wallet" }, res), "trial", pay);
@@ -399,6 +400,95 @@ const PV = { agent: { monthly_twd: 888, annual_twd: 8880, period_days: 30, ai_cr
         && !Object.values(STR.zh).some((v) => v === "每張卡限試用一次。"));
       ok("④ 主行程收 reason_code(只認兩個值)", M.resultBody({ bind: { kind: "trial", status: "wallet", amount_twd: 10, reason_code: "TRIAL_CARD_USED" } }).reason_code === "TRIAL_CARD_USED"
         && M.resultBody({ bind: { kind: "trial", status: "wallet", reason_code: "x; y" } }).reason_code === null); }
+    { // 藍新回程那一頁(網頁電腦版綁卡頁)也跳付第一期的框:人在瀏覽器付了,回到 app 那一行不能停在「卡用過」
+      reset(); const wt = C.faultCard(); C.P3.wait = { kind: "trial", tier: "agent", at: Date.now(), card: wt };
+      resultReply = { mark: { kind: "trial", tier: "agent", at: Date.now(), pay: 10 }, res: { kind: "trial", status: "wallet", amount_twd: 10, reason_code: "TRIAL_CARD_USED" } };
+      await C.p3Poll(); await new Promise((r) => setImmediate(r));
+      const activeQ = Q({ trial: nt, has_card: true, card_last4: "4242", agent_offer: { kind: "active", monthly: { today_twd: 0, today_is: "charge", first_charge_at: "2026-12-26T00:00:00Z", first_charge_twd: 888, source: "card" } } });
+      reset(); quoteReply = { status: 200, body: payQ }; C.P3.cu.seen = 0;
+      await C.p3CuCheck(); const q1 = calls.filter((c) => c === "quote").length; await C.p3CuCheck();
+      ok("④ 卡用過那一行回前景:方案還沒開 → 那一行不動、記號留著;10 秒內再回前景不重查", q1 === 1 && calls.filter((c) => c === "quote").length === 1 && wt.last.label === "p3.w.cuPlan" && C.P3.cu && C.P3.cu.card === wt);
+      reset(); quoteReply = { status: 200, body: activeQ }; C.P3.cu.seen = 0;
+      await C.p3CuCheck();
+      ok("④ 卡用過那一行回前景:方案開了(瀏覽器那頁付的)→ 那一行換成「方案開通了」、不帶鈕,記號清掉", wt.last.text === "p3.w.okPlan" && !wt.last.label && C.P3.cu === null && calls.includes("acctCheck"));
+      reset(); C.P3.cu = { card: wt, at: Date.now() - 31 * 60 * 1000, seen: 0, busy: false };
+      await C.p3CuCheck();
+      ok("④ 卡用過那一行過了付款頁效期:不再查,記號清掉", !calls.includes("quote") && C.P3.cu === null);
+      const wt2 = C.faultCard(); reset(); C.P3.cu = { card: wt2, at: Date.now(), seen: 0, busy: false }; quoteReply = { status: 200, body: activeQ };
+      await C.p3OpenAgent(wt2.b1, null, "retry");
+      ok("④ 按那一行的〔開通方案〕時方案已開:改寫那一行,不開方案框也不開方案頁", wt2.last.text === "p3.w.okPlan" && boxes.length === 0 && !calls.includes("planOpen") && C.P3.cu === null);
+      const wt3 = C.faultCard(); reset(); C.P3.cu = { card: wt3, at: Date.now(), seen: 0, busy: false }; quoteReply = { status: 200, body: activeQ };
+      await C.p3OpenAgent(null, null, "set");
+      ok("④ 從別的入口開方案框時方案已開:照舊開方案頁,掛著的那一行也一起改寫", wt3.last.text === "p3.w.okPlan" && calls.includes("planOpen") && C.P3.cu === null);
+      const wt4 = C.faultCard(); reset(); C.P3.cu = { card: wt4, at: Date.now(), seen: 0, busy: false }; startReply = { status: 200, body: { state: "none" } };
+      await C.p3AgentGo(m, null, false);
+      ok("④ 在 app 的框裡付成功:記號清掉(之後回前景不再查)", C.P3.cu === null); }
+    { // 有主機解綁戶繞圈:名下有主機的人只開 888 階會被 409 HAS_SERVER 拒,舊版拒了就重開同一個框,怎麼按都一樣
+      const hostQ = (o) => Q(Object.assign({ trial: nt, machine: { state: "stopped", tier: "linux_starter" }, addon_offer: null }, o));
+      const card = hostQ({ has_card: true, card_last4: "4242", agent_offer: payQ.agent_offer });
+      const noCard = hostQ({ has_card: false, agent_offer: { kind: "bind_pay", monthly: { today_twd: 888, today_is: "charge", first_charge_at: null, first_charge_twd: 888, source: "card" } } });
+      const trialHost = hostQ({ has_card: false, trial: { eligible: true, active: false, gen: "v3", ends_at: null, cancel_at_end: false } });
+      ok("④ 名下有主機:有卡付款、沒卡綁卡付都擋(p3HostBlocked);試用綁卡、沒主機的照舊", P.p3HostBlocked(card, P.p3AgentModel(card, PV)) && P.p3HostBlocked(noCard, P.p3AgentModel(noCard, PV))
+        && !P.p3HostBlocked(trialHost, P.p3AgentModel(trialHost, PV)) && P.p3AgentModel(trialHost, PV).kind === "trial" && !P.p3HostBlocked(payQ, P.p3AgentModel(payQ, PV))
+        && ["starting", "running"].every((st) => { const q = hostQ({ has_card: true, agent_offer: payQ.agent_offer, machine: { state: st, tier: "linux_starter" } }); return P.p3HostBlocked(q, P.p3AgentModel(q, PV)); }));
+      for (const [name, q] of [["有卡", card], ["沒卡", noCard]]) {
+        reset(); quoteReply = { status: 200, body: q };
+        await C.p3OpenAgent(null, null, "data");
+        const b = boxes[0] || {};
+        ok(`④ 名下有主機(${name})開方案框:不畫付款框,改一個框講到網站繼續主機(同網頁 bc_ps_has_server),主鈕開網站雲端主機頁`, boxes.length === 1 && J(b.lines) === '["p3.a.hasServer"]' && b.ok === "p3.a.goCloud" && !b.extra
+          && (b.onOk(), calls.includes("open:https://blave.org/agent/zh?from=desktop")) && !calls.some((c) => /^(start|bindPay):/.test(c)));
+      }
+      reset(); C.window.blave.plan3Quote = async () => { calls.push("quote"); return { status: 200, body: card }; };
+      startReply = { status: 409, body: { error_code: "HAS_SERVER" } };
+      await C.p3AgentGo(m, null, false); await new Promise((r) => setImmediate(r)); await new Promise((r) => setImmediate(r));
+      C.window.blave.plan3Quote = async () => { calls.push("quote"); return quoteReply; };
+      ok("④ 送出後才撞 409 HAS_SERVER(報價時還沒主機):重新報價後出繼續主機那個框,不再出同一個付款框", calls.filter((c) => c.startsWith("start:")).length === 1 && boxes.length === 1 && boxes[0].ok === "p3.a.goCloud");
+      ok("④ 繼續主機那兩句兩語都有,zh 不用分號", ["p3.a.hasServer", "p3.a.goCloud"].every((k) => STR.zh[k] && STR.en[k] && !/；|;/.test(STR.zh[k] + STR.en[k]))); }
+    { // 策略庫綁卡即購買試用沒開成(web 12381b36f 策略庫那條):同一個 888 方案框,標題講原因、頂上一句策略買好了;付了叫 onPaid(自動安裝那一支)
+      const activeQ = Q({ trial: nt, has_card: true, card_last4: "4242", agent_offer: { kind: "active", monthly: { today_twd: 0, today_is: "charge", first_charge_at: "2026-12-26T00:00:00Z", first_charge_twd: 888, source: "card" } } });
+      let paid = 0, libPaid = 0; C.libPlanPaid = () => libPaid++;
+      reset(); quoteReply = { status: 200, body: payQ };
+      await C.p3OpenAgent(null, null, "lib", { reason: "TRIAL_CARD_USED", onPaid: () => paid++ });
+      const b = boxes[0] || {};
+      ok("④ 試用沒開成的框:標題「這張卡已經試用過」、頂上「策略買好了。這支要方案才能跑。」(同網頁 bc_cu_t_card／bc_cu_lib),主鈕照舊付 888", b.title === "p3.cu.tCard" && /p3\.cu\.lib/.test(J(b.extra)) && b.ok === 'p3.a.okPay{"p":"888"}' && evs.includes('plan_box:{"from":"lib"}'));
+      reset(); quoteReply = { status: 200, body: payQ }; await C.p3OpenAgent(null, null, "lib", { reason: "TRIAL_NOT_ELIGIBLE", onPaid: () => paid++ });
+      ok("④ 帳號沒資格那一態標題「這個帳號不能再試用」", boxes[0].title === "p3.cu.tAcct");
+      startReply = { status: 200, body: { state: "none" } }; await C.p3AgentGo(m, null, false);
+      ok("④ 框內付成功:onPaid 叫一次、策略庫結果句收掉(libPlanPaid),記號清掉", paid === 1 && libPaid === 1 && C.P3.cuBox === null);
+      reset(); quoteReply = { status: 200, body: payQ }; await C.p3OpenAgent(null, null, "lib", { reason: "TRIAL_CARD_USED", onPaid: () => paid++ });
+      startReply = { status: 409, body: { error_code: "PLAN_ALREADY_ACTIVE" } }; await C.p3AgentGo(m, null, false);
+      ok("④ 送出時方案已經開著(PLAN_ALREADY_ACTIVE)也當付了:onPaid 叫", paid === 2 && C.P3.cuBox === null);
+      reset(); quoteReply = { status: 200, body: activeQ }; await C.p3OpenAgent(null, null, "lib", { reason: "TRIAL_CARD_USED", onPaid: () => paid++ });
+      ok("④ 按〔開通方案〕時方案已開:onPaid 叫、不開方案頁", paid === 3 && !calls.includes("planOpen"));
+      reset(); quoteReply = { status: 200, body: payQ }; await C.p3OpenAgent(null, null, "lib", { reason: "TRIAL_CARD_USED", onPaid: () => paid++ });
+      await C.p3OpenAgent(null, null, "set");
+      ok("④ 之後從別的入口開方案框:不帶原因標題、記號換掉(付了不會誤叫 onPaid)", boxes[1].title === "p3.a.title" && C.P3.cuBox === null && !/p3\.cu\.lib/.test(J(boxes[1].extra)));
+      ok("④ 試用沒開成三句兩語都有、跟網頁一樣用標題大小寫", ["p3.cu.tCard", "p3.cu.tAcct", "p3.cu.lib"].every((k) => STR.zh[k] && STR.en[k]) && STR.en["p3.cu.tCard"] === "This Card Already Had a Trial");
+      // 稽核 S2:先不要／✕ 收掉參數;重問(409)重畫時新框把舊框當取消收掉,參數要留著;換到「舊頁仍能付」那個框也清
+      const sup = C.confirmBox; C.confirmBox = (o) => { const prev = boxes[boxes.length - 1]; if (prev && prev.onCancel && !prev.done) { prev.done = true; prev.onCancel(); } boxes.push(o); };
+      reset(); quoteReply = { status: 200, body: payQ }; await C.p3OpenAgent(null, null, "lib", { reason: "TRIAL_CARD_USED", onPaid: () => paid++ });
+      startReply = { status: 409, body: { error_code: "PLAN_CONFIRM_REQUIRED", source: "card" } }; await C.p3AgentGo(m, null, false);
+      for (let i = 0; i < 4; i++) await new Promise((r) => setImmediate(r));
+      ok("④ 稽核 S2:409 重問重畫(舊框被當成取消收掉):新框仍是原因標題、參數留著", boxes.length === 2 && boxes[1].title === "p3.cu.tCard" && C.P3.cuBox && C.P3.cuBox.reason === "TRIAL_CARD_USED");
+      boxes[1].done = true; boxes[1].onCancel();
+      ok("④ 稽核 S2:按先不要／✕／Esc(onCancel):參數清掉", C.P3.cuBox === null);
+      reset(); quoteReply = { status: 200, body: payQ }; await C.p3OpenAgent(null, null, "lib", { reason: "TRIAL_CARD_USED", onPaid: () => paid++ });
+      boxes[boxes.length - 1].done = true;   // 只看 p3RestartAsk 自己清:不靠新框把舊框當取消
+      C.p3RestartAsk({ kind: "plan", tier: "agent", cycle: "monthly", confirm: 888, pay: 888 }, null);
+      ok("④ 稽核 S2:換到「舊頁仍能付」那個框:全域參數清掉", C.P3.cuBox === null);
+      C.confirmBox = sup;
+      // 稽核 S1:框裡走了付款頁(沒卡綁卡付)、回程 ok:onPaid 跟著那張單叫,結果句收掉
+      const before = paid, libBefore = libPaid; C.libPlanPaid = () => libPaid++;
+      const bindQ = Q({ trial: nt, has_card: false, agent_offer: { kind: "bind_pay", monthly: { today_twd: 888, today_is: "charge", first_charge_at: null, first_charge_twd: 888, source: "card" } } });
+      reset(); quoteReply = { status: 200, body: bindQ }; await C.p3OpenAgent(null, null, "lib", { reason: "TRIAL_CARD_USED", onPaid: () => paid++ });
+      await C.p3AgentGo(C.p3AgentModel(bindQ, PV), null, false);
+      const jobCu = C.P3.wait && C.P3.wait.cu;
+      resultReply = { mark: { kind: "plan", tier: "agent", at: Date.now() }, res: { kind: "plan", status: "ok" } }; await C.p3Poll(); await new Promise((r) => setImmediate(r));
+      ok("④ 稽核 S1:付款頁回程 agent ok:p3PollOnce 叫 p3CuBoxPaid(那張單帶的 onPaid 一次、結果句收掉)", !!jobCu && paid === before + 1 && libPaid === libBefore + 1);
+      reset(); const w9 = C.faultCard(); C.P3.wait = { kind: "plan", tier: "agent", at: Date.now(), card: w9 };
+      resultReply = { mark: { kind: "plan", tier: "agent", at: Date.now() }, res: { kind: "plan", status: "ok" } }; await C.p3Poll(); await new Promise((r) => setImmediate(r));
+      ok("④ 稽核 S1:一般的 888 付款頁回程 ok(沒有參數)也收策略庫結果句、不叫 onPaid", paid === before + 1 && libPaid === libBefore + 2);
+      delete C.libPlanPaid; }
     { reset(); const proQ = Q({ trial: nt, has_card: true, card_last4: "4242", agent_offer: payQ.agent_offer, studio_subscription: { source: "apple", plan: "pro", auto_renew: true, expires_at: "2026-12-03T00:00:00Z" } });
       const pm = C.p3AgentModel(proQ, PV); startReply = { status: 200, body: { state: "none" } };
       await C.p3AgentGo(pm, null, false);

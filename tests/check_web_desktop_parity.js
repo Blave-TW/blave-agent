@@ -1093,7 +1093,9 @@ for (const lang of ["zh", "en"]) {
     // 直接開付款頁的鈕下一行(mockup-23-like-others,Wei 11-09):續扣、試用後續扣
     renewNote: "renew_short", trialRenewNote: "trial_short",
     // KOL 推薦碼試用(spec kol-referral-trial §8.5):加碼那列整句
-    trialRowBoost: "trial_boost" };
+    trialRowBoost: "trial_boost",
+    // 鎖了試用卻沒開成(卡用過／帳號沒資格,web 12381b36f):付第一期框按了先不要之後的結果句,網頁是 bc_cu_lib_need
+    cuNeedPlan: "-bc_cu_lib_need" };
   // 刻意不配對(設計稽核 review-desktop-one-step-0150):〔恢復方案〕電腦版用設定頁的 plan.resumeWeb〔到網站恢復方案〕(離開 app 要講「到網站」),不設 lib.bb.resume
   // 刻意不同(設計複審 ⑧):電腦版付款頁還開著才有的三句與逾時句;網頁回程才有的「確認扣款中…」。
   // KOL 推薦碼試用的讀屏整句(spec kol-referral-trial §8.5):兩邊都是新值在前、「原本 N 天」後綴(設計複審 11-24);電腦版把看得到的整段 aria-hidden、另念一整句,網頁只在原值旁補 bc_trial_promo_was_sr,key 切法不同不逐字比
@@ -1229,5 +1231,17 @@ for (const lang of ["zh", "en"]) {
   const dv = (k) => (P0160_MORE.includes(k) && typeof dp[k] === "string" && dp[k].split("{more}").length === 2 ? dp[k].replace("{more}", "") : dp[k]);
   const bad = Object.entries(P0160_PAIRS).filter(([d, w]) => typeof dp[d] !== "string" || !dp[d] || typeof wp[w] !== "string" || dv(d) !== wp[w].replace(/%%/g, "%"));
   ok(`0.1.60 批 ${lang}:${Object.keys(P0160_PAIRS).length} 句兩邊逐字一致(美股拒絕句電腦版恰好一個 {more})`, bad.length === 0, bad.map(([d, w]) => d + "「" + dp[d] + "」 vs " + w + "「" + wp[w] + "」").join(";"));
+}
+// 試用綁卡沒開成(卡用過／帳號沒資格;web 12381b36f 的付第一期框,mockup card-used-modal-2026-11-24):電腦版聊天那一行講原因＋〔開通方案〕開 888 方案框;策略庫綁卡即購買那條開同一個框、標題講原因。
+// 原因句與鈕字跟網頁同一句;名下有主機的人(只開 888 階會被 HAS_SERVER 拒)兩邊都叫人到網站雲端主機頁繼續主機。
+// p3.a.hasServer 只比 zh:網頁 en 引的是網頁鈕名「Resume Server」,電腦版 en 用語表機器一律叫 cloud machine(check_shell_plan_v3 M7／M8),不引鈕名
+const CU_PAIRS = { "p3.w.trialCardUsed": "bc_trial_card_used", "p3.w.trialNoElig": "bc_trial_no_elig", "p3.w.cuPlan": "bc_plan_activate_btn", "p3.a.goCloud": "bc_plan_go_start", "p3.a.hasServer": "bc_ps_has_server",
+  // 策略庫綁卡即購買試用沒開成:框標題兩態、框頂那句、按了先不要之後的結果句
+  "p3.cu.tCard": "bc_cu_t_card", "p3.cu.tAcct": "bc_cu_t_acct", "p3.cu.lib": "bc_cu_lib" };
+const CU_ZH_ONLY = ["p3.a.hasServer"];
+for (const lang of ["zh", "en"]) {
+  const dp = poMap(path.join(__dirname, "..", "shell", "i18n", lang + ".po")), wp = poMap(path.join(webDir, "app", "translations", lang, "LC_MESSAGES", "messages.po"));
+  const bad = Object.entries(CU_PAIRS).filter(([d]) => lang === "zh" || !CU_ZH_ONLY.includes(d)).filter(([d, w]) => typeof dp[d] !== "string" || !dp[d] || typeof wp[w] !== "string" || dp[d] !== wp[w]);
+  ok(`試用沒開成那一行與繼續主機 ${lang} 兩邊逐字一致`, bad.length === 0, bad.map(([d, w]) => d + "「" + dp[d] + "」 vs " + w + "「" + wp[w] + "」").join(";"));
 }
 console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0);

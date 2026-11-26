@@ -279,6 +279,8 @@ function libBbRes(res, sid) {
   /* 方案付款期間在別處開了(plan_status active):api 的 status 是 wallet(方案那筆留在錢包),reason 卻是空的或 already_purchased——策略其實買到了
      (marketplace._settle_plan_order 1478–1489)。這時是成功:不能講「策略沒買成」、不能留會失敗的購買鈕(web 稽核 B1) */
   if (out.plan && out.kind === "wallet" && out.planStatus !== "failed" && (out.code === null || out.code === "already_purchased")) out.kind = "ok";
+  // 鎖了試用卻沒開(卡用過／帳號沒資格):策略買到了、方案沒開,要付第一期才跑得動(同網頁 PlanView.libTrialMiss,只看買成的那一筆)
+  if (!out.plan && out.kind === "ok" && (res.trial_reason_code === "TRIAL_CARD_USED" || res.trial_reason_code === "TRIAL_NOT_ELIGIBLE")) out.trialMiss = res.trial_reason_code;
   return out;
 }
 // 有卡的 /purchase 刷了卡卻沒買成(libBuyBranch 的 charged):跟綁卡即購買的 wallet 同一套句子
@@ -302,6 +304,7 @@ function libBbLines(r) {
     if (r.planStatus === "failed") return [p ? { key: "lib.bb.planFail", p } : { key: "lib.bb.planFailNoAmt" }, ...why];
     return [p ? { key: "lib.bb.planPart", p } : { key: "lib.bb.planPartNoAmt" }];
   }
+  if (r.kind === "ok" && r.trialMiss) return [{ key: "lib.bb.cuNeedPlan" }];   // 付第一期框按了先不要／關掉:那支要方案才能跑
   if (r.kind !== "wallet") return [];
   const key = r.code === "unavailable" ? "lib.bb.gone" : r.code === "already_purchased" ? "lib.bb.owned" : "lib.bb.wallet";
   const out = [r.amount ? { key, p: r.amount } : { key: "lib.bb.walletNoAmt" }];
@@ -1242,6 +1245,8 @@ function libPaintCta(s) {
     m.setAttribute("aria-hidden", "true"); e.setAttribute("role", "status");
     bbl.forEach((l) => d.appendChild(libEl("p", "", libBbText(l))));
     e.append(m, d); box.appendChild(e);
+    // 試用沒開成:結果句下一顆〔開通方案〕重開同一個框(同網頁 detail_bb_plan);主鈕已經是開方案框的〔看方案〕就不重複放
+    if (bb.kind === "ok" && bb.trialMiss && !(c.state === "noData" && c.why === "no_plan")) box.appendChild(btn("btn-out", t("p3.w.cuPlan"), (b) => libTrialMiss(s, bb, b)));
   }
   /* 付款頁回來、這次同時綁了卡:自動儲值預設開著,在這裡講一次(詳情頁鈕下不講)。電腦版沒有讀／改自動儲值的端點,
      用設定頁同一句(plan.topupShort,「可在網頁關閉」);數字讀不到就不出 */
@@ -1611,15 +1616,16 @@ async function libBbPoll() {
   // 重開過付款頁、付的卻是舊頁:api 的結果槽被新單佔著,舊單買成了也寫不進(程式稽核 D1)。回前景時與每 30 秒重拉一次清單,買到了就當成功
   w.n = (w.n || 0) + 1;
   if (w.check || w.n % 6 === 0) { w.check = false; try { await libLoad(true); } catch (_) { } }
-  const got = LIB.bbWait === w ? libFind(w.id) : null;
-  // 方案單不走這條:策略買到不代表方案開了(付了舊頁的方案單,結果照輪詢)
-  if (got && got.purchased && !(w.q && w.q.plan)) { LIB.bbBusy = false; libBbDone(w.id, { kind: "ok", code: null, amount: null, trialUntil: null }); return; }
+  // 先看結果槽:這支有終態就照結果走(試用沒開成的 trialMiss 只在結果裡,同網頁 marketplace 回程看結果判斷)
   let r = null;
-  try { r = await window.blave.libraryBindResult(); } catch (_) { r = null; }
+  if (LIB.bbWait === w) { try { r = await window.blave.libraryBindResult(); } catch (_) { r = null; } }
   LIB.bbBusy = false;
   if (LIB.bbWait !== w) return;
   const out = libBbRes(r ? r.res : null, w.id);
   if (out.kind === "ok" || out.kind === "wallet" || out.kind === "failed") { libBbDone(w.id, out, w.q); return; }
+  // 結果槽沒有這支的終態(被新單佔著)、清單卻已買到:當成功。方案單不走這條:策略買到不代表方案開了(付了舊頁的方案單,結果照輪詢)
+  const got = libFind(w.id);
+  if (got && got.purchased && !(w.q && w.q.plan)) { libBbDone(w.id, { kind: "ok", code: null, amount: null, trialUntil: null }); return; }
   if ((r && !r.mark) || Date.now() > w.until) { LIB.bbWait = null; LIB.bbRes.set(w.id, { kind: "note", key: "lib.bb.expired" }); libSync(); return; }   // 記號過期或超過付款單效期:不再等,講一句(稽核 ⑤)
   libBbPollSoon(LIB_BB_POLL_MS);
 }
@@ -1636,7 +1642,20 @@ function libBbDone(id, out, q) {
   if (out.kind === "wallet" && out.code === "unavailable") LIB.bbTop = { id, out };
   if (plan && out.planStatus === "failed" && LIB_PLAN_BLOCKS.includes(out.planReason)) LIB.planBlock = out.planReason;   // 名下有主機等:主鈕換恢復方案
   libAfterPay(id, out.kind === "ok");
+  if (out.kind === "ok" && out.trialMiss && s) { libTrialMiss(s, out, null); return; }   // 方案沒開:先付第一期,付了才自動安裝
   if (out.kind === "ok") libAutoInstall(s);
+}
+/* 綁卡即購買鎖了試用、卡用過或帳號沒資格(web 12381b36f 策略庫那條):策略照買、試用沒開。開 888 方案框,標題講原因、頂上一句「策略買好了。這支要方案才能跑。」;
+   付了接著自動安裝(同網頁 onPaid → bbNextStep),先不要就留結果句與〔開通方案〕。v3 沒開(舊制)只留結果句 */
+function libTrialMiss(s, out, opener) {
+  if (!(typeof p3Live === "function" && p3Live())) return;
+  p3OpenAgent(opener, null, "lib", { reason: out.trialMiss, onPaid: () => libAutoInstall(s) });
+}
+// 888 方案開了(planv3.js p3CuBoxPaid,不論從哪個入口付的):各支「要方案才能跑」的結果句收掉
+function libPlanPaid() {
+  let hit = false;
+  LIB.bbRes.forEach((r) => { if (r && r.trialMiss) { r.trialMiss = null; hit = true; } });
+  if (hit) libSync();
 }
 /* 付成功自動安裝並回測一次(Wei 11-09,推翻 0.1.49 決定 5;安裝不會開始下單):付款頁與框 ② 共用。本機沒裝過、沒在裝才送;
    切到雲端視角就不送(送出對象會變)。這一回合會讓用戶多被扣錢就不送(libTurnFree),停在已購買讓他自己按 */

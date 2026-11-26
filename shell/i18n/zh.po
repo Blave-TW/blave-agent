@@ -5832,6 +5832,9 @@ msgstr "方案已經開通，{p} 在錢包。"
 msgid "lib.bb.hasServer"
 msgstr "你名下已有主機，不用另開方案。"
 
+msgid "lib.bb.cuNeedPlan"
+msgstr "這支要方案才能跑。"
+
 msgid "lib.bb.unsettled"
 msgstr "扣款還在確認，不會重複扣。稍後再回來看。"
 
@@ -11948,6 +11951,24 @@ msgstr "這個帳號不符合試用資格。{v} TWD 已存進錢包。"
 
 msgid "p3.w.trialNoEligNoNum"
 msgstr "這個帳號不符合試用資格。驗證金已存進錢包。"
+
+msgid "p3.w.cuPlan"
+msgstr "開通方案"
+
+msgid "p3.a.hasServer"
+msgstr "你名下有雲端主機：請到雲端主機頁按「繼續主機」，付這一期並開機。"
+
+msgid "p3.a.goCloud"
+msgstr "到雲端主機開機"
+
+msgid "p3.cu.tCard"
+msgstr "這張卡已經試用過"
+
+msgid "p3.cu.tAcct"
+msgstr "這個帳號不能再試用"
+
+msgid "p3.cu.lib"
+msgstr "策略買好了。這支要方案才能跑。"
 
 msgid "p3.a.oncePerCard"
 msgstr "每個帳號、每張卡都只能試用一次。"

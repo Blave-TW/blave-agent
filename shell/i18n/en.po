@@ -5810,6 +5810,9 @@ msgstr "Your plan was already on. {p} is in your balance."
 msgid "lib.bb.hasServer"
 msgstr "You already have a cloud machine, so you don't need a new plan."
 
+msgid "lib.bb.cuNeedPlan"
+msgstr "It needs a plan to run."
+
 msgid "lib.bb.unsettled"
 msgstr "Still confirming the charge. You won't be charged twice. Check back shortly."
 
@@ -11903,6 +11906,24 @@ msgstr "This account isn't eligible for a trial. {v} TWD is in your balance."
 
 msgid "p3.w.trialNoEligNoNum"
 msgstr "This account isn't eligible for a trial. The card check is in your balance."
+
+msgid "p3.w.cuPlan"
+msgstr "Start Plan"
+
+msgid "p3.a.hasServer"
+msgstr "You have a cloud machine. Resume it on the Cloud page to pay this period and turn it on."
+
+msgid "p3.a.goCloud"
+msgstr "Start It on the Cloud Page"
+
+msgid "p3.cu.tCard"
+msgstr "This Card Already Had a Trial"
+
+msgid "p3.cu.tAcct"
+msgstr "This Account Isn't Eligible for a Trial"
+
+msgid "p3.cu.lib"
+msgstr "The strategy is yours. It needs a plan to run."
 
 msgid "p3.a.oncePerCard"
 msgstr "One trial per account and per card."

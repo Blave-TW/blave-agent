@@ -132,7 +132,7 @@ ok("④ 表單:正式／測試兩個藍新網域才收,http、別的網域、帶
 { const h = M.libPayHtml({ url: "https://core.newebpay.com/a?x=1&y=\"2\"", fields: { MerchantID: "M<1>" } }, "NONCE");
   ok("④ 自動送出頁:屬性有跳脫、script 帶 nonce、POST", h.includes('action="https://core.newebpay.com/a?x=1&amp;y=&quot;2&quot;"') && h.includes('value="M&lt;1&gt;"') && h.includes('<script nonce="NONCE">') && h.includes('method="POST"')); }
 ok("④ 結果:形狀不對整筆 null;failed 的中文句被丟、代號留著;金額 ≤0 當沒有", M.libBindResultOut({ bind_purchase: { status: "nope", strategy_id: 7 } }) === null && M.libBindResultOut({}) === null
-  && J(M.libBindResultOut({ bind_purchase: { status: "failed", strategy_id: 7, reason: "卡片被拒", reason_code: "card_declined", amount_twd: 0, order_no: "TCC_1_x_S7" } })) === '{"status":"failed","strategy_id":7,"amount_twd":null,"reason":null,"reason_code":"card_declined","trial_until":null}');
+  && J(M.libBindResultOut({ bind_purchase: { status: "failed", strategy_id: 7, reason: "卡片被拒", reason_code: "card_declined", amount_twd: 0, order_no: "TCC_1_x_S7" } })) === '{"status":"failed","strategy_id":7,"amount_twd":null,"reason":null,"reason_code":"card_declined","trial_until":null,"trial_reason_code":null}');
 ok("④ /purchase 的回應多留 amount_twd / reason / reason_code", J(M.libPurchaseBody({ error: "already purchased", amount_twd: 1500.0, reason: "already_purchased" })).includes('"amount_twd":1500,"reason":"already_purchased","reason_code":null'));
 ok("④ IPC:綁卡即購買只收自家頁面;記號拿到這支終態才清,並作廢帳號、清單與餘額快取(付完自動安裝要扣後的餘額);框 ② 回來也作廢餘額", /\n  handle\("library-bind-buy", \(_e, id, opts\) => libraryBindBuy\(id, opts\), \{ status: 0, body: null \}\);/.test(mainSrc)
   && /res\.strategy_id === mark\.id && res\.status !== "pending"\) \{ libBbMarkSet\(null\); lastAcct = null; libCache = null; if \(_balance\) _balance\.reset\(\); \}/.test(cutFn(mainSrc, "libraryBindResult"))
@@ -443,6 +443,32 @@ ok("④ IPC:綁卡即購買只收自家頁面;記號拿到這支終態才清,並
     && P.libBpStep(freeFail, true) === "wallet", J(freeFail));
   const okAll = via(api("ok", { plan: true, plan_twd: 1440, price_twd: 600, plan_status: "ok", wallet_twd: 0 }));
   ok("⑥ 都成(status ok、wallet_twd 0)→ 沒有句子", okAll.kind === "ok" && ln2(okAll) === "", J(okAll)); }
+/* 綁卡即購買鎖了試用、卡用過或帳號沒資格(api settle_bind_purchase 的 trial_reason_code;web 12381b36f 策略庫那條):策略照買、試用沒開、方案也沒開。
+   主行程要把碼帶出來,畫面講「這支要方案才能跑」並開付第一期的框;付了才自動安裝 */
+{ const api = (status, extra) => ({ bind_purchase: Object.assign({ order_no: "TCC_9_1730000000ab_S7", status, strategy_id: 7, amount_twd: 600 }, extra) });
+  const via = (b) => P.libBbRes(M.libBindResultOut(b), 7), ln = (r) => P.libBbLines(r).map((l) => l.key).join("|");
+  const cu = via(api("ok", { trial_reason_code: "TRIAL_CARD_USED" })), na = via(api("ok", { trial_reason_code: "TRIAL_NOT_ELIGIBLE" }));
+  ok("⑧ 卡用過／帳號沒資格:主行程帶出 trial_reason_code,結果是 ok＋trialMiss,結果句「這支要方案才能跑。」(同網頁 bc_cu_lib_need)",
+    M.libBindResultOut(api("ok", { trial_reason_code: "TRIAL_CARD_USED" })).trial_reason_code === "TRIAL_CARD_USED" && cu.kind === "ok" && cu.trialMiss === "TRIAL_CARD_USED" && na.trialMiss === "TRIAL_NOT_ELIGIBLE"
+    && ln(cu) === "lib.bb.cuNeedPlan" && STR.zh["lib.bb.cuNeedPlan"] === "這支要方案才能跑。", J(cu));
+  ok("⑧ 不是那兩個碼、策略沒買成、方案單、試用開了:都不算試用沒開成", M.libBindResultOut(api("ok", { trial_reason_code: "x" })).trial_reason_code === null
+    && !via(api("wallet", { trial_reason_code: "TRIAL_CARD_USED", reason: "insufficient" })).trialMiss && !via(api("ok", { plan: true, price_twd: 600, plan_status: "ok", trial_reason_code: "TRIAL_CARD_USED" })).trialMiss
+    && !via(api("ok", { trial_until: "2026-12-10T23:59:59+08:00" })).trialMiss && ln(via(api("ok", {}))) === "");
+  const done = cutFn(src, "libBbDone");
+  ok("⑧ 回程 ok 帶 trialMiss:先開付第一期的框、不自動安裝;沒帶照舊自動安裝", /if \(out\.kind === "ok" && out\.trialMiss && s\) \{ libTrialMiss\(s, out, null\); return; \}[^\n]*\n  if \(out\.kind === "ok"\) libAutoInstall\(s\);/.test(done));
+  const opened = [], installs = [], syncs = [];
+  const X = { p3Live: () => true, p3OpenAgent: (op, note, from, cu2) => opened.push({ op, note, from, cu: cu2 }), libAutoInstall: (x) => installs.push(x.id), libSync: () => syncs.push(1), LIB: { bbRes: new Map() } };
+  vm.createContext(X); vm.runInContext(cutFn(src, "libTrialMiss") + "\n" + cutFn(src, "libPlanPaid"), X);
+  const out = { kind: "ok", trialMiss: "TRIAL_NOT_ELIGIBLE" }; X.LIB.bbRes.set(7, out);
+  X.libTrialMiss({ id: 7 }, out, "B");
+  const o0 = opened[0] || {};
+  ok("⑧ libTrialMiss 開 888 方案框(from lib、帶原因碼),框裡付了才自動安裝那一支", opened.length === 1 && o0.from === "lib" && o0.note === null && o0.op === "B" && o0.cu.reason === "TRIAL_NOT_ELIGIBLE" && installs.length === 0
+    && (o0.cu.onPaid(), installs.join() === "7"));
+  X.libPlanPaid();
+  ok("⑧ 方案開了(libPlanPaid):各支的「要方案才能跑」收掉並重畫;沒有要收的不重畫", out.trialMiss === null && syncs.length === 1 && (X.libPlanPaid(), syncs.length === 1));
+  X.p3Live = () => false; opened.length = 0; X.libTrialMiss({ id: 7 }, { kind: "ok", trialMiss: "TRIAL_CARD_USED" }, null);
+  ok("⑧ 舊制(v3 沒開)不開框,只留結果句", opened.length === 0);
+  ok("⑧ 結果句下的〔開通方案〕:主鈕已是〔看方案〕(noData／no_plan)就不重複放", /if \(bb\.kind === "ok" && bb\.trialMiss && !\(c\.state === "noData" && c\.why === "no_plan"\)\) box\.appendChild\(btn\("btn-out", t\("p3\.w\.cuPlan"\), \(b\) => libTrialMiss\(s, bb, b\)\)\);/.test(src)); }
 // 主行程:一步開通的兩支端點與付款頁報價、結果的欄位
 { const cb = M.libCheckoutBody({ price_twd: 600, plan_twd: 1440, total_twd: 2040, plan_source: "card", price_source: "evil", card_last4: "42<4", plan_renews_on: "2026-12-08T00:00:00", plan_blocked: "HAS_SERVER", extra: "x", balance: "9" });
   ok("④ checkout 回應:來源只收列舉值、末四碼只收四位數字、日期只取 YYYY-MM-DD、原因碼大寫代號、多的欄位不留", cb.plan_source === "card" && cb.price_source === null && cb.card_last4 === null
@@ -488,7 +514,8 @@ ok("④ IPC:綁卡即購買只收自家頁面;記號拿到這支終態才清,並
       var window = { blave: { libraryBindResult: async () => replies.shift(), trackEvent: (e, p) => events.push(e + ":" + p.step), accountStatus: async () => ({}), balance: async () => bal } };
       function libBbTrack(step) { window.blave.trackEvent("lib_bindbuy", { step }); }
       function libBpTrack(step) { if (step) window.blave.trackEvent("lib_bindplan", { step }); }
-      ` + cutFn(src, "libBbPollSoon") + "\nasync " + cutFn(src, "libBbPoll") + "\n" + cutFn(src, "libBbDone") + "\nasync " + cutFn(src, "libAutoInstall") + "\n" + cutFn(src, "libAfterPay"), F);
+      var opened = [], p3Live = () => true, p3OpenAgent = (op, note, from, cu) => opened.push({ from, reason: cu && cu.reason });
+      ` + cutFn(src, "libBbPollSoon") + "\nasync " + cutFn(src, "libBbPoll") + "\n" + cutFn(src, "libBbDone") + "\nasync " + cutFn(src, "libAutoInstall") + "\n" + cutFn(src, "libAfterPay") + "\n" + cutFn(src, "libTrialMiss"), F);
     return F;
   };
   const wait = (F, id, until) => { F.LIB.bbWait = { id, q: { price: 1600 }, until }; };
@@ -561,7 +588,12 @@ ok("④ IPC:綁卡即購買只收自家頁面;記號拿到這支終態才清,並
   { // D1:重開過付款頁、付的是舊頁 → 結果槽仍是新單的 pending;回前景重拉清單看到已購買就收尾
     const s = { id: 7, purchased: false }, F = mk([{ mark: { id: 7, at: 0 }, res: res({ status: "pending" }) }], s);
     F.boughtOnLoad = true; wait(F, 7, 1e9); F.LIB.bbWait.check = true; await F.libBbPoll();
-    ok("⑤ 付了舊頁(結果槽被新單佔著):回前景重拉清單、已購買就當成功收尾,不等到逾時", F.LIB.bbWait === null && F.LIB.bbRes.get(7).kind === "ok" && F.events.join() === "lib_bindbuy:ok" && F.replies.length === 1);
+    ok("⑤ 付了舊頁(結果槽被新單佔著):回前景重拉清單、已購買就當成功收尾,不等到逾時", F.LIB.bbWait === null && F.LIB.bbRes.get(7).kind === "ok" && F.events.join() === "lib_bindbuy:ok" && F.replies.length === 0);
+    // 稽核 M1:回前景時清單已買到,但結果槽是這支的 ok＋卡用過(試用沒開):照結果走、開付第一期的框,不走「已購買就當成功」的捷徑自動安裝
+    const s2 = { id: 7, purchased: false }, H = mk([{ mark: { id: 7, at: 0 }, res: res({ status: "ok", amount_twd: 1600, trial_reason_code: "TRIAL_CARD_USED" }) }], s2);
+    H.boughtOnLoad = true; wait(H, 7, 1e9); H.LIB.bbWait.check = true; await H.libBbPoll(); await new Promise((r) => setImmediate(r));
+    ok("⑤ 稽核 M1:回前景＋清單已買到＋結果帶 TRIAL_CARD_USED → 照結果開框(from lib、帶原因)、不自動安裝", H.LIB.bbWait === null && H.LIB.bbRes.get(7).trialMiss === "TRIAL_CARD_USED"
+      && J(H.opened) === '[{"from":"lib","reason":"TRIAL_CARD_USED"}]' && H.sent.length === 0, J({ opened: H.opened, sent: H.sent, r: H.LIB.bbRes.get(7) }));
     const G = mk([1, 2, 3, 4, 5, 6].map(() => ({ mark: { id: 7, at: 0 }, res: res({ status: "pending" }) })), { id: 7, purchased: false });
     wait(G, 7, 1e9); for (let i = 0; i < 6; i++) await G.libBbPoll();
     ok("⑤ 沒回前景也每 6 輪(30 秒)重拉一次清單", G.refresh === 1); }

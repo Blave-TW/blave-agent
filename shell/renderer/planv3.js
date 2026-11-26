@@ -10,11 +10,12 @@
      409 一律用伺服器現價重開同一個框,頂上一句講為什麼又出現,不自動重送。
    用到 app.js 的 $ / t / LANG / acct / pub / pubLoad / hasToken / cur / RP / confirmBox / delClose / delOkBusy / delCtx / faultCard / sysLz /
    trackFeature / trackEvent / srSay / planDate / planOpen / planSignIn / acctCheck / planPaint / sidePaint / laiOpen / stratSelect /
-   planPayUrl / planCryptoUrl / acctUrl / creditCards——都在呼叫時才取。 */
-const P3 = { from: "set", addonFrom: "cloud", qAt: 0, qBusy: false, focusBack: null, tipSeq: 0, resume: null, pollT: null, polling: false, okLabel: null, busy: false, q: null, sel: null, wait: null, unlSaid: false, topSeen: undefined, bal: null };
+   planPayUrl / planCryptoUrl / planWebUrl / acctUrl / creditCards,library.js 的 libPlanPaid——都在呼叫時才取。 */
+const P3 = { from: "set", addonFrom: "cloud", qAt: 0, qBusy: false, focusBack: null, tipSeq: 0, resume: null, pollT: null, polling: false, okLabel: null, busy: false, q: null, sel: null, wait: null, cu: null, cuBox: null, unlSaid: false, topSeen: undefined, bal: null };
 const P3_SAID_KEY = "p3.said";          // 「只講一次」的那幾行:每一格(slot_start)各一次,登入送的 30 一次
 const P3_POLL_MS = 5000;                // bind_result 每分鐘 30 次上限,這裡 12 次
 const P3_WAIT_MS = 30 * 60 * 1000;      // 付款頁效期(BIND_PLAN_OPEN_TTL);過了還沒結果就收掉那一行
+const P3_CU_GAP_MS = 10000;             // 試用沒開成那一行:回前景重查方案的最短間隔(/plan/quote 自己一個 desktop_plan_quote 桶,每分鐘 60 次)
 
 /* ── 純邏輯(tests/check_shell_plan_v3.js 從原文切出來跑;這一段不准碰 DOM)── */
 const P3_FREE_LOW_TWD = 10;   // 30 TWD 快用完的門檻(spec 3.3);api 沒有欄位
@@ -48,6 +49,9 @@ function p3AgentModel(q, pv) {
   if (!q.has_card) return Object.assign(base, { kind: "bindPay", price: m.first_charge_twd, wallet: typeof q.balance_twd === "number" && q.balance_twd >= m.first_charge_twd });
   return Object.assign(base, { kind: "pay", price: m.today_twd, src: m.source === "wallet" || m.source === "free" ? m.source : "card", last4: q.card_last4 });
 }
+/* 名下有主機(含停機、建置中)的人不能只開 888 階:/plan/start 與 /plan/bind_pay 回 409 HAS_SERVER,重開同一個框只會再被拒一次。
+   這種人不畫方案框,改講到網站繼續主機(同網頁 bc_ps_has_server) */
+function p3HostBlocked(q, m) { return !!(q && q.machine && q.machine.state !== "none") && (m.kind === "pay" || m.kind === "bindPay"); }
 /* KOL 推薦碼試用(spec kol-referral-trial §5、§8.5):個人天數比同一份回應的公開天數長才回公開天數(畫刪除線＋小標),其餘 null */
 function p3TrialWas(days, std) { return Number.isInteger(days) && Number.isInteger(std) && std > 0 && days > std ? std : null; }
 /* 已綁卡那一態主鈕正上方「今天從哪扣」那一句(spec §3):每個 src 各一句,free(內部帳號、這期不收錢)不能落到刷卡那句 */
@@ -288,9 +292,10 @@ function p3TopupLine(lead) {
 // v3 沒開(404)時退回各入口原本那條:外開網站綁卡頁(bindGo 的舊行為)
 function p3Legacy() { window.blave.openExternal(acctUrl()); }
 // from = 哪一道牆開的(plan_box 埋點);409 重問重開(note 有值)不算一次開框
-async function p3OpenAgent(opener, note, from) {
+/* cu = { reason, onPaid }:策略庫綁卡即購買試用沒開成時開的框(標題講原因、頂上講策略買好了),付了叫 onPaid */
+async function p3OpenAgent(opener, note, from, cu) {
   if (P3.busy) return;
-  if (!note) { P3.resume = p3ResumeToken(); P3.from = from || "set"; }   // 重問(409)那次不換:還是同一個被切斷的回合
+  if (!note) { P3.resume = p3ResumeToken(); P3.from = from || "set"; P3.cuBox = cu || null; }   // 重問(409)那次不換:還是同一個被切斷的回合
   if (!hasToken) {
     if (!pub) await pubLoad();
     const m0 = p3AgentModel(null, p3Pv());
@@ -307,7 +312,10 @@ async function p3OpenAgent(opener, note, from) {
   // 條件數字缺一個(一期幾天、AI 額度、試用天數):公開價目一小時快取可能是舊的,先重讀一次再判(重讀期間 busy 照留,再點不會開第二個框)
   if (m.kind === "incomplete") { pubAt = 0; try { await pubLoad(); } catch (_) { } m = p3AgentModel(r.body, p3Pv()); }
   P3.busy = false;
-  if (m.kind === "active") { planOpen(); return; }   // 已有方案或試用:看方案頁,不再賣一次
+  /* 已有方案或試用:看方案頁,不再賣一次。試用沒開成那一行還掛著(人在瀏覽器那頁付了):那一行改寫成開通了;
+     是按那一行的鈕進來的,改寫就是回答,不另開方案頁 */
+  if (m.kind === "active") { const cu = !!P3.cu, lib = !!P3.cuBox; if (cu) p3CuPaid(); p3CuBoxPaid(); if (!(cu && from === "retry") && !lib) planOpen(); return; }
+  if (p3HostBlocked(r.body, m)) { p3HasServerBox(opener); return; }
   if (m.kind === "none") { p3Legacy(); return; }
   // 還是缺:不畫少了條件的框,講讀不到價格(spec §6)
   if (m.kind === "incomplete") { confirmBox({ title: t("p3.a.title"), lines: [t("p3.err.quote")], ok: t("cdel.gotIt"), single: true, opener, onOk: () => {} }); return; }
@@ -318,8 +326,10 @@ async function p3OpenAgent(opener, note, from) {
    第二條路放框腳左邊的 del-link(加密轉帳,或錢包夠一期的〔用錢包付〕)。框身裡沒有鈕 */
 function p3AgentBox(m, opener, note) {
   if (P3.busy) return;   // 付款中不重畫框(重畫會換掉 onOk)
-  const x = document.createDocumentFragment(), d = m.days;
+  const x = document.createDocumentFragment(), d = m.days, cu = P3.cuBox && m.kind !== "out" && m.kind !== "trial" ? P3.cuBox : null;
   if (note) x.appendChild(p3El("p", "p3-t p3-ink", t(note)));
+  if (cu) x.appendChild(p3El("p", "p3-t p3-ink", t("p3.cu.lib")));
+  const title = cu ? t(cu.reason === "TRIAL_NOT_ELIGIBLE" ? "p3.cu.tAcct" : "p3.cu.tCard") : t("p3.a.title");
   const head = p3El("div", "p3-head");
   if (m.kind === "trial") {
     const pr = p3El("div", "p3-price"), seen = [p3El("span", "big num", p3Num(m.trialDays)), p3El("span", "u", t("p3.a.trialUnit"))];
@@ -363,7 +373,21 @@ function p3AgentBox(m, opener, note) {
   const link = m.kind === "bindPay" && m.wallet
     ? { label: p3T("p3.a.walletPay", { p: m.price }), stay: true, onClick: () => { if (!P3.busy) p3AgentGo(m, opener, true); } }
     : { label: t("p3.crypto"), onClick: () => { if (!P3.busy) window.blave.openExternal(planCryptoUrl({ agent: true, cycle: "monthly" })); } };   // 這個框的單一律月繳(p3AgentGo)
-  confirmBox({ title: t("p3.a.title"), lines: [], extra: x, ok, opener, stay: true, link, onOk: () => p3AgentGo(m, opener, false) });
+  /* 先不要／✕／Esc／框外:試用沒開成那組參數跟著收掉(之後別的流程付成功不會誤叫 onPaid)。重問(409)重畫時新框會先把舊框當成取消收掉,
+     畫完把這個框的參數放回去;付成功那條在關框前就先拿走參數(p3AgentGo 的 cu0) */
+  confirmBox({ title, lines: [], extra: x, ok, opener, stay: true, link, onOk: () => p3AgentGo(m, opener, false), onCancel: () => { if (P3.cuBox === cu) P3.cuBox = null; } });
+  if (cu) P3.cuBox = cu;
+}
+// 888 方案開了(框內付成功、付款頁回程 ok、已經開著):策略庫那幾支「要方案才能跑」的結果句收掉;從試用沒開成的框付的,另接著做那一支的下一步。
+// cu 沒給 = 目前框上那組(P3.cuBox);給 null = 只收結果句
+function p3CuBoxPaid(cu) {
+  if (cu === undefined) cu = P3.cuBox;
+  P3.cuBox = null;
+  if (typeof libPlanPaid === "function") libPlanPaid();
+  if (cu && typeof cu.onPaid === "function") cu.onPaid();
+}
+function p3HasServerBox(opener) {
+  confirmBox({ title: t("p3.a.title"), lines: [t("p3.a.hasServer")], ok: t("p3.a.goCloud"), opener, onOk: () => window.blave.openExternal(planWebUrl() + "?from=desktop") });
 }
 function p3ProCancel(go) {
   const u = { web: "https://blave.org/landing/" + LANG + "/setting?tab=billing&from=desktop", ios: "https://apps.apple.com/account/subscriptions", android: "https://play.google.com/store/account/subscriptions" }[go];
@@ -372,6 +396,7 @@ function p3ProCancel(go) {
 async function p3AgentGo(m, opener, wallet) {
   if (P3.busy) return;
   P3.busy = true;
+  const cu0 = P3.cuBox;   // 關框會叫 onCancel 清掉 P3.cuBox:付成功、開付款頁都用這一份
   p3Lock(true, t("p3.paying"));
   let r = null;
   try {
@@ -381,12 +406,13 @@ async function p3AgentGo(m, opener, wallet) {
   } catch (_) { r = null; }
   p3Lock(false); P3.busy = false;
   const b = (r && r.body) || {}, c = b.error_code;
-  const job = p3AgentJob(m);
+  const job = Object.assign(p3AgentJob(m), { cu: cu0 || null });   // 付款頁回程 ok 時接著叫 onPaid(p3PollOnce)
   { const step = r && r.status === 200 && r.opened ? (m.kind === "trial" ? "trial_page" : "pay_page") : p3BoxStep(r, wallet, m.src); if (step) trackEvent("plan_box_res", { step }); }
   if (r && r.status === 200 && r.opened) { delClose(false); p3WaitStart(job); return; }
   if (r && r.status === 200) {
-    delClose(false); trackFeature("plan_monthly");
+    delClose(false); trackFeature("plan_monthly"); P3.cu = null;
     p3Done(p3Card(), "p3.w.okPlan", m.pro);
+    p3CuBoxPaid(cu0 || null);
     if (typeof balLoad === "function") balLoad();
     p3Resume();
     return;
@@ -400,6 +426,7 @@ function p3JobBox(job, opener, note) { if (job.tier && job.tier !== "agent") p3O
    主鈕帶金額、按了就作廢舊頁開新單(restart)。設計稽核 M3:等待那一行直接到這個框,不再先重開整個方案框 */
 function p3RestartAsk(job, opener) {
   if (P3.busy) return;
+  P3.cuBox = null;   // 換成這張單的流程:試用沒開成那組參數若有,跟著 job.cu 走
   const title = job.tier && job.tier !== "agent" ? t("p3.h.title") : t("p3.a.title");
   confirmBox({ title, lines: [t("p3.w.openNote")], ok: job.pay ? p3T("p3.w.reopenOk", { p: job.pay }) : t("p3.w.reopenOkNoNum"), opener, stay: true, onOk: async () => {
     if (P3.busy) return;
@@ -420,7 +447,7 @@ function p3After(r, c, reprice, reopen, restart) {
   if (c === "PLAN_CONFIRM_REQUIRED" || c === "SOURCE_CHANGED") { reprice(); return; }
   if (c === "BIND_PLAN_IN_PROGRESS" && restart) { restart(true); return; }
   if (["CARD_ALREADY_BOUND", "NOT_ELIGIBLE", "USE_TRIAL", "NO_CARD", "HAS_SERVER", "TRIAL_TIER_LOCKED"].includes(c)) { acctCheck(); reopen(); return; }
-  if (c === "PLAN_ALREADY_ACTIVE") { delClose(false); acctCheck(); const k = p3Card(); k.set(sysLz(() => ({ calm: true, text: t("p3.err.active") }))); return; }
+  if (c === "PLAN_ALREADY_ACTIVE") { p3CuBoxPaid(); delClose(false); acctCheck(); const k = p3Card(); k.set(sysLz(() => ({ calm: true, text: t("p3.err.active") }))); return; }
   if (c === "DAILY_LAUNCH_LIMIT") { if (P3.q) P3.q.paid_launch_left_today = 0; reopen(true); return; }
   // 扣了錢、主機沒開成(契約 6.3「扣了錢、建機失敗」):不能講成付款失敗;這期重開同階不收錢
   if (b.charged_twd > 0) { delClose(false); acctCheck(); p3Unlaunched(null, b.charged_twd); return; }
@@ -433,7 +460,7 @@ function p3After(r, c, reprice, reopen, restart) {
 /* ── 加購框(雲端視角的開通頁、設定 › 帳號與方案的〔開雲端主機〕、還沒開機的提示)── */
 async function p3OpenAddon(opener, pre, note, from) {
   if (P3.busy) return;
-  if (!note) P3.addonFrom = from || "cloud";
+  if (!note) { P3.addonFrom = from || "cloud"; P3.cuBox = null; }
   if (!hasToken) { planSignIn(null).then((res) => { if (res && res.ok) p3OpenAddon(opener, pre, note, from); }); return; }
   P3.busy = true;
   let r = null; try { r = await window.blave.plan3Quote(); } catch (_) { r = null; }
@@ -598,13 +625,14 @@ async function p3PollOnce() {
   if (v.retry) w.card.set(sysLz(() => ({ calm: false, text: text(), label: t("p3.w.retry"), on: () => (w.tier && w.tier !== "agent" ? p3OpenAddon(w.card.b1, w.tier, undefined, "retry") : p3OpenAgent(w.card.b1, null, "retry")),
     second: { label: t("p3.crypto"), quiet: true, on: () => { window.blave.openExternal(planCryptoUrl({ agent: !(w.tier && w.tier !== "agent"), cycle: w.cycle })); } } })));
   else if (res.status === "ok") p3Done(w.card, v.key, w.pro);
-  // 試用沒開成但卡已綁上:可能想直接開通,給一顆開 888 方案框的鈕(框裡照常確認金額,不自動扣)
-  else if (v.plan) w.card.set(sysLz(() => ({ calm: v.calm, text: text(), label: t("data.seePlan"), on: () => p3OpenAgent(w.card.b1, null, "retry") })));
+  /* 試用沒開成但卡已綁上:鈕直接開 888 方案框(框裡照常確認金額,不自動扣;鈕字同網頁 bc_plan_activate_btn)。
+     藍新回程那一頁(網頁電腦版綁卡頁)同時跳付第一期的框,人可能在瀏覽器就付了:記下這一行,回前景時重查方案 */
+  else if (v.plan) { w.card.set(sysLz(() => ({ calm: v.calm, text: text(), label: t("p3.w.cuPlan"), on: () => p3OpenAgent(w.card.b1, null, "retry") }))); P3.cu = { card: w.card, at: Date.now(), seen: 0, busy: false }; }
   else w.card.set(sysLz(() => ({ calm: v.calm, text: text() })));
   if (res.status !== "ok") acctCheck();
   if (typeof balLoad === "function") balLoad();
   // P7(Wei 11-17):付好了才自動接著跑被付費牆切斷的那一輪;wallet(刷了沒開成)、unsettled(還在確認)不跑。開主機那條沒有被切斷的回合
-  if (res.status === "ok" && (!w.tier || w.tier === "agent")) p3Resume();
+  if (res.status === "ok" && (!w.tier || w.tier === "agent")) { p3CuBoxPaid(w.cu || null); p3Resume(); }
   // 綁卡同時付了主機那一階(6.2):回呼不建機,外殼接著開機(這期同階不收錢);要錢的話不自動送,改開框
   if (res.status === "ok" && mark.kind === "plan" && w.tier && w.tier !== "agent") p3AutoLaunch(w.tier);
 }
@@ -613,7 +641,28 @@ async function p3AutoLaunch(tier) {
   if (r && r.status === 200) { p3Started(r.body.state); return; }
   p3OpenAddon(null, tier);
 }
-window.addEventListener("focus", () => { if (P3.wait) p3Poll(); });   // 回前景馬上查一次(p3PollOnce 先清掉計時器)
+window.addEventListener("focus", () => { if (P3.wait) p3Poll(); else if (P3.cu) p3CuCheck(); });   // 回前景馬上查一次(p3PollOnce 先清掉計時器)
+// 試用沒開成那一行還掛著:回前景重查報價,方案開了(在瀏覽器那頁付了)就把那一行換成開通了。付款頁效期過了就不再查
+async function p3CuCheck() {
+  const cu = P3.cu;
+  if (!cu || cu.busy || P3.busy) return;
+  if (Date.now() - cu.at > P3_WAIT_MS) { P3.cu = null; return; }
+  if (Date.now() - cu.seen < P3_CU_GAP_MS) return;
+  cu.seen = Date.now(); cu.busy = true;
+  let r = null; try { r = await window.blave.plan3Quote(); } catch (_) { r = null; }
+  cu.busy = false;
+  if (P3.cu !== cu || !r || r.status !== 200 || !r.body) return;
+  P3.q = r.body;
+  if (r.body.agent_offer.kind === "active") p3CuPaid();
+}
+function p3CuPaid() {
+  const cu = P3.cu; P3.cu = null;
+  if (!cu) return;
+  p3Done(cu.card, "p3.w.okPlan", null);
+  if (typeof libPlanPaid === "function") libPlanPaid();
+  if (typeof balLoad === "function") balLoad();
+  p3Resume();
+}
 
 /* ── 30 TWD 用完那張卡(C 版)── */
 // 最近一支有回測、頁首有〔自動下單〕的本機策略(美股沒有主鈕,往下找;spec 3.1)

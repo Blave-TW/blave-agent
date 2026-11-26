@@ -3149,7 +3149,9 @@ function libBindResultOut(b) {
   if (!r || typeof r !== "object" || !["pending", "ok", "wallet", "failed"].includes(r.status) || !Number.isInteger(r.strategy_id)) return null;
   const n = typeof r.amount_twd === "number" && isFinite(r.amount_twd) && r.amount_twd > 0 ? r.amount_twd : null;
   const until = typeof r.trial_until === "string" && /^\d{4}-\d{2}-\d{2}/.test(r.trial_until) ? r.trial_until.slice(0, 40) : null;
-  const out = { status: r.status, strategy_id: r.strategy_id, amount_twd: n, reason: libCode(r.reason), reason_code: libCode(r.reason_code), trial_until: until };
+  // trial_reason_code:這張單鎖了試用、卡用過或帳號沒資格所以沒開(策略照買、方案也沒開);只認兩個值
+  const miss = ["TRIAL_CARD_USED", "TRIAL_NOT_ELIGIBLE"].includes(r.trial_reason_code) ? r.trial_reason_code : null;
+  const out = { status: r.status, strategy_id: r.strategy_id, amount_twd: n, reason: libCode(r.reason), reason_code: libCode(r.reason_code), trial_until: until, trial_reason_code: miss };
   if (r.plan !== true) return out;
   // 方案單(0.1.50):amount_twd 是刷的總額;留在錢包的是 wallet_twd(null = 分不出來,不寫數字)
   const f = (v) => (typeof v === "number" && isFinite(v) && v >= 0 ? v : null);
