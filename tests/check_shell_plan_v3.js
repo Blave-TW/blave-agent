@@ -295,7 +295,8 @@ const PV = { agent: { monthly_twd: 888, annual_twd: 8880, period_days: 30, ai_cr
       acct: { v3_active: true }, pub: { plan: { v3_active: true, v3: PV } }, $, t: (k, v) => k + (v ? J(v) : ""), planDate: (x) => String(x).slice(5, 10),
       document: { createElement: mkEl, createDocumentFragment: () => mkEl("frag"), querySelector: () => null, querySelectorAll: () => [] },
       localStorage: { getItem: () => null, setItem() {} },
-      confirmBox: (o) => boxes.push(o), delClose: () => calls.push("close"), delOkBusy: () => {}, srSay: () => {},
+      // delClose 同 app.js:沒按主鈕(stay 框)的關框照樣叫 onCancel
+      confirmBox: (o) => boxes.push(o), delClose: () => { calls.push("close"); const b = boxes[boxes.length - 1]; if (b && b.onCancel && !b.done) { b.done = true; b.onCancel(); } }, delOkBusy: () => {}, srSay: () => {},
       faultCard: () => { const c = { el: mkEl("div"), b1: mkEl("button"), last: null, set(x) { this.last = x; } }; cards.push(c); return c; },
       sysLz: (fn) => fn(), trackFeature: (n) => calls.push("t:" + n), trackEvent: (ev, pr) => evs.push(ev + ":" + J(pr || {})), acctCheck: () => calls.push("acctCheck"), planPaint: () => {}, sidePaint: () => {},
       planOpen: () => calls.push("planOpen"), pubLoad: async () => {}, planSignIn: async () => ({ ok: false }), acctUrl: () => "U", planPayUrl: () => "P", planWebUrl: () => "https://blave.org/agent/zh",
@@ -488,6 +489,23 @@ const PV = { agent: { monthly_twd: 888, annual_twd: 8880, period_days: 30, ai_cr
       reset(); const w9 = C.faultCard(); C.P3.wait = { kind: "plan", tier: "agent", at: Date.now(), card: w9 };
       resultReply = { mark: { kind: "plan", tier: "agent", at: Date.now() }, res: { kind: "plan", status: "ok" } }; await C.p3Poll(); await new Promise((r) => setImmediate(r));
       ok("④ 稽核 S1:一般的 888 付款頁回程 ok(沒有參數)也收策略庫結果句、不叫 onPaid", paid === before + 1 && libPaid === libBefore + 2);
+      // 尾巴 1:送出撞 NO_CARD 等「身分變了」重開:重開的框仍是原因標題、參數留著;再付成功 onPaid 只叫一次(delClose 會叫 onCancel)
+      { const p0 = paid; let shown = 0;
+        reset(); quoteReply = { status: 200, body: payQ }; await C.p3OpenAgent(null, null, "lib", { reason: "TRIAL_NOT_ELIGIBLE", onPaid: () => paid++ });
+        startReply = { status: 409, body: { error_code: "NO_CARD" } }; await C.p3AgentGo(m, null, false);
+        for (let i = 0; i < 4; i++) await new Promise((r) => setImmediate(r));
+        shown = boxes.length;
+        ok("④ 尾巴 1:NO_CARD 重開的框保留原因標題、參數還在", shown === 2 && boxes[1].title === "p3.cu.tAcct" && C.P3.cuBox && C.P3.cuBox.reason === "TRIAL_NOT_ELIGIBLE", J(boxes.map((b) => b.title)));
+        startReply = { status: 200, body: { state: "none" } }; await C.p3AgentGo(m, null, false);
+        ok("④ 尾巴 1:重開後付成功,onPaid 只叫一次(關框叫 onCancel 也不會吃掉或重複)", paid === p0 + 1 && C.P3.cuBox === null); }
+      // 尾巴 2:「舊頁仍能付」框撞 PLAN_ALREADY_ACTIVE(方案已在別處開了):當付了,叫那張單帶的 onPaid
+      { const p0 = paid, bp = C.window.blave.plan3BindPay;
+        C.window.blave.plan3BindPay = async (o) => { calls.push("bindPay:" + J(o)); return { status: 409, body: { error_code: "PLAN_ALREADY_ACTIVE" } }; };
+        reset(); C.P3.cuBox = null;
+        C.p3RestartAsk({ kind: "plan", tier: "agent", cycle: "monthly", confirm: 888, pay: 888, cu: { reason: "TRIAL_CARD_USED", onPaid: () => paid++ } }, null);
+        await boxes[boxes.length - 1].onOk();
+        C.window.blave.plan3BindPay = bp;
+        ok("④ 尾巴 2:舊頁仍能付框撞 PLAN_ALREADY_ACTIVE:onPaid 叫一次、講方案已經開通", paid === p0 + 1 && calls.some((c) => c.startsWith("bindPay:")) && cards.some((k) => k.last && k.last.text === "p3.err.active")); }
       delete C.libPlanPaid; }
     { reset(); const proQ = Q({ trial: nt, has_card: true, card_last4: "4242", agent_offer: payQ.agent_offer, studio_subscription: { source: "apple", plan: "pro", auto_renew: true, expires_at: "2026-12-03T00:00:00Z" } });
       const pm = C.p3AgentModel(proQ, PV); startReply = { status: 200, body: { state: "none" } };

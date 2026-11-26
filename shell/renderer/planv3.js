@@ -296,6 +296,7 @@ function p3Legacy() { window.blave.openExternal(acctUrl()); }
 async function p3OpenAgent(opener, note, from, cu) {
   if (P3.busy) return;
   if (!note) { P3.resume = p3ResumeToken(); P3.from = from || "set"; P3.cuBox = cu || null; }   // 重問(409)那次不換:還是同一個被切斷的回合
+  else if (cu) P3.cuBox = cu;   // 「舊頁仍能付」框重問:全域參數已清,跟著那張單的 job.cu 放回來
   if (!hasToken) {
     if (!pub) await pubLoad();
     const m0 = p3AgentModel(null, p3Pv());
@@ -417,11 +418,12 @@ async function p3AgentGo(m, opener, wallet) {
     p3Resume();
     return;
   }
-  p3After(r, c, () => p3OpenAgent(opener, c === "SOURCE_CHANGED" ? "p3.resourced" : "p3.repriced"), () => p3OpenAgent(opener, null, P3.from), () => p3RestartAsk(job, opener));
+  // 重開(身分變了)也帶著試用沒開成那組參數:原因標題留著、付了照樣接 onPaid
+  p3After(r, c, () => p3OpenAgent(opener, c === "SOURCE_CHANGED" ? "p3.resourced" : "p3.repriced"), () => p3OpenAgent(opener, null, P3.from, cu0 || undefined), () => p3RestartAsk(job, opener), cu0 || null);
 }
 // 一張藍新單要記的事:哪一種、哪一階、確認的金額(confirm)、藍新頁上的金額(pay;試用是驗證金)、Pro 那句
 function p3AgentJob(m) { return m.kind === "trial" ? { kind: "trial", tier: "agent", cycle: "monthly", confirm: m.first, pay: m.verify, pro: m.pro } : { kind: "plan", tier: "agent", cycle: "monthly", confirm: m.price, pay: m.price, pro: m.pro }; }
-function p3JobBox(job, opener, note) { if (job.tier && job.tier !== "agent") p3OpenAddon(opener, job.tier, note); else p3OpenAgent(opener, note); }
+function p3JobBox(job, opener, note) { if (job.tier && job.tier !== "agent") p3OpenAddon(opener, job.tier, note); else p3OpenAgent(opener, note, undefined, job.cu || undefined); }
 /* 上一張付款頁還開著(409 BIND_PLAN_IN_PROGRESS,或等待那一行的〔重新打開付款頁〕):一個框講「舊頁仍能付、兩頁都付多的進錢包」(同策略庫 lib.bb.open),
    主鈕帶金額、按了就作廢舊頁開新單(restart)。設計稽核 M3:等待那一行直接到這個框,不再先重開整個方案框 */
 function p3RestartAsk(job, opener) {
@@ -438,16 +440,17 @@ function p3RestartAsk(job, opener) {
     if (job.tier === "agent") { const step = r && r.status === 200 && r.opened ? (job.kind === "trial" ? "trial_page" : "pay_page") : p3BoxStep(r, false, null); if (step) trackEvent("plan_box_res", { step }); }
     else trackEvent("addon_res", { step: p3AddonStep(r, null) });
     if (r && r.status === 200 && r.opened) { delClose(false); p3WaitStart(job); return; }
-    p3After(r, r && r.body && r.body.error_code, () => p3JobBox(job, opener, "p3.repriced"), () => p3JobBox(job, opener), null);
+    p3After(r, r && r.body && r.body.error_code, () => p3JobBox(job, opener, "p3.repriced"), () => p3JobBox(job, opener), null, job.cu || null);
   } });
 }
-/* 送出後的錯誤分流(三個框共用)。reprice = 用伺服器現價重開框(帶頂上那句);reopen = 狀態變了、照新身分重開;restart = 上一張付款頁還開著 */
-function p3After(r, c, reprice, reopen, restart) {
+/* 送出後的錯誤分流(三個框共用)。reprice = 用伺服器現價重開框(帶頂上那句);reopen = 狀態變了、照新身分重開;restart = 上一張付款頁還開著;
+   cu = 這張單的試用沒開成參數(PLAN_ALREADY_ACTIVE 當付了叫它的 onPaid;沒給 = 框上那組) */
+function p3After(r, c, reprice, reopen, restart, cu) {
   const st = r ? r.status : 0, b = (r && r.body) || {};
   if (c === "PLAN_CONFIRM_REQUIRED" || c === "SOURCE_CHANGED") { reprice(); return; }
   if (c === "BIND_PLAN_IN_PROGRESS" && restart) { restart(true); return; }
   if (["CARD_ALREADY_BOUND", "NOT_ELIGIBLE", "USE_TRIAL", "NO_CARD", "HAS_SERVER", "TRIAL_TIER_LOCKED"].includes(c)) { acctCheck(); reopen(); return; }
-  if (c === "PLAN_ALREADY_ACTIVE") { p3CuBoxPaid(); delClose(false); acctCheck(); const k = p3Card(); k.set(sysLz(() => ({ calm: true, text: t("p3.err.active") }))); return; }
+  if (c === "PLAN_ALREADY_ACTIVE") { p3CuBoxPaid(cu); delClose(false); acctCheck(); const k = p3Card(); k.set(sysLz(() => ({ calm: true, text: t("p3.err.active") }))); return; }
   if (c === "DAILY_LAUNCH_LIMIT") { if (P3.q) P3.q.paid_launch_left_today = 0; reopen(true); return; }
   // 扣了錢、主機沒開成(契約 6.3「扣了錢、建機失敗」):不能講成付款失敗;這期重開同階不收錢
   if (b.charged_twd > 0) { delClose(false); acctCheck(); p3Unlaunched(null, b.charged_twd); return; }
