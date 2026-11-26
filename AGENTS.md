@@ -78,6 +78,8 @@ Classify BEFORE writing any code, then read `references/strategy-code.md` from i
 
 **Never edit a live strategy in place** (in the 下單組合 with an amount > 0): build the change as a NEW strategy, switch funding only after the user confirms — *Editing a live strategy*; 還原 / 「用 vN 建立新策略」 prompts → *Restoring a version* / *Forking from a version*.
 
+Changed an existing strategy's code → after the last edit, before the backtest, write its version guide (`lib.strategy.write_guide`, no performance numbers) — *Version guide*.
+
 Always set `DISPLAY_NAME`, `DESCRIPTION` and `LOGIC` (one `entry:` / `exit:` / `stop:` rule per line) with `STRATEGY_NAME` (*Naming & description*). Changing a parameter also changes every place the file states that number: `DESCRIPTION`, `LOGIC` and the header comment.
 
 **Type A:** long+short needs FOUR independent thresholds + `lib.strategy.threshold_position`; stops / take-profit / trailing / time stop (a %, a price distance or the strategy's own price level), breakeven, cooldown → `lib.exits.apply_exits` with an explicit `trigger`, never your own exit loop (can't model it → offer the closest form, *Exits on top of an existing signal*) — a scale-in / DCA ladder is an entry schedule, not an exit loop: `lib.strategy.ladder_position` (*Scaling in*); `MARKET = "spot"` is long-only; non-price feeds attach by publication time (`lib.data.join_tw_flow` / `align_feed`, *Taiwan daily flows*).

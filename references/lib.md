@@ -514,6 +514,7 @@ Companion to `lib/security_check.py` (malicious-code scan for downloaded strateg
   - the entry `current` points at carries `current: true`;
   - `restore(name, n)` restores in place — that version's code back into `strategy.py` and `current` = n, no new version — returning `{path, version, inplace, backed_up, stuck}` (`backed_up`: the unbacktested file was saved to `versions/pre-restore.py`), and **raises** when the strategy is funded (`amounts > 0` → fork-and-switch instead);
   - re-run the backtest after it (`BLAVE_MODE=backtest`), which mints nothing for unchanged code.
+  - `version_changes(name)` / `write_guide(name, items)` — the version guide: changed lines against the version the edit started from, and up to 6 described items bound to the file as it is now (any later edit voids them); write it after the last edit of an existing strategy, before the backtest — `references/strategy-code.md` › *Version guide*
   - Minting, the `VERSION_NOTE` constant and restoring: `references/strategy-code.md` › *Versions*
 
 `lib/pnl.py`:

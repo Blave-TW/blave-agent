@@ -161,6 +161,58 @@ can ask to go back to one. Nothing to run by hand — `run()` does it.
 - Entry / exit records and parameter-scan grids are NOT stored per version — do not offer
   to show them for an old version.
 
+### Version guide (what this version changed)
+
+The workspace's compare view shows, under the numbers, what the new version changed — one
+short item per change, each opening onto its own lines of code. You write it whenever you
+change an existing strategy's code, after the LAST edit and before the backtest:
+
+1. `from lib.strategy import version_changes, write_guide`
+2. `version_changes(name)` → `{"base": n, "changes": [{"del": [[old line, text], …], "add": [[line, text], …]}, …]}`:
+   the file against the version your edit started from (`base` — after a restore that is the
+   restored one, not the newest). `add` carries this file's line numbers, `del` the old file's.
+3. `write_guide(name, items)` — at most 6 items, each `{"title", "body", "lines"}` plus
+   `"old_lines"` when it removes lines. It raises on a bad item; fix that item and call again.
+   It returns `unexplained`: changed lines no item covers.
+4. Backtest. The new version stores the guide. An edit after `write_guide` voids it (the run
+   prints that the guide was not stored) — call it again after that edit.
+
+Rules:
+- **One item = one change the user would name**: a parameter, an entry rule, an exit, a data
+  source. Order them by logic, not by line number. Seven changes → merge the small ones.
+- **Title**: what changed, one phrase in the user's language — ≤20 characters in Chinese or
+  Japanese, about 8 words otherwise. Parameter values belong here (「ATR 週期從 10 改成 14」).
+- **Body**: at most two sentences, each ≤25 Chinese characters or about 15 words: what the
+  strategy now does differently and which way it moves (fewer signals, later exits, wider
+  stops). **Never a result**: no return, Sharpe, drawdown, win rate or trade count, no
+  better / worse / 提升 / 改善 about performance. The numbers table is the whole version
+  against the whole version, not this item's effect.
+- **`lines`**: `[[start, end], …]` in this file, 1-based, the lines that hold the change —
+  copy them from `version_changes`. A removed line goes with the item that covers all the added
+  lines of the same change; a removal with nothing added in its place needs `old_lines` (old-file
+  numbers from `del`).
+- Every item must cover a changed line (`write_guide` refuses one that does not). Changes you
+  cannot describe stay uncovered: the user sees them listed as differences without a
+  description. Never pad an item to cover them. `VERSION_NOTE` lines need no item.
+- **No guide** for the first version, a restore, a re-run without an edit, a fork's first
+  backtest, or an install or re-install of a library strategy — you did not write that change.
+- Every round of an iteration flow that edits the code writes its own guide.
+- `write_guide` still refusing after one fix → backtest without it; the compare view then shows
+  the plain diff. Never skip the backtest over a guide.
+
+```python
+write_guide("sol_supertrend", [
+    {"title": "ATR 週期從 10 改成 14", "body": "趨勢線看更長的波動，轉向訊號變少、反應慢一點。",
+     "lines": [[12, 12]]},
+    {"title": "進場加上成交量濾網", "body": "成交量高於 20 根均量才進場，量縮時不進場。",
+     "lines": [[15, 15], [41, 43]]},
+    {"title": "停損從固定 2% 改成 2 倍 ATR", "body": "波動大時停損放寬，波動小時收緊。",
+     "lines": [[16, 16], [58, 58]]},
+])
+```
+
+Not 「Sharpe 從 1.21 升到 1.48」 or 「報酬變好」 in a body — that is the table's job.
+
 ### Restoring a version
 
 Restoring puts an old version's code back and makes that version current again, in place —

@@ -577,6 +577,8 @@ EXEMPT = [
      'code', 'strategy source read as code, not a state file'),
     ('lib/strategy.py', 'restore', 'path.read_bytes',
      'code', 'strategy source read as code, not a state file'),
+    ('lib/strategy.py', '_source', 'path.read_bytes',
+     'code', 'strategy source diffed for the version guide, not a state file'),
     ('lib/portfolio.py', '_booked_park_ids', '_ORDERS_LOG_PATH',
      'append', 'manager/orders.jsonl: which parked orders the book already holds (append-only)'),
     ('lib/portfolio.py', '_machine_lang', "'state/reply_lang'",

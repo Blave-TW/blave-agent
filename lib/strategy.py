@@ -1,11 +1,13 @@
 import ast
 import contextlib
+import difflib
 import hashlib
 import json
 import math
 import os
 import re
 import shutil
+import stat
 import threading
 import time
 import unicodedata
@@ -442,6 +444,237 @@ def version_note_of(code):
                 and any(isinstance(t, ast.Name) and t.id == 'VERSION_NOTE' for t in node.targets)):
             note = node.value.value.strip()
     return note
+
+
+# ── Version guide (canon strategy-versions §4 › 導讀) ─────────────────────────
+# What a version changed against the one it was edited from, item by item, each tied to its
+# changed lines. Written by the agent after its last edit (write_guide), bound to that file's
+# code_hash, taken into the version blob by the next mint. Never in index.json (canon §9 budget).
+GUIDE_MAX_ITEMS = 6
+GUIDE_TITLE_MAX = 60    # characters — the writing rule is far shorter; the api compare (0.1.64) is to cut at the same lengths
+GUIDE_BODY_MAX = 200
+GUIDE_MAX_RANGES = 20
+GUIDE_PENDING = 'guide.pending.json'
+GUIDE_PENDING_MAX_BYTES = 64 * 1024
+
+
+def _meta_lines(code):
+    """Line numbers of module-level VERSION_NOTE assignments: rewording the note is not a change
+    a guide has to explain."""
+    try:
+        tree = ast.parse(code.lstrip('\ufeff'))
+    except (SyntaxError, ValueError):
+        return set()
+    out = set()
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and any(
+                isinstance(t, ast.Name) and t.id == 'VERSION_NOTE' for t in node.targets):
+            out.update(range(node.lineno, (node.end_lineno or node.lineno) + 1))
+    return out
+
+
+def _changes(old_code, new_code):
+    """The changed lines between two stored codes: one (deleted, added) pair of 1-based line
+    numbers per difflib opcode, old-file and new-file numbering. The api's compare diff runs the
+    same SequenceMatcher over the same str.splitlines(), so both sides see the same lines."""
+    a, b = old_code.splitlines(), new_code.splitlines()
+    ma, mb = _meta_lines(old_code), _meta_lines(new_code)
+    out = []
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, a, b).get_opcodes():
+        if tag == 'equal':
+            continue
+        dels = [i for i in range(i1 + 1, i2 + 1) if i not in ma]
+        adds = [j for j in range(j1 + 1, j2 + 1) if j not in mb]
+        if dels or adds:
+            out.append((dels, adds))
+    return out
+
+
+def _claim(changes, items):
+    """Which changed lines each item owns. An added line goes to the first item whose `lines`
+    hold it; a deleted line to the first item whose `old_lines` hold it, else to the item that
+    owns every added line of the same opcode (no such single owner → unclaimed). Returns
+    (per item (deleted, added) sets, unclaimed (deleted, added) sets)."""
+    def owner(n, key):
+        for k, it in enumerate(items):
+            if any(s <= n <= e for s, e in it.get(key) or ()):
+                return k
+        return None
+    per = [(set(), set()) for _ in items]
+    rest = (set(), set())
+    for dels, adds in changes:
+        on_new = set()
+        for j in adds:
+            k = owner(j, 'lines')
+            on_new.add(k)
+            (rest[1] if k is None else per[k][1]).add(j)
+        implicit = next(iter(on_new)) if len(on_new) == 1 else None
+        for i in dels:
+            k = owner(i, 'old_lines')
+            k = implicit if k is None else k
+            (rest[0] if k is None else per[k][0]).add(i)
+    return per, rest
+
+
+def _guide_text(value):
+    """One line of plain text: control and format characters dropped, whitespace collapsed."""
+    if not isinstance(value, str):
+        return ''
+    kept = ''.join(c for c in value if c.isspace() or unicodedata.category(c)[0] != 'C')
+    return ' '.join(kept.split())
+
+
+def _line_no(x):
+    return isinstance(x, int) and not isinstance(x, bool)
+
+
+def _guide_ranges(value, top, what):
+    """[[start, end], …] — 1-based, inclusive, inside a file of `top` lines."""
+    if value is None or value == []:
+        return []
+    if not isinstance(value, list) or len(value) > GUIDE_MAX_RANGES:
+        raise ValueError(f"{what}: a list of [start, end] line ranges, at most {GUIDE_MAX_RANGES}")
+    for r in value:
+        if not (isinstance(r, list) and len(r) == 2 and all(map(_line_no, r))
+                and 1 <= r[0] <= r[1] <= top):
+            raise ValueError(f"{what}: {r!r} is not a [start, end] range inside 1–{top}")
+    return [list(r) for r in value]
+
+
+def _guide_items(items, new_top, old_top):
+    if not isinstance(items, list) or not items:
+        raise ValueError("items: a non-empty list of {title, body, lines}")
+    if len(items) > GUIDE_MAX_ITEMS:
+        raise ValueError(f"{len(items)} items — at most {GUIDE_MAX_ITEMS}; merge the small ones")
+    out = []
+    for x, it in enumerate(items, 1):
+        if not isinstance(it, dict):
+            raise ValueError(f"item {x}: an object with title, body, lines")
+        title, body = _guide_text(it.get('title')), _guide_text(it.get('body'))
+        if not title:
+            raise ValueError(f"item {x}: title is empty")
+        if len(title) > GUIDE_TITLE_MAX or len(body) > GUIDE_BODY_MAX:
+            raise ValueError(f"item {x}: title over {GUIDE_TITLE_MAX} or body over "
+                             f"{GUIDE_BODY_MAX} characters")
+        entry = {'title': title, 'body': body,
+                 'lines': _guide_ranges(it.get('lines'), new_top, f"item {x} lines")}
+        old = _guide_ranges(it.get('old_lines'), old_top, f"item {x} old_lines")
+        if old:
+            entry['old_lines'] = old
+        if not entry['lines'] and not old:
+            raise ValueError(f"item {x}: give the changed lines it covers (lines / old_lines)")
+        out.append(entry)
+    return out
+
+
+def _checked_guide(old_code, new_code, items):
+    """(items, unclaimed) or ValueError: the shape, then every item must own a changed line —
+    an item describing something the diff does not show is worse than no item."""
+    items = _guide_items(items, len(new_code.splitlines()), len(old_code.splitlines()))
+    per, rest = _claim(_changes(old_code, new_code), items)
+    empty = [x for x, (d, a) in enumerate(per, 1) if not d and not a]
+    if empty:
+        raise ValueError(f"item(s) {empty} cover no changed line — see version_changes()")
+    return items, rest
+
+
+def _guide_base(name):
+    """(current version number, its stored code): what the next mint is compared with."""
+    idx = load_index(name)
+    if idx is None and (versions_dir(name) / 'index.json').exists():
+        raise ValueError(f"{name}: versions/index.json cannot be read — run one backtest to "
+                         f"rebuild it, then write the guide for the next edit")
+    idx = idx or {}
+    base = idx.get('current')
+    if not any(isinstance(i, dict) and i.get('n') == base for i in idx.get('items') or []):
+        raise ValueError(f"{name} has no version yet — the first version needs no guide")
+    try:
+        code = load_json(versions_dir(name) / f'v{base}.json', encoding='utf-8').get('code')
+    except (OSError, ValueError, AttributeError):
+        code = None
+    if not isinstance(code, str):
+        raise ValueError(f"{name} v{base} is unreadable on this machine")
+    return base, code
+
+
+def _source(name):
+    path = strategy_source_path(name)
+    if path is None:
+        raise FileNotFoundError(f"strategy {name} has no source file")
+    return path.read_bytes()
+
+
+def version_changes(name):
+    """The strategy file's changed lines against its current version, numbered the way
+    write_guide() takes them: {"base": n, "changes": [{"del": [[old line, text], …],
+    "add": [[line, text], …]}, …]}. VERSION_NOTE lines are left out."""
+    base, old = _guide_base(name)
+    new = _source(name).decode('utf-8', 'replace')
+    a, b = old.splitlines(), new.splitlines()
+    return {'base': base,
+            'changes': [{'del': [[i, a[i - 1]] for i in dels], 'add': [[j, b[j - 1]] for j in adds]}
+                        for dels, adds in _changes(old, new)]}
+
+
+def write_guide(name, items):
+    """Store the guide the next backtest of `name` freezes into its version. Call it after the
+    LAST edit: it is bound to the file as it is now, and a later edit voids it (that mint stores
+    no guide rather than one describing other code). Raises ValueError on a bad item.
+    Returns {"base", "items", "unexplained": {"del", "add"}} — the changed lines no item covers,
+    which the user sees listed as undescribed differences."""
+    with versions_lock(name):   # the mint reads base and consumes the pending file under it
+        src = _source(name)
+        base, old = _guide_base(name)
+        items, rest = _checked_guide(old, src.decode('utf-8', 'replace'), items)
+        _replace_bytes(versions_dir(name) / GUIDE_PENDING, json.dumps(
+            {'v': 1, 'base': base, 'code_hash': code_hash(src), 'items': items},
+            ensure_ascii=False).encode('utf-8'))
+    return {'base': base, 'items': len(items),
+            'unexplained': {'del': sorted(rest[0]), 'add': sorted(rest[1])}}
+
+
+def take_guide(vdir, src, base):
+    """The mint's side, under the versions lock: the pending guide's items when it was written
+    for exactly this code against exactly this base, else None. Never raises — a pending file
+    nobody can read must not stop every later backtest from minting — and the file is consumed
+    whatever happens: one guide, one mint."""
+    path = Path(vdir) / GUIDE_PENDING
+    try:
+        st = os.lstat(path)
+    except OSError:
+        return None
+    try:
+        if not stat.S_ISREG(st.st_mode) or st.st_size > GUIDE_PENDING_MAX_BYTES:
+            print("  ⚠️ Version guide not stored — the pending guide file is not a small regular file.")
+            return None
+        return _pending_items(path, src, base)
+    except Exception as e:   # deep nesting (RecursionError), bad bytes, anything: no guide, mint goes on
+        print(f"  ⚠️ Version guide not stored — the pending guide could not be read ({type(e).__name__}).")
+        return None
+    finally:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+
+
+def _pending_items(path, src, base):
+    pending = load_json(path, encoding='utf-8')
+    if not isinstance(pending, dict) or base is None:
+        return None
+    base_code = load_json(Path(path).parent / f'v{base}.json', encoding='utf-8').get('code')
+    if not isinstance(base_code, str):
+        return None
+    if pending.get('base') != base or not hash_matches(src, pending.get('code_hash')):
+        print("  ⚠️ Version guide not stored — it was written for other code. Call "
+              "write_guide() after the last edit, then backtest.")
+        return None
+    try:
+        items, _rest = _checked_guide(base_code, src.decode('utf-8', 'replace'), pending.get('items'))
+    except ValueError as e:
+        print(f"  ⚠️ Version guide not stored — {e}")
+        return None
+    return items
 
 
 def list_versions(name):

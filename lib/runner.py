@@ -885,7 +885,7 @@ class VersionIndexUnreadable(RuntimeError):
     pass
 
 
-_BLOB_ONLY_KEYS = ('v', 'strategy', 'code', 'daily_dates', 'daily_returns')
+_BLOB_ONLY_KEYS = ('v', 'strategy', 'code', 'daily_dates', 'daily_returns', 'base', 'guide')
 
 
 def _index_readable_or_raise(name):
@@ -968,7 +968,7 @@ def _mint_version(config, stats, mode, src=None):
             logging.warning("version not minted: no __file__ in config — call run(locals(), …)")
             return None
         src = Path(src_path).read_bytes()
-    from lib.strategy import VERSIONS_KEEP, code_hash, versions_dir, versions_lock
+    from lib.strategy import GUIDE_PENDING, VERSIONS_KEEP, code_hash, take_guide, versions_dir, versions_lock
     name = config['STRATEGY_NAME']
     vdir = versions_dir(name)
     os.makedirs(vdir, exist_ok=True)
@@ -985,6 +985,10 @@ def _mint_version(config, stats, mode, src=None):
                 _write_json_atomic(vdir / 'index.json',
                                    {'v': 1, 'counter': idx.get('counter') or same, 'current': same,
                                     'last_note': note, 'items': items})
+            try:
+                os.remove(vdir / GUIDE_PENDING)   # nothing new to describe
+            except OSError:
+                pass
             n = same
         else:
             n = int(idx.get('counter') or 0) + 1
@@ -995,11 +999,16 @@ def _mint_version(config, stats, mode, src=None):
             entry_note = '' if note and note == idx.get('last_note') else note
             at     = int(stats.get(GENERATED_AT_KEY) or time.time())
             entry  = {'n': n, 'at': at, 'note': entry_note, 'code_hash': digest, **_version_fields(stats)}
+            # The version this edit started from (`current`, not n-1: restore v5, edit → base 5).
+            # Blob only, with the guide written against it — canon §9 keeps index.json small.
+            base = idx.get('current') if any(i.get('n') == idx.get('current') for i in items) else None
+            guide = take_guide(vdir, src, base)
+            extra = {k: v for k, v in (('base', base), ('guide', guide)) if v}
 
             # Compact (indent=None): the daily curve is thousands of numbers and this blob is
             # uploaded as-is.
             _write_json_atomic(vdir / f'v{n}.json',
-                               {'v': 1, 'strategy': name, **entry,
+                               {'v': 1, 'strategy': name, **entry, **extra,
                                 'code':          src.decode('utf-8', 'replace'),
                                 'daily_dates':   stats.get('daily_dates') or [],
                                 'daily_returns': stats.get('daily_returns') or []},
