@@ -918,6 +918,13 @@ tr:nth-child(2n) .mg-sk.amt { width: 44px; }
   .mg-msg { display: contents; }
   .mg-apply-why { margin-top: calc(-1 * var(--space-4)); }
 }
+/* 主欄 ≤340(同網頁那一級):三選一＋目標一列放不下(英文約 330、中文約 280 起撐出主欄),三選一自己佔一列、目標靠左另起一列。
+   100% 縮放時主欄最窄 480(MAIN_MIN)、這裡 448,碰不到;放大顯示(125% 起、視窗 1024)才會到 */
+@container mg-sz (max-width: 340px) {
+  .mg-sz { grid-template-areas: "fund fund" "seg seg" "t t" "pv go" "why why"; }
+  .mg-sz.no-t { grid-template-areas: "fund fund" "seg seg" "pv go" "why why"; }
+  .mg-szf.mg-t { justify-self: start; }
+}
 .mg-tbl .ct-trig { position: relative; z-index: 1; }   /* 策略名熱區撐滿整格,合約下拉要蓋在上面 */
 .mg-tbl .ct-trig::before { inset: -8px 0; }   /* 24 高撐到 40、不越列界:點偏一點不該跳去策略頁 */
 .mg-tbl tr.total td { padding-top: var(--space-8); border-top: 1px solid var(--border-frame); color: var(--ink); }

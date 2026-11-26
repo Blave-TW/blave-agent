@@ -274,10 +274,10 @@ app.whenReady().then(async () => {
   const ph = await X(`(async () => { ${HIT} slotPopPaint(); const pop = $("ph-pop"); pop.style.left = "20px"; pop.style.bottom = "20px"; pop.hidden = false; await new Promise((r) => setTimeout(r, 200));
     const o = [...pop.querySelectorAll(".ph-links .btn-quiet")].map((b) => Object.assign(__hit(b), { t: b.textContent })); pop.hidden = true; return o; })()`);
   ok(`⑱ 手機配對:App Store、Google Play 熱區 ≥44×44:${JSON.stringify(ph)}`, ph.length === 2 && ph.every(ge44));
-  // ⑲ 優化 › 部位大小(工具列＋部位大小那一區,主欄 544 窄版疊放、800 寬版一列):
+  // ⑲ 優化 › 部位大小(工具列＋部位大小那一區,主欄 544 窄版疊放、800 寬版一列、300 時三選一自己一列):
   //    〔套用金額〕可按、停用、停用帶補救連結、沒有目標格四種都 ≥44 高;補救連結 ≥44×44、在句尾時熱區不探出右緣;旁邊的框也還是 44;窄版目標值格右緣 = 投入資金格 = 〔套用金額〕
   const sz = await X(`(async () => { ${HIT} const nap = (ms) => new Promise((r) => setTimeout(r, ms)), out = {};
-    for (const W of [544, 800]) for (const st of ["on", "off", "link", "noT"]) {
+    for (const W of [300, 544, 800]) for (const st of ["on", "off", "link", "noT"]) {
       const host = document.createElement("div"); host.className = "pf"; host.style.cssText = "position:fixed;left:100px;top:60px;width:" + W + "px;background:#fff;z-index:99"; document.body.appendChild(host);
       host.appendChild(mgToolbar(false)); mgBuildPage(host, false);
       const q = (s) => host.querySelector(s), f = q("#mg-fund"); f.value = "100000"; f.dispatchEvent(new Event("input"));
@@ -289,7 +289,8 @@ app.whenReady().then(async () => {
       const lk = why.querySelector(".busy-fix"), R = (e) => e && e.getClientRects().length ? e.getBoundingClientRect() : null;
       const edge = lk ? (() => { const m = q(".mg-sz").getBoundingClientRect(), b = lk.getBoundingClientRect(), y = b.y + b.height / 2, at = (x) => document.elementFromPoint(x, y) === lk;
         return { own: at(b.right - 1), out: at(m.right + 1) }; })() : null;
-      out[W + st] = { edge, ap: __hit(ap), link: lk ? __hit(lk) : null, t: R(tw) ? __hit(tw) : null, fund: __hit(fd), right: [R(fd), R(tw), R(ap)].map((r) => r ? Math.round(r.right * 10) / 10 : null), tw: R(tw) ? Math.round(R(tw).width) : null };
+      out[W + st] = { edge, ap: __hit(ap), link: lk ? __hit(lk) : null, t: R(tw) ? __hit(tw) : null, fund: __hit(fd), right: [R(fd), R(tw), R(ap)].map((r) => r ? Math.round(r.right * 10) / 10 : null), tw: R(tw) ? Math.round(R(tw).width) : null,
+        over: Math.round(Math.max(...[...q(".mg-sz").querySelectorAll("*")].map((e) => e.getBoundingClientRect().right)) - q(".mg-sz").getBoundingClientRect().right), segBot: R(q(".mg-size-seg")).bottom, tTop: R(tw) ? R(tw).top : null };
       host.remove(); }
     return out; })()`);
   ok(`⑲ 〔套用金額〕四種狀態 × 窄／寬都 ≥44 高:${JSON.stringify(Object.fromEntries(Object.entries(sz).map(([k, v]) => [k, v.ap])))}`, Object.values(sz).every((v) => v.ap.h >= 44 && v.ap.w >= v.ap.vw));
@@ -297,6 +298,7 @@ app.whenReady().then(async () => {
   ok(`⑲ 補救連結在句尾:熱區不探出部位大小那一區的右緣:${JSON.stringify([sz["544link"].edge, sz["800link"].edge])}`, [sz["544link"].edge, sz["800link"].edge].every((e) => e && e.own && !e.out));
   ok(`⑲ 旁邊的投入資金、目標值格熱區還是 44:${JSON.stringify(Object.fromEntries(Object.entries(sz).map(([k, v]) => [k, [v.fund.h, v.t && v.t.h]])))}`, Object.values(sz).every((v) => v.fund.h >= 44 && (v.t === null || v.t.h >= 44)));
   ok(`⑲ 窄版:目標值格右緣 = 投入資金格 = 〔套用金額〕(${JSON.stringify(sz["544on"].right)});寬版目標值格照舊 76(${sz["800on"].tw})`, sz["544on"].right[0] === sz["544on"].right[1] && sz["544on"].right[1] === sz["544on"].right[2] && sz["800on"].tw === 76);
+  ok(`⑲ 主欄 300(放大顯示才到):沒有東西撐出部位大小那一區,目標值格在三選一下面另起一列:${JSON.stringify(["300on", "300noT", "544on"].map((k) => [sz[k].over, sz[k].segBot, sz[k].tTop]))}`, ["300on", "300off", "300link", "300noT"].every((k) => sz[k].over <= 0) && sz["300on"].tTop >= sz["300on"].segBot && sz["544on"].tTop < sz["544on"].segBot);
   // ⑳ 優化工具列右側常駐的〔重算權重〕(Wei 11-20):窄 544／寬 800 都在工具列裡、不探出右緣,文字鈕熱區 ≥44×44,停用時也是。
   //    帶時間那一行放不下、整組換行(380)時,問號跟〔重算權重〕同一列、靠右緣,不會自己掉到第二列左邊(designer 11-21)
   const rr = await X(`(async () => { ${HIT} const out = {};
