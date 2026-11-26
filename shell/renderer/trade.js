@@ -163,8 +163,8 @@ function trSpRetryAt(r, id) { return id === "sinopac" && SINOPAC_LOCAL_ON && typ
 function trSpHeldRun(state, r) { return state === "running" && trVenueIds(r).indexOf("sinopac") >= 0 && (typeof trSpLoginHeld === "function" && trSpLoginHeld(r, "sinopac")); }
 /* 永豐下單程式剛起來(重開 app、worker 的第一份快照還沒寫出來):帳戶讀到的是上次留下的舊快照,不是串接失敗
    (Wei 11-23 截圖:重開那幾秒寫「串接失敗」＋工程英文)。起點 = 這支 worker 起來的時間(runtime sinopac_local.local_info
-   worker_started_at),還沒起就從畫面載入算;超過 TR_SP_BOOT_MS(登入＋合約清單最多約 60 秒)照舊講失敗。只有這台電腦的回報帶 sinopac_local */
-const TR_SP_BOOT_MS = 120000, TR_SP_T0 = Date.now();
+   worker_started_at),還沒起就從畫面載入算;超過 TR_SP_BOOT_MS 照舊講失敗(最壞:合約清單 60 秒＋登入後確認部位 30 秒＋兩次讀取各 10 秒＋帳戶讀取器下一輪最多 60 秒＝170 秒,另留登入本身 15 秒以上;tests/check_sinopac_futures.py 核)。只有這台電腦的回報帶 sinopac_local */
+const TR_SP_BOOT_MS = 195000, TR_SP_T0 = Date.now();
 function trSpBooting(r, id, nowMs) {
   const sl = id === "sinopac" && SINOPAC_LOCAL_ON && r ? r.sinopac_local : null, e = sl && typeof sl === "object" ? trLiveEntry(r, id) : null;
   if (!e || e.ok || trSpWip(r, id) || trSpLoginHeld(r, id) || trSpRetryAt(r, id) !== null) return false;

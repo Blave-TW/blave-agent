@@ -18,6 +18,8 @@ tests/check_update_workspace.py uses). systemctl / sudo / tmux are fakes on PATH
   9. M1 end to end: first apply restart_deferred(busy) → status back to applying (restart_retry)
      before the second plan; second apply without the first --allow → updated. Mutation: reusing
      the first --allow makes the run end failed.
+ 9b. 永豐 worker busy (sinopac_worker busy, reconciler restart ok / none) → the same one retry;
+     reconciler refused + 永豐 busy, or 永豐 failed → no retry.
  10. apply answers locked → ws_update writes nothing after it (M2).
  11. listener restart: live job adopted; dead job + applying + lock free → failed interrupted;
      dead job + lock held → status untouched; job file removed either way; stale clones swept.
@@ -490,6 +492,40 @@ try:
     check(st["state"] == "failed" and st["outcome"] == "error" and st["reason"] == "plan_timeout",
           f"P2-1 …and with no first result to restore: failed `error` (may have written part), never `stopped` ({st})")
 
+    # 永豐 worker busy (the reconciler restarted or had nothing to do): retried once like the
+    # reconciler's busy; a refused reconciler restart, or a failed 永豐 one, is not
+    def first_apply_says(ws_r, first):
+        seen = []
+
+        def fake(argv, *a, **kw):
+            if any(str(x).endswith("update_workspace.py") for x in argv):
+                if "plan" in argv:
+                    seen.append(("plan", (status(ws_r) or {}).get("phase")))
+                    return REAL["run_tree"](argv, *a, **kw)
+                seen.append(("apply",))
+                n = seen.count(("apply",))
+                doc = dict(first) if n == 1 else {"outcome": "updated", "restart": None}
+                write(os.path.join(ws_r, "state", "workspace_update.json"),
+                      json.dumps({"state": "done", "outcome": doc["outcome"], "ts": n}))
+                return (1 if n == 1 else 0), json.dumps(doc) + "\n"
+            return REAL["run_tree"](argv, *a, **kw)
+        W.run_tree = fake
+        W.main(["--workspace", ws_r])
+        restore()
+        return seen, status(ws_r)
+    for first, want in ((dict(restart="ok", sinopac_worker="busy"), True),
+                        (dict(restart=None, sinopac_worker="busy"), True),
+                        (dict(restart="refused", sinopac_worker="busy"), False),
+                        (dict(restart="ok", sinopac_worker="failed"), False)):
+        first = dict(first, outcome="restart_deferred" if first["sinopac_worker"] == "busy" or
+                     first["restart"] == "refused" else "restart_failed")
+        seen_r, st_r = first_apply_says(make_workspace(repo, v1), first)
+        retried = seen_r == [("plan", "plan"), ("apply",), ("plan", "restart_retry"), ("apply",)]
+        once = seen_r == [("plan", "plan"), ("apply",)]
+        check((retried and st_r["outcome"] == "updated") if want else (once and st_r["outcome"] == first["outcome"]),
+              f"9b first apply {first} → {'plan + apply once more (restart_retry), ends updated' if want else 'no retry'} "
+              f"({seen_r}, {st_r.get('outcome')})")
+
     t0 = time.time()
     try:
         W.run_tree([sys.executable, "-c", "import subprocess, sys, time; "
@@ -640,7 +676,7 @@ try:
     us = read(SCRIPT_SRC)
     check(all(x in us for x in ('choices=("plan", "apply")', '"--clone"', '"--workspace"', '"--expect-head"',
                                 '"--allow"', '"--restart-ok"', '"--wait-busy"', '"changed_here"',
-                                'result["restart"]', '"locked": True', '"outcome"')),
+                                'result["restart"]', 'result["sinopac_worker"]', '"locked": True', '"outcome"')),
           "15 update_workspace.py still takes the CLI and gives the JSON fields ws_update relies on")
     check(W.LOCK_REL == os.path.join("state", "workspace_update.lock") and '"state/workspace_update.lock"' in us,
           "15 one lock file, both sides")

@@ -69,7 +69,7 @@ month-aware reads, and the refusing stubs.
 
 Run: cd blave-agent && .venv/bin/python tests/check_sinopac_futures.py
 """
-import inspect, json, os, sys, tempfile, threading, time, types
+import inspect, json, os, re, sys, tempfile, threading, time, types
 from datetime import datetime
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -2031,9 +2031,31 @@ try:
         _drop(w.RETRY_PATH)
     finally:
         w.LOGIN_CONFIRM_S = _cs
-    check(21 < _lsaved["LOGIN_CONFIRM_S"] and w.CONTRACTS_WAIT_S + _lsaved["LOGIN_CONFIRM_S"] < 120,
-          "LOGIN_CONFIRM_S: past M0-b's ~21 s fill lag; the contract wait plus it stays inside the desktop's 120 s "
-          "「連接中」 grace (and the connect flow's 300 s finish wait)")
+    # the desktop's 「連接中」 lasts until account_reader has read the first ok snapshot: the contract
+    # wait, the confirm gap, two reads and a whole reader period. A read (read_account) is api.margin +
+    # api.list_positions, each at shioaji's default timeout=5000 ms
+    READ_CALL_S, READ_CALLS = 5, 2
+    _read_s = READ_CALLS * READ_CALL_S
+    check(inspect.getsource(w.read_account).count("api.") == READ_CALLS,
+          f"read_account makes {READ_CALLS} SDK calls (margin, list_positions) — the bound below counts that many")
+    _boot = re.search(r"const TR_SP_BOOT_MS = (\d+),", open(os.path.join(ROOT, "shell", "renderer", "trade.js"),
+                                                            encoding="utf-8").read())
+    _reader = re.search(r"^ACCOUNT_EVERY_S = (\d+)", open(os.path.join(ROOT, "runtime", "local_daemon.py"),
+                                                          encoding="utf-8").read(), re.M)
+    _reader_s = int(_reader.group(1)) if _reader else float("inf")  # the desktop daemon's account reader
+    _worst = w.CONTRACTS_WAIT_S + _lsaved["LOGIN_CONFIRM_S"] + 2 * _read_s + _reader_s
+    check(21 < _lsaved["LOGIN_CONFIRM_S"] and _boot and _worst + 15 <= int(_boot.group(1)) / 1000,
+          f"LOGIN_CONFIRM_S: past M0-b's ~21 s fill lag; contract wait + it + two reads + one account_reader "
+          f"period ({_worst:.0f} s) leaves the login itself 15 s inside the desktop's 「連接中」 grace "
+          f"TR_SP_BOOT_MS ({_boot and _boot.group(1)} ms)")
+    # the connect flow's finish waits for the worker's own ok (no reader period), from the Linux timer's
+    # 2-minute tick (blave-agent-sinopac.timer, installed outside this repo)
+    _fin = re.search(r"^FINISH_WAIT_S = (\d+)", open(os.path.join(ROOT, "runtime", "sinopac_connect.py"),
+                                                      encoding="utf-8").read(), re.M)
+    _fin_worst = 120 + w.CONTRACTS_WAIT_S + _lsaved["LOGIN_CONFIRM_S"] + 2 * _read_s
+    check(_fin and _fin_worst + 15 <= int(_fin.group(1)),
+          f"LOGIN_CONFIRM_S: timer tick + contract wait + it + two reads ({_fin_worst:.0f} s) leaves the login 15 s "
+          f"inside the connect flow's FINISH_WAIT_S ({_fin and _fin.group(1)} s)")
     _drop(w.RETRY_PATH)
     # orders while the session is gone: refused with the error, never sent and never silent
     _o = _LostApi([_TOKEN])

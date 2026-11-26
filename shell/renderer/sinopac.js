@@ -142,7 +142,7 @@ const spAcctErrKey = (msg, cloud) => (/\[sinopac_worker_down\]/.test(String(msg 
 /* 完成頁的權益數(11-23 夜盤實測:報告讀帳比下單程式第一份快照早 4 秒,那一輪是「—」)→ { v } 數字 | { wait } 讀取中… | {} 「—」。
    SnapshotLag 那一筆讀到了權益(trade.js trPosPending)照數字畫。wait 只在下單程式剛 ok、帳戶讀取的時間還早於它時,
    而且不超過 SP_EQ_WAIT_MS(帳戶讀取每 60 秒一輪);之後讀到了卻沒有權益、或一直沒跟上,照舊「—」 */
-const SP_EQ_WAIT_MS = 120000;   // = trade.js TR_SP_BOOT_MS
+const SP_EQ_WAIT_MS = 195000;   // = trade.js TR_SP_BOOT_MS
 function spEqView(r, sc, now) {
   const a = r && r.account && r.account.venues && r.account.venues[SINOPAC];
   if (a && typeof a.equity === "number" && isFinite(a.equity)) return { v: a.equity };
@@ -439,7 +439,7 @@ function spRows(view, sc) {
   else add(capRow(worker.status === "ok" && !(sc && sc.login_stop) ? "done" : "todo", t("sp.s.worker")));
   return ol;
 }
-// 權益等第一份快照(最長 120 秒):圓環＋輔具念 sp.posPending,不用骨架(骨架過 10 秒停光會讀成壞掉);高度照 .v 撐住,數字回來不跳
+// 權益等第一份快照(最長 195 秒):圓環＋輔具念 sp.posPending,不用骨架(骨架過 10 秒停光會讀成壞掉);高度照 .v 撐住,數字回來不跳
 function spEqWait() { const v = trEl("div", "v"), b = trEl("span", "spin16 pres-eq-spin"); b.setAttribute("aria-hidden", "true"); v.append(b, trEl("span", "sr-only", t("sp.posPending"))); return v; }
 function spDoneBody(sc) {
   const r = spReport() || {}, a = (r.account && r.account.venues && r.account.venues[SINOPAC]) || {}, cert = spSec(sc, "cert");

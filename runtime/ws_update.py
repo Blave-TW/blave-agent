@@ -9,8 +9,9 @@ Spec: .claude/output/specs/cloud-workspace-update-command-0160.md §2. Two roles
   the result rides the report's `workspace_update`.
 - __main__: the job. Clones the official repo into a 0700 temp dir, checks the
   clone HEAD against `git ls-remote`, runs the CLONE's manager/update_workspace.py
-  plan → apply --allow <changed_here> --restart-ok --wait-busy 600, and when the
-  restart had to wait (busy) runs plan + apply once more with the new list.
+  plan → apply --allow <changed_here> --restart-ok --wait-busy 600, and when a
+  restart had to wait (the reconciler's or the 永豐 worker's, busy) runs plan + apply
+  once more with the new list.
 
 The child runs under `python -I`: sys.path does not hold the runtime directory, so
 this module imports the standard library only; atomic_file is used when it is there
@@ -438,6 +439,15 @@ def do_apply(repo, workspace, head, allow):
     return a
 
 
+def retry_due(a):
+    """A restart still owed only because something was mid-order: the reconciler's (restart busy),
+    or the 永豐 worker's (sinopac_worker busy) once the reconciler's is not refused — a refused
+    file stays refused on a second apply."""
+    if a.get("outcome") != "restart_deferred":
+        return False
+    return a.get("restart") == "busy" or (a.get("sinopac_worker") == "busy" and a.get("restart") != "refused")
+
+
 def job(workspace, tmp, ctx):
     v_from = read_version(workspace)
     repo = os.path.join(tmp, "repo")
@@ -463,10 +473,10 @@ def job(workspace, tmp, ctx):
     a = do_apply(repo, workspace, head, plan_allow(p))
     if a is None:
         return
-    _log(f"apply outcome={a.get('outcome')} restart={a.get('restart')}")
-    if not (a.get("outcome") == "restart_deferred" and a.get("restart") == "busy"):
+    _log(f"apply outcome={a.get('outcome')} restart={a.get('restart')} sinopac={a.get('sinopac_worker')}")
+    if not retry_due(a):
         return
-    # The restart waited out --wait-busy. Once more, with a fresh plan: the first apply
+    # A restart waited out --wait-busy. Once more, with a fresh plan: the first apply
     # already replaced every changed_here file, so the old --allow would now Stop (and
     # overwrite the first result with a failure). Back to applying first, so the desktop
     # does not take the first, intermediate result for this run's answer.
