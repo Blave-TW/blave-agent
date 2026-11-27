@@ -496,7 +496,7 @@ def job(workspace, tmp, ctx):
         return
     a2 = do_apply(repo, workspace, head, allow2)
     if a2 is not None:
-        _log(f"retry outcome={a2.get('outcome')} restart={a2.get('restart')}")
+        _log(f"retry outcome={a2.get('outcome')} restart={a2.get('restart')} sinopac={a2.get('sinopac_worker')}")
 
 
 def main(argv=None):
