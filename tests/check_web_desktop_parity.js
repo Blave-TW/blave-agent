@@ -150,6 +150,14 @@ ok("永豐:電腦版 TR_BROKER_KEY 與 trCloseDeferred 認 sinopac,網頁 manual
   /const TR_BROKER_KEY = \{[^}]*\bsinopac: "tr\.ov\.brokerSinopac"/.test(desk) && /const fut = [^;]*e\.exchange === "sinopac"/.test(desk)
   && /data\.exchange === "sinopac" \? I18N\.ovBrokerSinopac/.test(web) && /data\.venue === "sinopac" \? I18N\.ovBrokerSinopac/.test(web)
   && /const fut = [^;]*data\.exchange === "sinopac"/.test(web));
+// 永豐登入停了(venue_login_blocked venue=sinopac):網頁照類別接原因句的那幾類 = 電腦版 TR_SP_REASON(UNKNOWN 是兩邊的退路);
+// 停放單 park_id 的 sinopac: 前綴兩邊都拆(不當統一)
+{ const dk = Object.keys(Function("return " + ((desk.match(/const TR_SP_REASON = (\{[^}]*\})/) || [])[1] || "{}"))()).filter((k) => k !== "UNKNOWN").sort();
+  const wb = (web.match(/venue_login_blocked" && data\.venue === "sinopac"[\s\S]*?const why = (\{[\s\S]*?\});/) || [])[1] || "";
+  const wk = (wb.match(/\b[A-Z_]+(?=:)/g) || []).sort();
+  ok("永豐登入停了:網頁認的原因類別與電腦版 TR_SP_REASON 同一組", dk.length > 0 && JSON.stringify(dk) === JSON.stringify(wk), JSON.stringify([dk, wk]));
+  ok("永豐停放單:電腦版 trUnxVenue／trUnxSym 與網頁 ovParkParts 都拆 sinopac: 前綴",
+    /\^\(capital\|sinopac\):/.test(desk) && /\^\(\?:capital\|sinopac\):/.test(desk) && /\^\(capital\|sinopac\):/.test(web)); }
 // 全部平倉沒替群益送單、上一筆平倉還在等回報(manager/flatten reason queued):有 until／沒 until 兩句,兩邊逐字同;
 // 網頁少了也算紅(上線同批,不是同步中)
 const QUEUED_PAIRS = { "tr.ov.evManualCloseQueued": "workspace_ov_ev_manual_close_queued",
