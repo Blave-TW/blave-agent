@@ -5096,7 +5096,7 @@ function poSigTable(r, stored, states, mode) {
 function trPosDetail(r) {
   const out = {}, dup = {}, F = ["entry_price", "unrealized_pnl", "margin", "leverage"];
   trVenueIds(r).forEach((id) => { const e = trLiveEntry(r, id); if (!e || !e.ok || !e.positions) return;
-    Object.keys(e.positions).forEach((s) => { const k = trTwBroker(id) ? trTwFutCanon(s) : trCanonSym(s); if (k in out) dup[k] = true;
+    Object.keys(e.positions).forEach((s) => { const k = trTwFutVenue(id) ? trTwFutCanon(s) : trCanonSym(s); if (k in out) dup[k] = true;
       const p = e.positions[s] || {}, d = {}; F.forEach((f) => { if (typeof p[f] === "number" && isFinite(p[f])) d[f] = p[f]; }); out[k] = d; }); });
   Object.keys(dup).forEach((k) => { out[k] = {}; });
   return out;
