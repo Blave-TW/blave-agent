@@ -3173,7 +3173,7 @@ def _tw_blave_tail(frames, ids, end, adjust, fetch):
     the very number the CDN publishes. fetch(ids, start, adjust) → {id: Blave frame}; it may raise.
 
     attrs['asof'] becomes the tail's last day, or the latest final when Blave has that day for
-    some id of the same request (an id without it did not trade). An id Blave has no bar for on
+    some id of the same request on the same exchange (an id without it did not trade). An id Blave has no bar for on
     the CDN's last day (nothing to join on), or no adjusted day to read an event from, is left
     as it was — _tw_cdn_refuse_behind then sees it short."""
     cap = min(end, _tw_official_expected_day()) if end else _tw_official_expected_day()
@@ -3198,10 +3198,13 @@ def _tw_blave_tail(frames, ids, end, adjust, fetch):
                 cols = [c for c in ('Open', 'High', 'Low', 'Close') if c in tail.columns]
                 tail[cols] = tail[cols].mul(ev * df.attrs['tw_factor'], axis=0).round(2)
             tails[sid] = tail
-        reached = any(not t.empty and t.index[-1] == pd.Timestamp(cap) for t in tails.values())
+        # per market: Blave takes each exchange's closing file on its own, one can be in while
+        # the other is not
+        reached = {frames[sid].attrs.get('source') for sid, t in tails.items()
+                   if not t.empty and t.index[-1] == pd.Timestamp(cap)}
         for sid, tail in tails.items():
             df = frames[sid]
-            if reached:
+            if df.attrs.get('source') in reached:
                 upto = cap
             elif not tail.empty:
                 upto = str(tail.index[-1].date())

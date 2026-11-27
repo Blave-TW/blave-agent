@@ -64,8 +64,9 @@ class Sc:
     """A test world: the stock(s) (clones of 6242's file), extra (前收盤, 參考價) events, a raw
     price step (減資: the raw price doubles from that day), and what Blave lacks per id."""
 
-    def __init__(self, extra=(), scale=None, ids=(SID,), blave_last=None, blave_drop=()):
+    def __init__(self, extra=(), scale=None, ids=(SID,), blave_last=None, blave_drop=(), market=None):
         self.extra, self.scale, self.ids = list(extra), scale, ids
+        self.market = market or {}
         self.blave_last, self.blave_drop = blave_last or {}, set(blave_drop)
 
     def raw(self):
@@ -127,7 +128,8 @@ def cdn_store(asof, sc):
             files[key] = hashlib.sha256(body).hexdigest()
     out["manifest.json"] = json.dumps({
         "schema": D._TW_CDN_SCHEMA, "asof": asof, "enabled": True, "first_day": "2010-01-04",
-        "recent_from": "2026-08-31", "stocks": {sid: ["tpex", "2010-01-04", asof] for sid in sc.ids},
+        "recent_from": "2026-08-31",
+        "stocks": {sid: [sc.market.get(sid, "tpex"), "2010-01-04", asof] for sid in sc.ids},
         "years": years, "files": files}).encode()
     return out
 
@@ -311,7 +313,13 @@ def t_untraded_id():
     got = run("2026-10-16 17:36", PREV, sc, fn, live=True) if err is None else {}
     check(err is None and got[SID].index[-1] == pd.Timestamp(LAST) and got["6243"].index[-1] == pd.Timestamp(PREV)
           and got["6243"].attrs.get("asof") == LAST,
-          "batch: 6243 without a 10-16 bar on Blave while 6242 has it — complete, live served")
+          "batch: 6243 without a 10-16 bar on Blave while 6242 (same exchange) has it — complete, live served")
+    mixed = Sc(ids=(SID, "2609"), market={"2609": "twse"}, blave_last={SID: PREV})
+    both = lambda: D.fetch_twstock_price_adj_batch([SID, "2609"], START, None, {"api-key": "x"})  # noqa: E731
+    err = refused(lambda: run("2026-10-16 17:36", PREV, mixed, both, live=True))
+    check(err is not None and str(err.need) == LAST,
+          "batch: the TWSE id has 10-16 on Blave, the TPEx id not — the TPEx closing file may still be "
+          "missing, not a halt: live refused")
     one = lambda: D.fetch_twstock_price_adj("6243", START, None, {"api-key": "x"})  # noqa: E731
     err = refused(lambda: run("2026-10-16 17:36", PREV, sc, one, live=True))
     check(err is not None, "single 6243, Blave without 10-16: nothing tells a halt from a late Blave — live refused")
