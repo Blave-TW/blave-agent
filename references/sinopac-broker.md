@@ -1,4 +1,4 @@
-# SinoPac (永豐金) Broker — Agent Reference
+# SinoPac (永豐期貨) Broker — Agent Reference
 
 Use this document when a user asks to connect their SinoPac account to Blave Agent.
 

@@ -222,7 +222,7 @@ Another weighting method is **always a new `allocators/<name>/allocator.py`** (`
 **Any broker with an API is supported** — never answer "only these are supported"; wire others from the user's API docs as a `lib/` helper.
 
 **Web-initiated exchange connect** (key already stored): follow `references/exchange-connect.md` (read-only validation first, no orders ever). **Taiwan brokers route by VENUE, not by phrasing** — even for that handoff, go straight to their own doc:
-- **SinoPac (永豐金):** `references/sinopac-broker.md`
+- **SinoPac (永豐期貨):** `references/sinopac-broker.md`
 - **President Futures (統一期貨):** `references/president-broker.md`
 - **Capital Futures (群益期貨):** `references/capital-broker.md` (Windows only: on a cloud machine you walk the setup; on the Windows desktop app (0.1.50+) the app's own connect flow does it, not you — an older app build: update it first; from the desktop's cloud view, send the user to the blave.org cloud workspace; not on a Mac — its Step 0)
 - **Paper trading (模擬交易):** pre-built — **never hand-write a paper lib**; `references/lib.md` › *Paper venue — web handoff*.

@@ -104,6 +104,9 @@ check(all(venue_traits.get(v, "label") for v in venue_traits.venues("auto_wire",
       "every TW broker has a label for user-facing messages (flatten never says 群益 for another broker)")
 check(venue_traits.get("sinopac", "label") == "永豐期貨",
       "sinopac label is 永豐期貨 (the futures firm the user opened, not 永豐金)", venue_traits.get("sinopac", "label"))
+for doc in ("AGENTS.md", os.path.join("references", "sinopac-broker.md")):
+    with open(os.path.join(ROOT, doc), encoding="utf-8") as fh:
+        check("永豐金" not in fh.read(), f"{doc} names SinoPac 永豐期貨, not 永豐金 (the agent may quote it to the user)")
 check(venue_traits.hand_wired_routed(["binance", "capital"]) == "capital"
       and venue_traits.hand_wired_routed(["binance", ""]) is None
       and venue_traits.hand_wired_routed(["Capital"]) is None,
