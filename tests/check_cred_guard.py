@@ -105,7 +105,8 @@ t("② KNOWN_GAPS 現在確實擋不到(擋到了就把它搬進 BLOCK)", not [c
 
 # 原始碼裡出現的 <券商>_vault.json／<券商>.pfx／<券商>_pfx_key.json 都要擋,帶路徑與 cd 進去不帶路徑兩種;
 # 新券商的檔名進了 code、regex 沒跟上就紅。c.pfx 是群益暫存憑證,在 capital_stage/ 底下,歸 capital_stage 那條管
-CRED_NAME_RE = re.compile(r"(?<![\w.])([a-z]+_vault\.json|[a-z]+\.pfx|[a-z]+_pfx_key\.json)\b")
+CRED_NAME_RE = re.compile(r"(?<![\w.])([a-z][a-z0-9_]*_vault\.json|[a-z][a-z0-9_]*\.pfx|[a-z][a-z0-9_]*_pfx_key\.json)\b",
+                          re.IGNORECASE)
 names = set()
 for d in ("runtime", "lib"):
     for dp, _, fs in os.walk(os.path.join(ROOT, d)):
@@ -115,7 +116,8 @@ for d in ("runtime", "lib"):
                     names.update(CRED_NAME_RE.findall(fh.read()))
 names.discard("c.pfx")
 t("② 原始碼掃到三家的 vault／pfx／pfx_key 檔名", {"sinopac_vault.json", "sinopac.pfx", "sinopac_pfx_key.json",
-  "capital_vault.json", "president_vault.json", "president.pfx"} <= names, sorted(names))
+  "capital_vault.json", "president_vault.json", "president.pfx", "capital_pfx_key.json",
+  "president_pfx_key.json"} <= names, sorted(names))
 missed = [c for n in sorted(names) for c in (f"cat ../credentials/{n}", f"cd ../credentials && base64 {n}")
           if not at.cred_bash_denied(c)]
 t(f"② 原始碼裡的 {len(names)} 個憑證檔名,帶路徑與 cd 進去不帶路徑都擋", not missed, missed)
