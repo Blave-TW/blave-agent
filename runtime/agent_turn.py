@@ -1681,7 +1681,8 @@ def cli_supports_updated_input(version):
 # with it. Like the scheduled guard this is a speed bump: a name assembled at run time, or a
 # listing piped into a reader, is not caught (tests/check_cred_guard.py KNOWN_GAPS).
 CRED_BASH_DENY_RE = re.compile(
-    r"\b(?:capital|president)_vault\.json\b|\b(?:capital|president)_pfx_key\b|\bpresident\.pfx\b"
+    r"\b(?:capital|president|sinopac)_vault\.json\b|\b(?:capital|president|sinopac)_pfx_key\b"
+    r"|\b(?:president|sinopac)\.pfx\b"
     r"|\bcapital_stage\b|\bpresident_logs\b"
     r"|(?:credentials|creden~\d)[\\/]+[^\s;&|'\"`<>]*(?:[*?\[]|~\d|\.pfx\b)"
     , re.IGNORECASE)
