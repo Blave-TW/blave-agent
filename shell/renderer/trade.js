@@ -317,14 +317,15 @@ function trHaltUnconfirmedNote(h) {
 function trHaltUnexplained(h) {
   return (h && h.halted && Array.isArray(h.unexplained) ? h.unexplained : []).filter((u) => u && typeof u.park_id === "string" && u.park_id);
 }
-// 群益的 park_id 是 "capital:TMF@…",統一的是合約 "TMFK6@…"(manager/reconciler._park_id);雲端事件沒有 venue／symbol,從 park_id 拆
+// 群益的 park_id 是 "capital:TMF@…"、永豐 "sinopac:TXF@…",統一的是合約 "TMFK6@…"(manager/reconciler._park_id);雲端事件沒有 venue／symbol,從 park_id 拆
 function trUnxVenue(u) {
-  const v = u && typeof u.venue === "string" && u.venue ? u.venue : String((u && u.park_id) || "").startsWith("capital:") ? "capital" : "president";
+  const m = /^(capital|sinopac):/.exec(String((u && u.park_id) || ""));
+  const v = u && typeof u.venue === "string" && u.venue ? u.venue : m ? m[1] : "president";
   return trVenueLabel(v, true);
 }
 function trUnxSym(u) {
   if (u && typeof u.symbol === "string" && u.symbol) return u.symbol;
-  return String((u && u.park_id) || "").replace(/^capital:/, "").split("@")[0];
+  return String((u && u.park_id) || "").replace(/^(?:capital|sinopac):/, "").split("@")[0];
 }
 /* 暫停原因行:HALT 檔有 unexplained 時,帳戶對不上那兩句放最前面(哪家、哪個標的、先核對、差額歸你),原本的底句照留在後面。
    兩家都列、標的去重;zh 句間不空格(designer halt-unexplained-copy-review §一 組裝規則,同網頁)。主機重開停住也接:HALT 檔與

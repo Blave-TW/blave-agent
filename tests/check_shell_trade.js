@@ -1083,6 +1083,8 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
         ok("帳戶對不上:券商與標的從 park_id 拆(雲端事件沒有這兩欄)",
           trUnxVenue(U("capital:TMF@1")) === "capital" && trUnxVenue(U("TMFK6@1")) === "president" && trUnxVenue(U("TMFK6@1", "capital")) === "capital"
           && trUnxSym(U("capital:TMF@1")) === "TMF" && trUnxSym(U("TMFK6@1.5")) === "TMFK6" && trUnxSym(U("x@1", null, "MXF")) === "MXF");
+        ok("帳戶對不上:永豐的 park_id sinopac:TXF@… 拆成永豐與 TXF,不是統一",
+          trUnxVenue(U("sinopac:TXF@1")) === "sinopac" && trUnxSym(U("sinopac:TXF@1")) === "TXF");
         ok("帳戶對不上:原因行升成正文墨色(用戶自己按的暫停也升)", /\|\| trAcctAsk\(hr\) \|\| trHaltUnexplained\(hr\.halt\)\.length\) \? trHaltReasonText\(hr, TR\.acctDone\)/.test(src));
         t = (k) => k; }
       { // 接回後讀帳是空的而自動暫停(designer rebind-autohalt-ux 3.2):專屬句;別的自動暫停、Z、主機重開照舊。比對字串是機器端 manager/reconciler.py 的原文
