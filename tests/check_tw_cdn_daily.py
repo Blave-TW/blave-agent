@@ -25,7 +25,7 @@ tests/fixtures/tw_free_daily/, and Blave is a stub.
     FeedNotPublished in a live scope; the whole-market path probes the exchange to tell a late CDN
     from a holiday
   - cloud lag: no exchange tail or probe; the holiday table tells a closed day (CDN frame, complete)
-    from an open one (Blave for the lagging id; no access + live → FeedNotPublished)
+    from an open one (the missing days from Blave for the lagging id; no access + live → FeedNotPublished)
 
 Run: cd blave-agent && MPLBACKEND=Agg .venv/bin/python tests/check_tw_cdn_daily.py
 """
@@ -647,7 +647,12 @@ def t_cloud_lag():
         if url.endswith("/twmarket/holidays"):
             return FakeResponse({"published": True, "year": 2024,
                                  "data": [{"date": d, "name": "test", "type": kind[0]} for d in closed]})
-        return blave_ok(url, **kw)
+        blave_calls.append(url)
+        rows = [{"date": d, "open": 1, "high": 2, "low": 1, "close": 2, "volume": 3} for d in (m["asof"], final)]
+        if "/batch/" in url:
+            ids = kw.get("params", {}).get("stock_ids", "").split(",")
+            return FakeResponse({"data": {i: rows for i in ids}, "failed": []})
+        return FakeResponse({"data": rows})
 
     def setup(blave_fn):
         cdn = fresh(manifest=m, blave=blave_fn)
@@ -681,9 +686,14 @@ def t_cloud_lag():
         setup(blave)
         df = D.fetch_twstock_price("2330", "2024-01-01", None, {"api-key": "x"})
         bat = D.fetch_twstock_price_adj_batch(["2330", "2603"], "2024-01-01", None, {"api-key": "x"})
-        check(df.attrs.get("source") == "Blave" and "via" not in bat["2330"].attrs
-              and bat["2603"].attrs.get("via") == "Blave CDN" and D._TW_PUBLIC_SESSION.calls == [],
-              "cloud, CDN a day short of an open session: Blave for the lagging id (2603 delisted: CDN), never the exchange")
+        asked = [u for u in blave_calls if not u.endswith("/holidays")]
+        check(df.attrs.get("via") == "Blave CDN" and df.attrs.get("tail_via") == "Blave"
+              and bat["2330"].attrs.get("via") == "Blave CDN" and bat["2330"].attrs.get("tail_via") == "Blave"
+              and bat["2330"].attrs.get("asof") == final and bat["2330"].index[-1] == pd.Timestamp(final)
+              and df.index[-1] == pd.Timestamp(final) and "tail_via" not in bat["2603"].attrs
+              and asked and D._TW_PUBLIC_SESSION.calls == [],
+              "cloud, CDN a day short of an open session: the CDN frame, the missing day asked of Blave for the "
+              "lagging id (2603 delisted: CDN only), never the exchange (tests/check_tw_cdn_blave_tail.py: the tail)")
         setup(lambda url, **kw: blave(url, **kw) if url.endswith("/holidays") else blave_no_access(url, **kw))
         try:
             with contextlib.redirect_stdout(io.StringIO()), D.live_feeds():

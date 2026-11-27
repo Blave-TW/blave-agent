@@ -2638,7 +2638,7 @@ def _tw_exright_for(stock_id, market, start, end):
     return events[events['stock_id'] == stock_id]
 
 
-def _tw_forward_adjust(df, events, first_bar=None):
+def _tw_forward_adjust(df, events, first_bar=None, factor_out=None):
     """後復權 by the api's forward_adjust rule (api/tw/twstock/adjuster.py): rows before an
     ex-date keep their price, rows from the ex-date on are multiplied by 除權息前收盤價 ÷
     除權息參考價. For cash and stock dividends that is prev_close × (1 + stock_ratio) ÷
@@ -2648,13 +2648,16 @@ def _tw_forward_adjust(df, events, first_bar=None):
     17:55 publish, when the api already has the morning-listed event and this frame does not.
     An event with no bar before it is skipped and OHLC is rounded to 2, both as there; "before"
     is the frame's first row, or `first_bar` (the stock's first day on the CDN) for a frame that
-    starts later — events from then to the frame's start still scale the whole frame."""
+    starts later — events from then to the frame's start still scale the whole frame.
+    `factor_out` (a list) receives the unrounded factor on the last row."""
     factor = pd.Series(1.0, index=df.index)
     first = pd.Timestamp(first_bar) if first_bar else df.index[0]
     for ex_date, prev_close, ref in events[['prev_close', 'ref_price']].sort_index().itertuples():
         if not (prev_close > 0 and ref > 0) or ex_date <= first:
             continue
         factor[df.index >= ex_date] *= prev_close / ref
+    if factor_out is not None:
+        factor_out.append(float(factor.iloc[-1]) if len(factor) else 1.0)
     out = df.copy()
     cols = [c for c in ('Open', 'High', 'Low', 'Close') if c in out.columns]
     out[cols] = out[cols].mul(factor, axis=0).round(2)
@@ -2948,18 +2951,24 @@ def _tw_cdn_adjust_fill(df, events, adjust, first_bar):
 
     The factors accumulate from the stock's first CDN day (`first_bar`, 2010-01-04 at the
     earliest), whatever the window: a stock gets one adjusted series, so two backtests with
-    different starts see the same prices on the days they share. It is still not the Blave
-    endpoint's level — that one accumulates from before 2010 (and through 興櫃 days the CDN does
-    not carry) — but it differs from it by one constant ratio per stock, so returns agree.
+    different starts see the same prices on the days they share. It is not the Blave endpoint's
+    series: that one accumulates from before 2010 (and through 興櫃 days the CDN does not carry)
+    and each is rounded to 2 decimals on its own level, so the ratio between them drifts and a
+    low-priced stock's daily returns differ (6235, 2609: up to ~0.4% a day). The two are never
+    joined as they are — a late CDN takes only its missing days from Blave, put on this base
+    (_tw_blave_tail). attrs['tw_factor'] is the unrounded factor on the last row, for that.
 
     Adjusting first is what
     the Blave endpoint does: a halted day has no price there, so an ex-date that falls inside a
     halt (6242 2016-08-31, 1805 2011-09-08 減資) shows the last traded adjusted price until the
     stock trades again. Filling first would carry the pre-event price into the event day and
     put a fake jump there, undone on the resumption day."""
+    factor = [1.0]
     if adjust and not df.empty:
-        df = _tw_forward_adjust(df, events, first_bar)
-    return df.ffill()
+        df = _tw_forward_adjust(df, events, first_bar, factor)
+    df = df.ffill()
+    df.attrs['tw_factor'] = factor[-1]
+    return df
 
 
 def _tw_slice(df, start, end):
@@ -3122,11 +3131,12 @@ def tw_not_trading(ids, day=None):
 
 
 def _tw_cdn_lagging(frames, end, manifest, headers):
-    """Ids whose CDN frame is short of the latest final — the caller asks Blave for them, which
-    has the final from 17:35, before the CDN publishes. On a cloud machine (no exchange to fill
-    or probe with) a gap whose weekdays are all closed in the holiday table is no gap: those
-    frames' attrs['asof'] move up to the final day and nothing lags. An unknown table counts as
-    a session, so the worst case is a Blave call, never a short frame taken as complete."""
+    """Ids whose CDN frame is short of the latest final — the caller asks Blave for the missing
+    days (_tw_blave_tail), which it has from 17:35, before the CDN publishes. On a cloud machine
+    (no exchange to fill or probe with) a gap whose weekdays are all closed in the holiday table
+    is no gap: those frames' attrs['asof'] move up to the final day and nothing lags. An unknown
+    table counts as a session, so the worst case is a Blave call, never a short frame taken as
+    complete."""
     behind, need = _tw_cdn_behind(frames, end, manifest)
     if not behind or tw_market_public_allowed():
         return behind
@@ -3137,6 +3147,55 @@ def _tw_cdn_lagging(frames, end, manifest, headers):
     for sid in behind:
         frames[sid].attrs['asof'] = need
     return []
+
+
+def _tw_tail_events(raw_close, adj_close):
+    """Cumulative event factor on each day after the first of `raw_close`, read from how the
+    Blave adjusted close moves against the raw one; a move within the 2-decimal rounding of the
+    adjusted prices is no event. None when the adjusted series lacks one of those days."""
+    if adj_close is None:
+        return None
+    a = adj_close.reindex(raw_close.index)
+    if a.isna().any() or raw_close.isna().any() or (raw_close <= 0).any():
+        return None
+    step = (a / a.shift()) / (raw_close / raw_close.shift())
+    bound = 0.005 * (1 / a + 1 / a.shift()) * 1.01 + 1e-9
+    return step.where((step - 1).abs() > bound, 1.0).iloc[1:].cumprod()
+
+
+def _tw_blave_tail(frames, ids, end, adjust, fetch):
+    """The days a lagging CDN frame lacks (`ids` in `frames`, each from its attrs['asof'] to the
+    latest 17:35 final), from Blave, on the CDN's adjustment base; frames are replaced in place.
+    The history stays the CDN's: Blave's adjusted series is on another base (see
+    _tw_cdn_adjust_fill), so joining it as it is would make a backtest's returns depend on the
+    hour it ran. A tail day is Blave's raw bar × the CDN frame's factor on its last day
+    (attrs['tw_factor']) × any event Blave's adjusted series shows since — on a day with no event,
+    the very number the CDN publishes. fetch(ids, start, adjust) → {id: Blave frame}; it may raise.
+    An id Blave has no bars for, or no adjusted day to read an event from, is left as it was."""
+    cap = min(end, _tw_official_expected_day()) if end else _tw_official_expected_day()
+    groups = {}
+    for sid in ids:
+        groups.setdefault(frames[sid].attrs['asof'], []).append(sid)
+    for asof, group in groups.items():
+        raw = fetch(group, asof, False)
+        adj = fetch(group, asof, True) if adjust else {}
+        for sid in group:
+            df, r = frames[sid], raw.get(sid)
+            if r is None or r.empty or (adjust and 'tw_factor' not in df.attrs):
+                continue
+            r = r[(r.index >= pd.Timestamp(asof)) & (r.index <= pd.Timestamp(cap))]
+            tail = r[r.index > pd.Timestamp(asof)].reindex(columns=df.columns)
+            if adjust and not tail.empty:
+                a = adj.get(sid)
+                ev = _tw_tail_events(r['Close'], None if a is None or a.empty else a['Close'])
+                if ev is None:
+                    continue
+                cols = [c for c in ('Open', 'High', 'Low', 'Close') if c in tail.columns]
+                tail[cols] = tail[cols].mul(ev * df.attrs['tw_factor'], axis=0).round(2)
+            out = pd.concat([df, tail]) if not tail.empty else df.copy()
+            out.attrs = {**df.attrs, 'asof': cap, 'tail_via': 'Blave',
+                         'tail_from': str(tail.index[0].date()) if not tail.empty else None}
+            frames[sid] = out
 
 
 def _tw_final_only(df):
@@ -3227,8 +3286,9 @@ def _twstock_cdn_frames(on_cdn, start, end, adjust, manifest):
 def _twstock_batch(blave_call, stock_ids, start, end, adjust, headers=None):
     """Batch daily bars. 'cdn' (the default, see _twstock_daily_source): the Blave CDN for every
     id it lists from its first day on, then `blave_call(ids)` for the rest — ids the CDN does not
-    list (興櫃, a listing newer than the manifest), a start before 2010-01-04, a CDN that is down,
-    and ids whose CDN frame stops before the latest final (_tw_cdn_lagging). Without Blave access
+    list (興櫃, a listing newer than the manifest), a start before 2010-01-04, a CDN that is down;
+    an id whose CDN frame stops before the latest final (_tw_cdn_lagging) keeps it and takes only
+    the missing days from Blave (_tw_blave_tail). Without Blave access
     (DataAccessError, 401/403) the desktop goes on to the key-free single-stock chain for what is
     still missing; a cloud machine raises the access error. Ids still missing → BatchIncomplete.
     A CDN frame still short of the latest final → FeedNotPublished in a live scope, else a ⚠️
@@ -3247,7 +3307,19 @@ def _twstock_batch(blave_call, stock_ids, start, end, adjust, headers=None):
     on_cdn = [i for i in ids if i in manifest['stocks']] if manifest and start >= first_day else []
     results, whole = _twstock_cdn_frames(on_cdn, start, end, adjust, manifest) if on_cdn else ({}, False)
     lagging = _tw_cdn_lagging(results, end, manifest, headers)
-    rest = [i for i in ids if i not in results or i in lagging]
+    if lagging:
+        def _tail(group, s, adj):
+            try:
+                return _tw_blave_daily_batch(group, s, end, headers, adj)
+            except BatchIncomplete as e:
+                return e.partial
+        try:
+            _tw_blave_tail(results, lagging, end, adjust, _tail)
+        except Exception as e:
+            if not _no_blave_access(e):
+                print(f"  ⚠️  台股 batch: Blave failed for the days after the CDN's ({type(e).__name__}: "
+                      f"{str(e)[:100]}) — serving the CDN through its day")
+    rest = [i for i in ids if i not in results]
     no_access = None
     if rest:
         try:
@@ -3297,7 +3369,7 @@ def _twstock_daily(stock_id, start, end, headers, adjust, blave_fn):
     """Source chain for the two daily entries, logging which one served:
     'cdn' (the default) Blave CDN → Blave (`blave_fn`; a desktop without data access falls
     straight through) → exchange → FinMind free, the last two on the desktop only; a CDN frame
-    short of the latest final (_tw_cdn_lagging) is replaced by Blave's when Blave answers.
+    short of the latest final (_tw_cdn_lagging) takes the missing days from Blave (_tw_blave_tail).
     'public' exchange → FinMind free → Blave; 'blave' the Blave endpoint only — and so does a
     malformed `start`, whose Blave 400 names the expected format."""
     try:
@@ -3323,12 +3395,15 @@ def _twstock_daily(stock_id, start, end, headers, adjust, blave_fn):
             print(f"  ⚠️  {stock_id} daily bars: Blave CDN failed ({type(e).__name__}: {str(e)[:120]}) — trying Blave")
         if not errors:
             if _tw_cdn_lagging({stock_id: df}, end, manifest, headers):
+                frames = {stock_id: df}
                 try:
-                    return _blave()
+                    _tw_blave_tail(frames, [stock_id], end, adjust, lambda group, s, adj: {
+                        i: _tw_blave_daily(i, s, end, headers, adj) for i in group})
                 except Exception as e:
                     if not _no_blave_access(e):
                         print(f"  ⚠️  {stock_id} daily bars: Blave failed ({type(e).__name__}: {str(e)[:120]}) "
                               f"— serving the CDN through {df.attrs['asof']}")
+                df = frames[stock_id]
             # outside the try: a refusal must not send the chain on to the next source
             _tw_cdn_refuse_behind({stock_id: df}, end, manifest, (17, 35), f'{stock_id} daily bars')
             logging.info('%s daily bars served by the Blave CDN (%s)', stock_id, df.attrs['source'])
@@ -3373,6 +3448,38 @@ def _twstock_daily(stock_id, start, end, headers, adjust, blave_fn):
         raise
 
 
+def _tw_daily_note(frames, start):
+    """BLAVE_TW_DAILY_NOTE=<path> (set by the strategy-library update machine, api oos_machine): one
+    JSON line per Taiwan daily request counting its frames by where they came from — 'cdn',
+    'cdn+blave_tail', 'blave' (an id the CDN does not list, a start before it), 'blave_not_cdn' (an
+    id the CDN lists, served by Blave because the CDN failed: another adjustment base) or
+    'exchange' — so a run can tell whether its history is the CDN's. Unset: nothing."""
+    path = os.environ.get('BLAVE_TW_DAILY_NOTE')
+    if not path:
+        return
+    try:
+        m = json.loads(_read_text(_tw_cdn_dir() / 'manifest.json'))
+        listed = set(m['stocks']) if start >= m.get('first_day', _TW_CDN_FIRST_DAY) else set()
+    except Exception:
+        listed = None   # the CDN never answered: count Blave as standing in for it
+    kinds, off = {}, []
+    for sid, df in frames.items():
+        if df.attrs.get('via') == 'Blave CDN':
+            k = 'cdn+blave_tail' if df.attrs.get('tail_via') else 'cdn'
+        elif df.attrs.get('source') in ('TWSE', 'TPEx', 'FinMind'):
+            k = 'exchange'
+        else:
+            k = 'blave_not_cdn' if listed is None or sid in listed else 'blave'
+        kinds[k] = kinds.get(k, 0) + 1
+        if k == 'blave_not_cdn':
+            off.append(sid)
+    try:
+        with open(path, 'a', encoding='utf-8') as f:
+            f.write(json.dumps({'kinds': kinds, 'not_cdn': off[:20]}) + '\n')
+    except OSError:
+        pass
+
+
 def _fetch_twstock_price_raw(stock_id, start, end, headers):
     end_str = end or datetime.utcnow().strftime('%Y-%m-%d')
     r = _retry_get(f'{BASE}/studio/market/twstock/price_adj/{stock_id}',
@@ -3387,6 +3494,14 @@ def _fetch_twstock_price_raw(stock_id, start, end, headers):
     return df.replace(0, float('nan')).ffill()
 
 
+def _tw_blave_daily(stock_id, start, end, headers, adjust):
+    """One stock's daily bars from the Blave endpoint (price_adj / price), through its cache."""
+    raw_fn = _fetch_twstock_price_raw if adjust else _fetch_twstock_price_nonadj_raw
+    return _extend_cache_monthly(
+        'twstock_price3' if adjust else 'twstock_price_nonadj', {'id': stock_id},
+        lambda s, e: raw_fn(stock_id, s, e, headers), start, end)
+
+
 def fetch_twstock_price_adj(stock_id, start, end, headers):
     """台股向後調整日K（除權息還原價）. Returns DataFrame with Open/Close columns.
     Use for backtesting — prices are dividend-adjusted so returns are comparable across time.
@@ -3394,13 +3509,9 @@ def fetch_twstock_price_adj(stock_id, start, end, headers):
     Served without a key from the stock's own exchange (TWSE / TPEx, adjusted with their
     除權息計算結果表), then FinMind's free tier, then the Blave endpoint — see
     _fetch_twstock_daily_public; df.attrs['source'] names the one that answered."""
-    def _blave():
-        return _extend_cache_monthly(
-            'twstock_price3', {'id': stock_id},
-            lambda s, e: _fetch_twstock_price_raw(stock_id, s, e, headers),
-            start, end,
-        )
-    df = _twstock_daily(stock_id, start, end, headers, True, _blave)
+    df = _twstock_daily(stock_id, start, end, headers, True,
+                        lambda: _tw_blave_daily(stock_id, start, end, headers, True))
+    _tw_daily_note({stock_id: df}, start)
     return df[['Open', 'Close']] if {'Open', 'Close'} <= set(df.columns) else df
 
 
@@ -3428,13 +3539,9 @@ def fetch_twstock_price(stock_id, start, end, headers):
     Volume in shares, TPEx rounded to the thousand), then FinMind's free tier, then the Blave
     endpoint — see _fetch_twstock_daily_public; df.attrs['source'] names the one that
     answered."""
-    def _blave():
-        return _extend_cache_monthly(
-            'twstock_price_nonadj', {'id': stock_id},
-            lambda s, e: _fetch_twstock_price_nonadj_raw(stock_id, s, e, headers),
-            start, end,
-        )
-    df = _twstock_daily(stock_id, start, end, headers, False, _blave)
+    df = _twstock_daily(stock_id, start, end, headers, False,
+                        lambda: _tw_blave_daily(stock_id, start, end, headers, False))
+    _tw_daily_note({stock_id: df}, start)
     return _sanity_check_ohlc(df, f'{stock_id} twstock price')
 
 
@@ -5513,17 +5620,38 @@ def fetch_twstock_shareholding_batch(stock_ids, start, end, headers):
         stock_ids, start, end, headers)
 
 
+def _tw_parse_adj_records(records):
+    df = pd.DataFrame(records)
+    df['date'] = pd.to_datetime(df['date'])
+    df = df.set_index('date').sort_index()[['open', 'close']].rename(
+        columns={'open': 'Open', 'close': 'Close'}).astype(float)
+    return df.replace(0, float('nan')).ffill()
+
+
+def _tw_parse_raw_records(records):
+    df = pd.DataFrame(records)
+    df['date'] = pd.to_datetime(df['date'])
+    cols = [c for c in ['open', 'high', 'low', 'close', 'volume'] if c in df.columns]
+    df = df.set_index('date').sort_index()[cols].rename(
+        columns={'open': 'Open', 'high': 'High', 'low': 'Low',
+                 'close': 'Close', 'volume': 'Volume'}).astype(float)
+    return df.replace(0, float('nan')).ffill()
+
+
+def _tw_blave_daily_batch(stock_ids, start, end, headers, adjust):
+    """Daily bars for many stocks from the Blave batch endpoint (price_adj / price), cached."""
+    if adjust:
+        return _fetch_twstock_cached_batch('twstock_price3', 'price_adj', _fetch_twstock_price_raw,
+                                           _tw_parse_adj_records, stock_ids, start, end, headers)
+    return _fetch_twstock_cached_batch('twstock_price_nonadj', 'price', _fetch_twstock_price_nonadj_raw,
+                                       _tw_parse_raw_records, stock_ids, start, end, headers)
+
+
 def fetch_twstock_price_adj_batch(stock_ids, start, end, headers):
     """Batch fetch 台股向後調整日K. Returns dict {stock_id: DataFrame(Open, Close)}."""
-    def _parse(records):
-        df = pd.DataFrame(records)
-        df['date'] = pd.to_datetime(df['date'])
-        df = df.set_index('date').sort_index()[['open', 'close']].rename(
-            columns={'open': 'Open', 'close': 'Close'}).astype(float)
-        return df.replace(0, float('nan')).ffill()
-    results = _twstock_batch(lambda ids: _fetch_twstock_cached_batch(
-        'twstock_price3', 'price_adj', _fetch_twstock_price_raw, _parse,
-        ids, start, end, headers), stock_ids, start, end, True, headers)
+    results = _twstock_batch(lambda ids: _tw_blave_daily_batch(ids, start, end, headers, True),
+                             stock_ids, start, end, True, headers)
+    _tw_daily_note(results, start)
     return {sid: df[['Open', 'Close']] if {'Open', 'Close'} <= set(df.columns) else df
             for sid, df in results.items()}
 
@@ -5533,17 +5661,9 @@ def fetch_twstock_price_batch(stock_ids, start, end, headers):
     High, Low, Close, Volume)}. Same data and cache as fetch_twstock_price — use for
     High/Low-based screens (KD, breakout, range) across many stocks; do NOT use for
     backtesting across ex-dividend dates (use fetch_twstock_price_adj_batch)."""
-    def _parse(records):
-        df = pd.DataFrame(records)
-        df['date'] = pd.to_datetime(df['date'])
-        cols = [c for c in ['open', 'high', 'low', 'close', 'volume'] if c in df.columns]
-        df = df.set_index('date').sort_index()[cols].rename(
-            columns={'open': 'Open', 'high': 'High', 'low': 'Low',
-                     'close': 'Close', 'volume': 'Volume'}).astype(float)
-        return df.replace(0, float('nan')).ffill()
-    results = _twstock_batch(lambda ids: _fetch_twstock_cached_batch(
-        'twstock_price_nonadj', 'price', _fetch_twstock_price_nonadj_raw, _parse,
-        ids, start, end, headers), stock_ids, start, end, False, headers)
+    results = _twstock_batch(lambda ids: _tw_blave_daily_batch(ids, start, end, headers, False),
+                             stock_ids, start, end, False, headers)
+    _tw_daily_note(results, start)
     return {sid: _sanity_check_ohlc(df, f'{sid} twstock price')
             for sid, df in results.items()}
 
