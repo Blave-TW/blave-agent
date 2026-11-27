@@ -5687,6 +5687,252 @@ def fetch_twstock_price_batch(stock_ids, start, end, headers):
             for sid, df in results.items()}
 
 
+_TW_WIDE_FIELDS = {'Open': 'open', 'High': 'high', 'Low': 'low', 'Close': 'close', 'Volume': 'volume',
+                   'Amount': 'amount'}
+_TW_WIDE_PRICES = ('Open', 'High', 'Low', 'Close')
+
+
+def fetch_twstock_wide(stock_ids, start, end, headers, fields=('Open', 'Close'), adjust=True):
+    """台股日線寬表 for a large pool: {field: DataFrame(date × stock_id)} — fields from Open, High,
+    Low, Close (adjusted when `adjust`, as fetch_twstock_price_adj_batch; raw OHLC as
+    fetch_twstock_price_batch, with its invalid-bar drop), Volume (shares) and Amount (成交金額,
+    TWD). The prices are the batch's, cell for cell, built straight from the Blave CDN's
+    whole-market files without one DataFrame per stock: the whole market 2015 on is about 0.85 GB
+    at its peak for Open + Close, the batch about 2.5 GB.
+
+    Volume and Amount are the exchange's numbers as they are — 0 on a listed day with no trade —
+    not carried forward like the batch's Volume. A stock's days without a row (before it lists,
+    halted all day, after a delisting) are NaN in every field. Columns: the ids asked, in order,
+    that have at least one row in the window; the index is every day any of them has a row.
+    attrs['asof'] (on each table) = the day the tables are complete through.
+
+    Same sources and refusals as the batch: a CDN short of the latest 17:35 final takes the
+    missing days from Blave (_tw_blave_tail; Amount is NaN on those days — Blave does not serve
+    it), and in a live scope a table still short raises FeedNotPublished; ids the CDN does not
+    list come from the batch chain (Blave, the desktop's key-free sources), as does everything
+    when the CDN cannot serve — their Volume then is the batch's and Amount NaN (a ⚠️ line says
+    so). BatchIncomplete / an access error as the batch raises them."""
+    fields = tuple(fields)
+    if not fields or any(f not in _TW_WIDE_FIELDS for f in fields):
+        raise ValueError(f'fetch_twstock_wide: fields must be some of {list(_TW_WIDE_FIELDS)}, got {fields}')
+    ids = list(dict.fromkeys(str(i) for i in stock_ids))
+    manifest = None
+    if _twstock_daily_source() == 'cdn':
+        try:
+            manifest = _tw_cdn_manifest()
+        except TwCdnUnavailable as e:
+            print(f"  ⚠️  台股寬表: Blave CDN unavailable ({e}) — using the batch")
+    on_cdn = [i for i in ids if i in manifest['stocks']] \
+        if manifest and start >= manifest.get('first_day', _TW_CDN_FIRST_DAY) else []
+    whole = len(on_cdn) > _TW_CDN_WHOLE_MARKET_IDS or (on_cdn and {'Volume', 'Amount'} & set(fields))
+    tables = None
+    if whole:
+        try:
+            tables, meta = _tw_wide_cdn(on_cdn, start, end, fields, adjust, manifest, headers)
+        except (TwCdnUnavailable, OSError) as e:
+            print(f"  ⚠️  台股寬表: Blave CDN whole-market files unavailable ({type(e).__name__}: {str(e)[:100]}) "
+                  f"— using the batch")
+    if tables is None:
+        meta, on_cdn = {}, []
+    else:
+        _tw_cdn_refuse_behind(meta, end, manifest, _TW_CDN_PUBLISHED, '台股寬表')
+    rest = [i for i in ids if i not in on_cdn]
+    if rest:
+        frames = _twstock_batch(lambda r: _tw_blave_daily_batch(r, start, end, headers, adjust),
+                                rest, start, end, adjust, headers)
+        if not adjust:
+            frames = {sid: _sanity_check_ohlc(df, f'{sid} twstock price') for sid, df in frames.items()}
+        if {'Volume', 'Amount'} & set(fields):
+            print(f"  ⚠️  台股寬表: {len(rest)} id(s) not served from the Blave CDN files — their Volume is the "
+                  f"batch's (carried forward on untraded days), Amount is NaN")
+        meta.update(frames)
+        extra = {f: pd.DataFrame({sid: df[f] for sid, df in frames.items() if not df.empty and f in df.columns})
+                 for f in fields}
+        if tables is None:
+            tables = {f: extra[f] for f in fields}
+        else:
+            tables = {f: pd.concat([tables[f], extra[f]], axis=1) for f in fields}
+    _tw_daily_note(meta, start)
+    order = [i for i in ids if any(i in tables[f].columns and tables[f][i].notna().any() for f in fields)
+             or (i in meta and not meta[i].empty)]
+    asof = min((df.attrs['asof'] for df in meta.values() if df.attrs.get('asof')), default=None)
+    out = {}
+    for f in fields:
+        t = tables[f].reindex(columns=order)
+        t = t.sort_index()
+        t.index.name = 'date'
+        t.attrs = {'asof': asof} if asof else {}
+        out[f] = t
+    index = out[fields[0]].index
+    for f in fields[1:]:
+        index = index.union(out[f].index)
+    return {f: t.reindex(index) if not t.index.equals(index) else t for f, t in out.items()}
+
+
+def _tw_wide_cdn(ids, start, end, fields, adjust, manifest, headers):
+    """The CDN part of fetch_twstock_wide → ({field: DataFrame}, {id: empty frame with the batch's
+    attrs}). The batch's own lag chain runs on the attrs frames: a lagging id gets a one-row frame
+    (its last CDN day and factor) that _tw_blave_tail extends, and the tail rows go back into the
+    tables."""
+    import pyarrow.compute as pc
+    last = min(end or manifest['asof'], manifest['asof'])
+    years = [y for y in sorted(manifest['years']) if y.isdigit() and len(y) == 4 and start[:4] <= y <= last[:4]]
+    need = set(fields) | (set(_TW_WIDE_PRICES) if not adjust else set())
+    cols = ['stock_id', 'date'] + [_TW_WIDE_FIELDS[f] for f in _TW_WIDE_FIELDS if f in need]
+    paths = [_tw_cdn_hashed(f'year/{y}.parquet', manifest,
+                            None if manifest['years'][y].get('immutable') else manifest.get('recent_from'))
+             for y in years]
+    paths.append(_tw_cdn_hashed('recent.parquet', manifest))
+    events = _read_parquet(_tw_cdn_hashed('events.parquet', manifest))
+    complete = _tw_cdn_whole_complete(ids, end, manifest)
+    # from the start year's first day, as the batch: a stock untraded on the window's first days
+    # carries the price before the window in (filled first, cut to `start` after)
+    lo = pa.scalar(pd.Timestamp(start[:4] + '-01-01').date())
+    hi = pa.scalar(pd.Timestamp(end).date()) if end else None
+    want = pa.array(ids)
+    parts = []
+    for p in paths:
+        t = _read_table(p, columns=cols)
+        keep = pc.and_(pc.is_in(t['stock_id'], value_set=want), pc.greater_equal(t['date'], lo))
+        if hi is not None:
+            keep = pc.and_(keep, pc.less_equal(t['date'], hi))
+        parts.append(t.filter(keep))
+    days = np.unique(np.concatenate([p['date'].to_numpy() for p in parts] + [np.array([], 'datetime64[D]')]))
+    present = set().union(*(pc.unique(p['stock_id']).to_pylist() for p in parts))
+    columns = [i for i in ids if i in present]
+    cpos = {s: k for k, s in enumerate(columns)}
+    shape = (len(days), len(columns))
+    arrays = {f: np.full(shape, np.nan) for f in _TW_WIDE_FIELDS if f in need}
+    has_row = np.zeros(shape, dtype=bool)
+    for t in parts:   # the years in order, then recent.parquet: a later file's row wins (the batch's keep='last')
+        r = np.searchsorted(days, t['date'].to_numpy())
+        enc = t['stock_id'].combine_chunks().dictionary_encode()
+        c = np.array([cpos[s] for s in enc.dictionary.to_pylist()], dtype=np.int64)[enc.indices.to_numpy()]
+        has_row[r, c] = True
+        for f, a in arrays.items():
+            a[r, c] = t[_TW_WIDE_FIELDS[f]].to_numpy(zero_copy_only=False).astype(float)
+    del parts
+    index = pd.DatetimeIndex(days.astype('datetime64[ns]'), name='date')
+    factor = np.ones(shape)
+    if adjust and columns:
+        ev = events[events['stock_id'].isin(columns) & (events['prev_close'] > 0) & (events['ref_price'] > 0)]
+        ev_day = pd.to_datetime(ev['date'])
+        first = pd.to_datetime(ev['stock_id'].map(lambda s: manifest['stocks'][s][1]))
+        ev, ev_day = ev[ev_day > first], ev_day[ev_day > first]
+        step = np.ones((len(days) + 1, len(columns)))
+        # an event before the window scales the whole window, one after its last day nothing
+        np.multiply.at(step, (index.searchsorted(ev_day.to_numpy(), 'left'),
+                              pd.Index(columns).get_indexer(ev['stock_id'])),
+                       (ev['prev_close'] / ev['ref_price']).to_numpy())
+        factor = np.cumprod(step[:-1], axis=0)
+        del step
+    for f, a in arrays.items():
+        if f in _TW_WIDE_PRICES:
+            a[a == 0] = np.nan
+            if adjust:
+                np.round(a * factor, 2, out=a)
+            a[:] = pd.DataFrame(a).ffill().to_numpy()
+        a[~has_row] = np.nan
+    cut = index >= pd.Timestamp(start)
+    if not cut.all():
+        arrays = {f: a[cut] for f, a in arrays.items()}
+        has_row, factor, index = has_row[cut], factor[cut], index[cut]
+        k = has_row.any(axis=0)
+        if not k.all():   # a stock whose rows all fall before `start` is not a column, as in the batch
+            columns = [c for c, keep in zip(columns, k) if keep]
+            arrays = {f: a[:, k] for f, a in arrays.items()}
+            has_row, factor = has_row[:, k], factor[:, k]
+    if not adjust:
+        _tw_wide_drop_invalid(arrays, has_row)
+        keep = has_row.any(axis=1)   # a day whose only bars were dropped is not a day of the batch's tables
+        if not keep.all():
+            arrays = {f: a[keep] for f, a in arrays.items()}
+            has_row, factor, index = has_row[keep], factor[keep], index[keep]
+    tables = {f: pd.DataFrame(arrays.pop(f), index=index, columns=columns) for f in fields}
+    del arrays
+
+    def stub(sid):
+        df = pd.DataFrame(columns=_TW_DAILY_COLS)
+        df.attrs.update({'source': 'TWSE' if manifest['stocks'][sid][0] == 'twse' else 'TPEx',
+                         'via': 'Blave CDN', 'asof': complete})
+        return df
+    meta = {sid: stub(sid) for sid in ids}
+    lagging = _tw_cdn_lagging(meta, end, manifest, headers)
+    if lagging:
+        _tw_wide_tail(tables, meta, lagging, factor, has_row, columns, index, end, adjust, headers)
+    return tables, meta
+
+
+def _tw_wide_tail(tables, meta, lagging, factor, has_row, columns, index, end, adjust, headers):
+    """The batch's Blave tail for the lagging ids, joined onto the tables in place."""
+    rows = {}
+    for sid in lagging:
+        k = columns.index(sid) if sid in columns else None
+        last = np.flatnonzero(has_row[:, k]) if k is not None else []
+        if not len(last):
+            continue
+        day = index[last[-1]]
+        df = pd.DataFrame({c: [np.nan] for c in _TW_DAILY_COLS}, index=pd.DatetimeIndex([day], name='date'))
+        df.attrs.update({**meta[sid].attrs, 'tw_factor': float(factor[last[-1], k])})
+        rows[sid] = df
+        meta[sid] = df
+
+    def _tail(group, s, adj):
+        try:
+            return _tw_blave_daily_batch(group, s, end, headers, adj)
+        except BatchIncomplete as e:
+            return e.partial
+    try:
+        _tw_blave_tail(meta, list(rows), end, adjust, _tail)
+    except Exception as e:
+        if not _no_blave_access(e):
+            print(f"  ⚠️  台股寬表: Blave failed for the days after the CDN's ({type(e).__name__}: "
+                  f"{str(e)[:100]}) — serving the CDN through its day")
+    for sid, one in rows.items():
+        df = meta[sid]
+        meta[sid] = _tw_attrs_only(df)
+        tail = df[df.index > one.index[0]]
+        if tail.empty:
+            continue
+        if not adjust:
+            tail = _sanity_check_ohlc(tail, f'{sid} twstock price')
+        for f, t in tables.items():
+            if f == 'Amount' or f not in tail.columns:
+                continue
+            new = tail.index.difference(t.index)
+            if len(new):
+                tables[f] = t = pd.concat([t, pd.DataFrame(np.nan, index=new, columns=t.columns)]).sort_index()
+            t.loc[tail.index, sid] = tail[f].to_numpy(float)
+
+
+def _tw_attrs_only(df):
+    out = pd.DataFrame(columns=_TW_DAILY_COLS)
+    out.attrs = dict(df.attrs)
+    return out
+
+
+def _tw_wide_drop_invalid(arrays, has_row):
+    """_sanity_check_ohlc on the raw tables: a bar with high < low or a missing / non-positive price
+    is dropped (NaN in every field), an open or close outside the range widens it."""
+    o, h, l, c = (arrays[f] for f in _TW_WIDE_PRICES)
+    with np.errstate(invalid='ignore'):
+        bad = has_row & ((h < l) | np.isnan(o) | np.isnan(h) | np.isnan(l) | np.isnan(c)
+                         | (o <= 0) | (h <= 0) | (l <= 0) | (c <= 0))
+    if bad.any():
+        print(f"  ⚠️  台股寬表: dropped {int(bad.sum())} bar(s) with invalid OHLC (high<low, non-positive or NaN price) "
+              f"in {int(bad.any(axis=0).sum())} id(s)")
+        for a in arrays.values():
+            a[bad] = np.nan
+        has_row &= ~bad
+    with np.errstate(invalid='ignore'):
+        body_hi, body_lo = np.fmax(o, c), np.fmin(o, c)
+        fix = has_row & ((h < body_hi * (1 - 1e-9)) | (l > body_lo * (1 + 1e-9)))
+    if fix.any():
+        print(f"  ⚠️  台股寬表: widened the high/low of {int(fix.sum())} bar(s) whose open or close lay outside it")
+        h[fix] = np.maximum(h, body_hi)[fix]
+        l[fix] = np.minimum(l, body_lo)[fix]
+
+
 def fetch_twstock_per_batch(stock_ids, start, end, headers):
     """Batch fetch 台股每日本益比/股價淨值比/殖利率. Returns dict {stock_id:
     DataFrame(dividend_yield, PER, PBR)}. Same data and cache as fetch_twstock_per —
@@ -9034,7 +9280,7 @@ _PRICE_FETCHERS = {
     'fetch_kline': 'crypto', 'fetch_kline_batch': 'crypto', 'fetch_bingx_kline': 'crypto',
     'fetch_okx_kline': 'crypto', 'fetch_binance_ticker_24h': 'crypto',
     'fetch_twstock_price': 'tw', 'fetch_twstock_price_adj': 'tw',
-    'fetch_twstock_price_batch': 'tw', 'fetch_twstock_price_adj_batch': 'tw',
+    'fetch_twstock_price_batch': 'tw', 'fetch_twstock_price_adj_batch': 'tw', 'fetch_twstock_wide': 'tw',
     'fetch_twstock_ohlcv': 'tw', 'fetch_twstock_quote': 'tw', 'fetch_twstock_quote_batch': 'tw',
     'fetch_twstock_quote_all': 'tw',
     'fetch_twse_day_all_public': 'tw', 'fetch_twmarket_index': 'tw',

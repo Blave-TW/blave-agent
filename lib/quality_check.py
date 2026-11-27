@@ -381,7 +381,7 @@ _PRICE_OR_META_FETCHERS = {
     "fetch_data",  # the strategy's own entry point
     "fetch_kline", "fetch_kline_batch", "fetch_bingx_kline", "fetch_okx_kline", "fetch_db_kline",
     "fetch_twstock_price", "fetch_twstock_price_adj",
-    "fetch_twstock_price_batch", "fetch_twstock_price_adj_batch",
+    "fetch_twstock_price_batch", "fetch_twstock_price_adj_batch", "fetch_twstock_wide",
     "fetch_twstock_ohlcv", "fetch_twstock_quote", "fetch_twstock_quote_batch", "fetch_usstock_price",
     "fetch_twfutures_ohlcv", "fetch_twfutures_ohlcv_batch",
     "fetch_stock_futures_batch_daily",
@@ -642,6 +642,7 @@ _DESKTOP_PUBLIC_DATA = frozenset({
     "fetch_twse_day_all_public", "tw_market_public_allowed",
     # 台股日K:電腦版沒有資料權限時改走公開 CDN(lib/data.py _twstock_daily / _twstock_batch,2010 起),不需要 Blave 資料 key
     "fetch_twstock_price", "fetch_twstock_price_adj", "fetch_twstock_price_batch", "fetch_twstock_price_adj_batch",
+    "fetch_twstock_wide",
     "align_feed", "feed_available_at", "join_tw_flow", "normalize_symbol",
     "settlement_signals_from_db", "tw_not_trading", "twstock_industry_name", "txf_settlement_mask",
     "us_market_closed",
@@ -691,7 +692,7 @@ _BLAVE_DATA = frozenset({
 })
 # Batch Taiwan daily bars come only from the CDN on a keyless desktop, and the CDN
 # starts on this day: an earlier (or unreadable) START is "can't tell" (None).
-_TW_CDN_BATCH = frozenset({"fetch_twstock_price_batch", "fetch_twstock_price_adj_batch"})
+_TW_CDN_BATCH = frozenset({"fetch_twstock_price_batch", "fetch_twstock_price_adj_batch", "fetch_twstock_wide"})
 _TW_CDN_FIRST_DAY = "2010-01-04"   # = lib/data.py _TW_CDN_FIRST_DAY
 # Classes and constants that carry no fetch. BASE is deliberately absent: a
 # strategy that takes it builds its own Blave URL.

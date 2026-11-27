@@ -1308,7 +1308,7 @@ def _naive_utc(iso):
 # = workspace manager/wait_for_bar._TW_STOCK_DAILY_FETCHERS (tests/check_tw_stock_bar_calendar)
 _TW_STOCK_DAILY_FETCHERS = frozenset((
     "fetch_twstock_price", "fetch_twstock_price_adj", "fetch_twstock_price_batch",
-    "fetch_twstock_price_adj_batch"))
+    "fetch_twstock_price_adj_batch", "fetch_twstock_wide"))
 
 
 def _tw_stock_daily(name, cfg):

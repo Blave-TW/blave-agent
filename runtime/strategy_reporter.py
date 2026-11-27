@@ -276,6 +276,7 @@ _PRICE_FETCHERS = {
     "fetch_okx_kline": "crypto",
     "fetch_twstock_price": "tw_stock", "fetch_twstock_price_adj": "tw_stock",
     "fetch_twstock_price_batch": "tw_stock", "fetch_twstock_price_adj_batch": "tw_stock",
+    "fetch_twstock_wide": "tw_stock",
     "fetch_twstock_ohlcv": "tw_stock",
     "fetch_twfutures_ohlcv": _TW_FUTURES, "fetch_twfutures_ohlcv_batch": _TW_FUTURES,
     "fetch_txf_daily_public": _TW_FUTURES,

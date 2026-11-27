@@ -3590,7 +3590,8 @@ def _tw_fut_open_s(t0, t1):
 _wake_hold = None          # {'down_to': epoch, 'until': epoch}
 _wake_hold_logged = set()
 _TW_STOCK_DAILY_FETCHERS = frozenset(("fetch_twstock_price", "fetch_twstock_price_adj",
-                                      "fetch_twstock_price_batch", "fetch_twstock_price_adj_batch"))
+                                      "fetch_twstock_price_batch", "fetch_twstock_price_adj_batch",
+                                      "fetch_twstock_wide"))
 
 
 def set_wake_hold(down_to, until):

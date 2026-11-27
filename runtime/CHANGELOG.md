@@ -8,6 +8,8 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **`fetch_twstock_wide` 認成台股日線價格來源(`strategy_reporter._PRICE_FETCHERS` → `tw_stock`、`portfolio_reporter._TW_STOCK_DAILY_FETCHERS`;workspace 的 `manager/wait_for_bar`、`lib/portfolio` 同步)**:lib 新增的全市場寬表(spec typec-iterate-return-floor §8.4(a))。沒有這兩條,用它的策略 `strategy_market` 是 None:綁加密交易所不會被拒、台股交易日曆與醒來保持不套用。**這版 runtime 要先 promote 全機隊(電腦版跟它一起打包),範本／範例／references 才能改用 `fetch_twstock_wide`**(那顆另一個 commit)。測試 `tests/check_price_fetchers.py`、`tests/check_tw_stock_bar_calendar.py`。
+
 ## 1.1.175 — 2026-11-27(desktop 0.1.64:永豐連接中寬限 195 秒、雲端更新遇永豐忙也自動重試)
 
 - **更新雲端主機遇到永豐下單程式忙也自動再跑一次(`ws_update.retry_due`)**:原本只有 reconciler 重啟等過 `--wait-busy` 還在忙(`restart: busy`)才 plan＋apply 再跑一次;永豐 worker 有單在送(`sinopac_worker: busy`,c33d5f4a 的欠債)時直接停在 `restart_deferred`,要用戶再按一次。現在兩者都算,同一個 600 秒上限、只重試一次;reconciler 那邊是 `refused`(檔被擋)或永豐重啟失敗(`restart_failed`)照舊不重試。步驟 log 第一次與重試那行都多記 `sinopac=`。`references/updating.md` 手動更新的 *Safe moment* 補一句 `sinopac_worker: busy` 同樣再跑一次(workspace,根 VERSION 2026-11-27-c,隨 0.1.64)。測試 `tests/check_ws_update_cmd.py` 9b。
