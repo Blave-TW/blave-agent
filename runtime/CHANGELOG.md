@@ -8,8 +8,10 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
-- **更新雲端主機遇到永豐下單程式忙也自動再跑一次(`ws_update.retry_due`)**:原本只有 reconciler 重啟等過 `--wait-busy` 還在忙(`restart: busy`)才 plan＋apply 再跑一次;永豐 worker 有單在送(`sinopac_worker: busy`,c33d5f4a 的欠債)時直接停在 `restart_deferred`,要用戶再按一次。現在兩者都算,同一個 600 秒上限、只重試一次;reconciler 那邊是 `refused`(檔被擋)或永豐重啟失敗(`restart_failed`)照舊不重試。步驟 log 第一次與重試那行都多記 `sinopac=`。`references/updating.md` 手動更新的 *Safe moment* 補一句 `sinopac_worker: busy` 同樣再跑一次(workspace,不另 bump 根 VERSION,隨 0.1.63)。測試 `tests/check_ws_update_cmd.py` 9b。
-- **電腦版(0.1.63)永豐「連接中」寬限 120 → 195 秒(`trade.js` `TR_SP_BOOT_MS`,`sinopac.js` `SP_EQ_WAIT_MS` 跟著)**:f72a080c 加了登入後 30 秒確認部位,最壞 合約清單 60＋確認 30＋兩次讀取 20(每次 `margin`＋`list_positions`,shioaji 預設各 5 秒)＋帳戶讀取器下一輪 60＝170 秒,120 秒會短暫閃「串接失敗」。`tests/check_sinopac_futures.py` 改成把帳戶讀取週期(`local_daemon.ACCOUNT_EVERY_S`)與兩次讀取算進去、對 `TR_SP_BOOT_MS` 留 15 秒以上給登入本身,另核開通流程 `FINISH_WAIT_S` 300 秒(計時器 2 分鐘＋合約＋確認＋兩次讀取＝230 秒)。網頁沒有同等寬限(本機永豐只在電腦版)。
+## 1.1.175 — 2026-11-27(desktop 0.1.64:永豐連接中寬限 195 秒、雲端更新遇永豐忙也自動重試)
+
+- **更新雲端主機遇到永豐下單程式忙也自動再跑一次(`ws_update.retry_due`)**:原本只有 reconciler 重啟等過 `--wait-busy` 還在忙(`restart: busy`)才 plan＋apply 再跑一次;永豐 worker 有單在送(`sinopac_worker: busy`,c33d5f4a 的欠債)時直接停在 `restart_deferred`,要用戶再按一次。現在兩者都算,同一個 600 秒上限、只重試一次;reconciler 那邊是 `refused`(檔被擋)或永豐重啟失敗(`restart_failed`)照舊不重試。步驟 log 第一次與重試那行都多記 `sinopac=`。`references/updating.md` 手動更新的 *Safe moment* 補一句 `sinopac_worker: busy` 同樣再跑一次(workspace,根 VERSION 2026-11-27-c,隨 0.1.64)。測試 `tests/check_ws_update_cmd.py` 9b。
+- **電腦版(0.1.64)永豐「連接中」寬限 120 → 195 秒(`trade.js` `TR_SP_BOOT_MS`,`sinopac.js` `SP_EQ_WAIT_MS` 跟著)**:f72a080c 加了登入後 30 秒確認部位,最壞 合約清單 60＋確認 30＋兩次讀取 20(每次 `margin`＋`list_positions`,shioaji 預設各 5 秒)＋帳戶讀取器下一輪 60＝170 秒,120 秒會短暫閃「串接失敗」。`tests/check_sinopac_futures.py` 改成把帳戶讀取週期(`local_daemon.ACCOUNT_EVERY_S`)與兩次讀取算進去、對 `TR_SP_BOOT_MS` 留 15 秒以上給登入本身,另核開通流程 `FINISH_WAIT_S` 300 秒(計時器 2 分鐘＋合約＋確認＋兩次讀取＝230 秒)。網頁沒有同等寬限(本機永豐只在電腦版)。
 
 ## 1.1.174 — 2026-11-25(desktop 0.1.62:群益元件被刪／換掉會重跑安裝)
 
