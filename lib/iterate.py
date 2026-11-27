@@ -14,6 +14,10 @@ writes at turn start (state/iterate/<turn>.json):
   full   card bound, a plan, own engine, cloud: up to 10 rounds, new rounds refused after
          30 minutes into the turn
 
+Type C (spec typec-iterate-return-floor-2026-11-27): good enough needs the return AND the Sharpe above the
+benchmark, and a round is kept only when its return is not below the best round's or still beats the benchmark
+(the return floor); finish puts a file whose round failed the floor back to the best round on either tier.
+
 Strength differs by engine (audit M1): on Claude turns the ledger and iterate.json are
 protected by the runtime's Edit deny rules and Bash guard; Codex runs workspace-write and
 a BYO agent has no turn at all, so there this prevents misuse, not a determined bypass.
@@ -40,7 +44,7 @@ BASIC_ASKED_ROUNDS = 3          # 用戶自己說「幫我優化」:照現行 3 
 FULL_SESSION_S = 30 * 60        # turn-relative; the runtime's 35-min wall clock leaves the close its 5 minutes
 MIN_TRADES = 30                 # fewer trades never becomes the best round
 GOOD_P = 0.05
-MIXED_GOOD_PCT = 80             # mixed Type C: beat ≥ 80% of random portfolios on Sharpe
+MIXED_GOOD_PCT = 80             # mixed Type C: beat ≥ 80% of random portfolios on Sharpe and on return
 BOOT_N = 500
 BOOT_SEED = 7
 STALE_S = 40 * 60               # an open session from another turn older than this is dead whatever its pid says
@@ -242,20 +246,36 @@ def improved(name, new_n, best_n):
     return bool(diff > 0 and diff > se), round(diff, 4), round(se, 4)
 
 
+def _is_type_c(stats):
+    return "benchmark_bh" in stats or "benchmark_strategy_sharpe_pct" in stats
+
+
+def beats_benchmark_return(stats):
+    """Type C: True / False whether the return beats the benchmark's (mixed: ≥ MIXED_GOOD_PCT of random
+    portfolios on return); None when a number is missing or not finite — unknown, not a loss."""
+    if "benchmark_strategy_sharpe_pct" in stats:
+        pct = stats.get("benchmark_strategy_ret_pct")
+        return pct >= MIXED_GOOD_PCT if _finite(pct) else None
+    bh, ret = stats.get("benchmark_bh"), stats.get("Total Return [%]")
+    b = bh.get("ret_pct") if isinstance(bh, dict) else None
+    return ret > b if _finite(ret) and _finite(b) else None
+
+
 def good_enough(stats):
     """Ruling on audit S1, internal stop rule only (never a verdict to the user). Type A: Sharpe beats the
-    same symbol's buy-and-hold Sharpe and MCPT p < 0.05 (no p-value = not good). Type C: beats the
-    buy-and-hold benchmark's Sharpe; mixed Type C: Sharpe beats ≥ 80% of random portfolios."""
+    same symbol's buy-and-hold Sharpe and MCPT p < 0.05 (no p-value = not good). Type C: Sharpe and return
+    both beat the buy-and-hold benchmark's; mixed Type C: ≥ 80% of random portfolios on both. A benchmark
+    return that cannot be compared is not good, like a missing p-value."""
     sharpe = stats.get("Sharpe Ratio")
     if not isinstance(sharpe, (int, float)):
         return False
     if "benchmark_strategy_sharpe_pct" in stats:
         pct = stats.get("benchmark_strategy_sharpe_pct")
-        return isinstance(pct, (int, float)) and pct >= MIXED_GOOD_PCT
+        return isinstance(pct, (int, float)) and pct >= MIXED_GOOD_PCT and beats_benchmark_return(stats) is True
     bh = stats.get("benchmark_bh")
     if isinstance(bh, dict):
         b = bh.get("sharpe_ratio")
-        return isinstance(b, (int, float)) and sharpe > b
+        return isinstance(b, (int, float)) and sharpe > b and beats_benchmark_return(stats) is True
     b, p = stats.get("Benchmark Sharpe Ratio"), stats.get("MCPT p-value")
     return isinstance(b, (int, float)) and isinstance(p, (int, float)) and sharpe > b and p < GOOD_P
 
@@ -299,13 +319,20 @@ def after_backtest(name, src, stats, version, weights=None):
         trades = stats.get("Trades") if isinstance(stats.get("Trades"), int) else 0
         e0 = op.get("exposure0")
         eligible = trades >= MIN_TRADES and (not _finite(exposure) or not _finite(e0) or exposure <= e0 * (1 + 1e-6) + 1e-12)
-        rnd = {"n": version, "trades": trades, "sharpe": stats.get("Sharpe Ratio"), "good": good_enough(stats),
-               "eligible": eligible, "kept": False}
+        ret = stats.get("Total Return [%]")
+        rnd = {"n": version, "trades": trades, "sharpe": stats.get("Sharpe Ratio"), "ret": ret if _finite(ret) else None,
+               "good": good_enough(stats), "eligible": eligible, "kept": False}
         if eligible and version is not None:
             if op.get("best") is None:
                 rnd["kept"] = True
             else:
                 rnd["kept"], rnd["diff"], rnd["se"] = improved(name, version, op["best"])
+                if _is_type_c(stats):   # the return floor: not below the best round's, or still above the benchmark
+                    best_r = next((r for r in reversed(op["rounds"]) if r["n"] == op["best"]), None)
+                    b_ret = best_r.get("ret") if best_r else None
+                    rnd["floor"] = (not _finite(rnd["ret"]) or not _finite(b_ret) or rnd["ret"] >= b_ret
+                                    or beats_benchmark_return(stats) is True)
+                    rnd["kept"] = rnd["kept"] and rnd["floor"]
             if rnd["kept"]:
                 op["best"] = version
         op["rounds"].append(rnd)
@@ -319,6 +346,7 @@ def after_backtest(name, src, stats, version, weights=None):
         best = next((r for r in op["rounds"] if r["n"] == op.get("best")), None)
         print(f"  Iteration: round {k}/{op['max_rounds']} ({op['tier']}) — "
               + ("baseline" if not k else "kept as best" if rnd["kept"] else
+                 "not kept: return fell below the best round's and trails the benchmark" if rnd.get("floor") is False else
                  "not better than the best round beyond noise" if eligible else
                  f"not eligible ({'fewer than ' + str(MIN_TRADES) + ' trades' if trades < MIN_TRADES else 'exposure went up'})")
               + f"; best so far v{op.get('best')}, good enough: {'yes' if best and best['good'] else 'no'}; "
@@ -416,10 +444,11 @@ def _exec_test_done(name):
 
 def finish(name, stop=None):
     """End of the flow for `name`: full tier puts the best round back (revert_to) when the file holds
-    another; otherwise an edit made after the last backtest is put back to the current version. Both tiers
-    end on one quiet rerun so the final version carries its exec test (skipped when stats.json already has
-    it for this code); the session closes and walk-forward is allowed again. `stop` is one of STOPS; None
-    infers good / cap / done."""
+    another, and so does either tier when the file's round failed the Type C return floor; otherwise an
+    edit made after the last backtest is put back to the current version. Both tiers end on one quiet
+    rerun so the final version carries its exec test (skipped when stats.json already has it for this
+    code); the session closes and walk-forward is allowed again. `stop` is one of STOPS; None infers
+    good / cap / done."""
     st = _load(name)
     op = st["open"]
     t = turn()
@@ -432,7 +461,11 @@ def finish(name, stop=None):
         stop = ("good" if best_r and best_r.get("good") else
                 "cap" if op and len(rounds) - 1 >= op.get("max_rounds", 1) else "done")
     cur, cur_hash = _current_version(name)
-    if op and op.get("tier") == "full" and best is not None and best != cur:
+    cur_r = next((r for r in reversed((op or {}).get("rounds") or []) if r.get("n") == cur), None) if cur is not None else None
+    swap = bool(op) and best is not None and best != cur
+    floor_back = swap and cur_r is not None and cur_r.get("floor") is False
+    put_back = swap and (op.get("tier") == "full" or floor_back)
+    if put_back:
         revert_to(name, best)
     else:
         if cur is not None and not S.hash_matches(_source(name), cur_hash):
@@ -445,9 +478,12 @@ def finish(name, stop=None):
         st["open"] = None
         _write(_state_path(name), st)
     last = st.get("last") or {}
-    print(f"  Iteration finished for {name}: {last.get('rounds', 0)} round(s), final version v{best or cur}, "
+    final = best if put_back or cur is None else cur
+    print(f"  Iteration finished for {name}: {last.get('rounds', 0)} round(s), final version v{final}, "
           f"stop={stop}; parameter sets evaluated on this strategy so far: {st['params_evaluated']}. "
           "Out-of-sample validation may run now, once.")
+    if floor_back:
+        print(f"  v{cur} put back: its return fell below the best round's (v{best}) and trails the benchmark")
     return last
 
 

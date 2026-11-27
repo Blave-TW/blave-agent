@@ -309,8 +309,10 @@ check(it.improved(NAME, 903, 901)[0] is False, "noise around the same curve does
 check(it.good_enough({"Sharpe Ratio": 1.2, "Benchmark Sharpe Ratio": 0.8, "MCPT p-value": 0.01}), "Type A: beats B&H Sharpe and p < 0.05 → good")
 check(not it.good_enough({"Sharpe Ratio": 1.2, "Benchmark Sharpe Ratio": 0.8}), "Type A without a p-value → not good")
 check(not it.good_enough({"Sharpe Ratio": 0.5, "Benchmark Sharpe Ratio": 0.8, "MCPT p-value": 0.01}), "Type A under the B&H Sharpe → not good")
-check(it.good_enough({"Sharpe Ratio": 1.0, "benchmark_bh": {"sharpe_ratio": 0.7}}), "Type C: beats the B&H benchmark's Sharpe")
-check(it.good_enough({"Sharpe Ratio": 1.0, "benchmark_strategy_sharpe_pct": 80}) and not it.good_enough({"Sharpe Ratio": 1.0, "benchmark_strategy_sharpe_pct": 79.9}),
+check(it.good_enough({"Sharpe Ratio": 1.0, "Total Return [%]": 90.0, "benchmark_bh": {"sharpe_ratio": 0.7, "ret_pct": 80.0}}),
+      "Type C: beats the B&H benchmark's Sharpe (and its return)")
+check(it.good_enough({"Sharpe Ratio": 1.0, "benchmark_strategy_sharpe_pct": 80, "benchmark_strategy_ret_pct": 80})
+      and not it.good_enough({"Sharpe Ratio": 1.0, "benchmark_strategy_sharpe_pct": 79.9, "benchmark_strategy_ret_pct": 80}),
       "mixed Type C: ≥ 80th percentile of random portfolios")
 stats = json.loads((SRC.parent / "stats.json").read_text())
 check(isinstance(stats.get("Benchmark Sharpe Ratio"), (int, float)), "Type A stats.json carries the B&H Sharpe")
@@ -319,6 +321,204 @@ os.environ["BLAVE_TURN_ID"] = T1
 check(it.plan(NAME)["checks_only"] in (None, "library") and it.plan(NAME)["tier"] == "basic", "plan(): tier from the ledger", it.plan(NAME))
 os.environ.pop("BLAVE_TURN_ID", None)
 check(it.plan(NAME)["tier"] == "full", "plan() outside a turn (BYO): full")
+
+# ── Type C: the return floor (spec typec-iterate-return-floor-2026-11-27 §4.1, §5) ──
+def tc_stats(ret, sharpe=1.0, bench_ret=50.0, bench_sharpe=0.5, trades=40, mixed=None):
+    st = {"Sharpe Ratio": sharpe, "Total Return [%]": ret, "Trades": trades}
+    if mixed is not None:
+        st.update({"benchmark_strategy_sharpe_pct": mixed[0], "benchmark_strategy_ret_pct": mixed[1]})
+    else:
+        st["benchmark_bh"] = None if bench_ret is None else {"ret_pct": bench_ret, "sharpe_ratio": bench_sharpe}
+    return st
+
+
+def judged(name, tid, base_ret, round_ret, curve, bench_ret=50.0, drop_best_ret=False):
+    """A Type C session through after_backtest itself: baseline v1 (return base_ret), then v2 whose daily curve is
+    `curve` ('better' beats one SE, 'noise' does not) and whose return is round_ret. Returns (round, op, printed)."""
+    ledger(tid, "full", 10, deadline=time.time() + 600)
+    vdir = strategy.versions_dir(name)
+    vdir.mkdir(parents=True, exist_ok=True)
+    r2 = base + 0.002 if curve == "better" else base + rng.normal(0, 0.0001, len(days))
+    for v, r in ((1, base), (2, r2)):
+        (vdir / f"v{v}.json").write_text(json.dumps({"daily_dates": days, "daily_returns": list(map(float, r))}))
+    with contextlib.redirect_stdout(io.StringIO()):
+        it.after_backtest(name, b"# base\n", tc_stats(base_ret, bench_ret=bench_ret), 1)
+    if drop_best_ret:
+        st_ = json.loads((WS / "strategies" / name / "iterate.json").read_text())
+        st_["open"]["rounds"][0].pop("ret", None)
+        (WS / "strategies" / name / "iterate.json").write_text(json.dumps(st_))
+    buf_ = io.StringIO()
+    with contextlib.redirect_stdout(buf_):
+        it.after_backtest(name, b"# round\n", tc_stats(round_ret, bench_ret=bench_ret), 2)
+    op_ = json.loads((WS / "strategies" / name / "iterate.json").read_text())["open"]
+    return op_["rounds"][-1], op_, buf_.getvalue()
+
+
+# must be red on the old code
+check(not it.good_enough(tc_stats(40.0, sharpe=1.0, bench_ret=80.0, bench_sharpe=0.7)),
+      "Type C: Sharpe beats the benchmark but the return trails it → not good enough")
+check(not it.good_enough(tc_stats(40.0, mixed=(80, 79.9))), "mixed Type C: Sharpe at the 80th percentile, return at 79.9 → not good enough")
+r, op, out = judged("tc3", "6" * 16, 100.0, 50.0, "better", bench_ret=80.0)
+check(r.get("kept") is False and r.get("floor") is False and op["best"] == 1
+      and "return fell below the best round's and trails the benchmark" in out,
+      "Type C round: Sharpe beats one SE but the return fell below the best round's and trails the benchmark → not kept", (r, out))
+floor_rounds = []
+r, _, _ = judged("tc10", "7" * 16, 100.0, 90.0, "better", bench_ret=80.0)
+floor_rounds.append(r)
+check(r.get("kept") is True, "Type C round: return below the best round's but still above the benchmark → kept", r)
+r, _, _ = judged("tc12", "8" * 16, 100.0, 10.0, "better", bench_ret=80.0, drop_best_ret=True)
+floor_rounds.append(r)
+check(r.get("kept") is True, "an open session from before the floor (best round has no ret) is not compared", r)
+check(not it.good_enough(tc_stats(200.0, bench_ret=None)), "benchmark_bh None (fetch failed, key kept) → not good enough")
+r, _, _ = judged("tc13", "9" * 16, 100.0, 120.0, "better", bench_ret=None)
+floor_rounds.append(r)
+check(r.get("kept") is True, "benchmark_bh None: a return not below the best round's → kept", r)
+for nm, tid, bad in (("tc14a", "a1" * 8, None), ("tc14b", "a2" * 8, float("nan"))):
+    r, _, _ = judged(nm, tid, 100.0, bad, "better", bench_ret=80.0)
+    floor_rounds.append(r)
+    check(r.get("kept") is True, f"this round's Total Return is {bad!r} → not compared, kept follows improved", r)
+check(len(floor_rounds) == 5 and all(x.get("floor") is True for x in floor_rounds),
+      "Type C rounds that pass (or are not compared) record floor True", [x.get("floor") for x in floor_rounds])
+
+# green on the old code too
+check(it.good_enough(tc_stats(90.0, sharpe=1.0, bench_ret=80.0, bench_sharpe=0.7))
+      and it.good_enough(tc_stats(90.0, mixed=(80, 80))), "Type C / mixed: both beat the benchmark → good enough")
+check("benchmark_bh" not in stats and "benchmark_strategy_sharpe_pct" not in stats,
+      "a Type A stats.json carries neither benchmark_bh nor benchmark_strategy_sharpe_pct (the Type C split keys)")
+ledger("a3" * 8, "full", 10)
+(strategy.versions_dir("ta9")).mkdir(parents=True, exist_ok=True)
+for v, rr in ((1, base), (2, base + 0.002)):
+    (strategy.versions_dir("ta9") / f"v{v}.json").write_text(json.dumps({"daily_dates": days, "daily_returns": list(map(float, rr))}))
+with contextlib.redirect_stdout(io.StringIO()):
+    it.after_backtest("ta9", b"# a\n", {"Sharpe Ratio": 1.0, "Total Return [%]": 100.0, "Trades": 40, "Benchmark Sharpe Ratio": 0.5}, 1)
+    it.after_backtest("ta9", b"# b\n", {"Sharpe Ratio": 1.2, "Total Return [%]": 10.0, "Trades": 40, "Benchmark Sharpe Ratio": 0.5}, 2)
+r = json.loads((WS / "strategies" / "ta9" / "iterate.json").read_text())["open"]["rounds"][-1]
+check("floor" not in r and r["kept"] is True, "Type A round: no floor key, kept by improved alone (a lower return does not matter)", r)
+ledger("a4" * 8, "basic", 1)
+with contextlib.redirect_stdout(io.StringIO()):
+    it.after_backtest("tc15", b"# a\n", tc_stats(100.0, trades=5), None)
+    it.after_backtest("tc15", b"# b\n", tc_stats(10.0, trades=5), None)
+    try:
+        it.finish("tc15")
+        ok15 = True
+    except Exception as e:
+        ok15 = repr(e)
+check(ok15 is True, "no eligible round (best is None) → finish does not revert or raise", ok15)
+
+# real Type C backtests for finish / close_turn
+CN = 600
+CIDX = pd.bdate_range("2023-01-02", periods=CN)
+crng = np.random.default_rng(11)
+CCLOSE = pd.DataFrame(100 * np.exp(np.cumsum(crng.normal(0.0006, 0.012, (CN, 5)), axis=0)), index=CIDX,
+                      columns=["2330", "2317", "2454", "2303", "1301"])
+COPEN = CCLOSE.shift(1).fillna(CCLOSE.iloc[0])
+BENCH = {"close": None}
+runner._pick_benchmark = lambda *a, **k: ("0050", "0050_bh", True, lambda s, e: BENCH["close"][s:e])
+
+
+def set_bench(total_pct):
+    b_idx = pd.bdate_range("2022-12-01", "2025-12-31")
+    BENCH["close"] = pd.Series(np.linspace(100, 100 * (1 + total_pct / 100), len(b_idx)), index=b_idx)
+
+
+def tc_weights(c, scale):
+    mom = c.pct_change(20, fill_method=None)
+    rank = mom.rank(axis=1, ascending=False, method="first", na_option="bottom")
+    w = pd.DataFrame(np.where((rank <= 2) & mom.notna(), 0.5, 0.0), index=c.index, columns=c.columns)
+    wk = pd.Series(c.index.to_period("W"), index=c.index)
+    w[~(wk != wk.shift(1)).to_numpy()] = np.nan
+    return w.ffill().fillna(0.0).values * scale
+
+
+def tc_backtest(name, code, scale=1.0):
+    src = WS / "strategies" / name / "strategy.py"
+    src.parent.mkdir(parents=True, exist_ok=True)
+    src.write_text(code, encoding="utf-8")
+    cfg = {"STRATEGY_NAME": name, "INTERVAL": "1d", "START": "2023-01-02", "FEE": 0.001, "WARMUP": 20, "__file__": str(src)}
+    with contextlib.redirect_stdout(io.StringIO()) as b:
+        try:
+            runner.run(cfg, lambda h: (CCLOSE.copy(), COPEN.copy()),
+                       lambda d: (tc_weights(d[0], scale), pd.concat({"close": d[0], "open": d[1]}, axis=1)))
+        except SystemExit as e:
+            return str(e)
+    return None
+
+
+def tc_state(name):
+    return json.loads((WS / "strategies" / name / "iterate.json").read_text())
+
+
+def finish_out(name, stop=None):
+    b = io.StringIO()
+    with contextlib.redirect_stdout(b):
+        it.finish(name, stop)
+    return b.getvalue()
+
+
+set_bench(5000.0)   # every version trails the benchmark
+ledger("b1" * 8, "basic", 1)
+tc_backtest("tcf4", "# c0\n")
+tc_backtest("tcf4", "# c1 half\n", scale=0.5)
+rr = tc_state("tcf4")["open"]["rounds"]
+base4 = rr[0]["n"]
+check(len(rr) == 2 and rr[0].get("eligible") and rr[1].get("eligible") and rr[1].get("floor") is False,
+      "real Type C: the half-size round trails the benchmark and the baseline's return (floor False)", rr)
+reruns.clear()
+out4 = finish_out("tcf4")
+check(strategy.load_index("tcf4")["current"] == base4 and (WS / "strategies" / "tcf4" / "strategy.py").read_text().startswith("# c0")
+      and "put back:" in out4 and f"final version v{base4}" in out4,
+      "basic Type C, floor False → finish puts the baseline back and says why", (strategy.load_index("tcf4")["current"], out4))
+
+ledger("b2" * 8, "basic", 3, asked=True)
+tc_backtest("tcf5", "# c0\n")
+tc_backtest("tcf5", "# c1\n", scale=0.6)
+tc_backtest("tcf5", "# c2\n", scale=0.4)
+base5 = tc_state("tcf5")["open"]["rounds"][0]["n"]
+finish_out("tcf5")
+check(strategy.load_index("tcf5")["current"] == base5, "basic + 「幫我優化」 (3 rounds): the last round below the floor → put back to the best round (Wei 11-27)")
+
+T_C6 = "b3" * 8
+ledger(T_C6, "basic", 1)
+tc_backtest("tcf6", "# c0\n")
+tc_backtest("tcf6", "# c1\n", scale=0.5)
+base6 = tc_state("tcf6")["open"]["rounds"][0]["n"]
+with contextlib.redirect_stdout(io.StringIO()):
+    it.close_turn(T_C6, "time")
+check(strategy.load_index("tcf6")["current"] == base6, "a turn that ends without finish: close_turn puts the floor-failing round back too")
+
+ledger("b4" * 8, "full", 10, deadline=time.time() + 600)
+tc_backtest("tcf16", "# c0\n")
+tc_backtest("tcf16", "# c1\n", scale=0.5)
+reverts = []
+_orig_revert = it.revert_to
+it.revert_to = lambda name, n: reverts.append((name, n))
+try:
+    finish_out("tcf16")
+finally:
+    it.revert_to = _orig_revert
+check(len(reverts) == 1, "full Type C, floor False: put back once (not once per reason)", reverts)
+
+T_C17 = "b5" * 8
+ledger(T_C17, "full", 10, deadline=time.time() + 600)
+tc_backtest("tcf17", "# c0\n")
+tc_backtest("tcf17", "# c1\n", scale=0.5)
+cur17 = strategy.load_index("tcf17")["current"]
+reruns.clear()
+with contextlib.redirect_stdout(io.StringIO()):
+    it.close_turn(T_C17, "user")
+check(strategy.load_index("tcf17")["current"] == cur17 and reruns == [] and tc_state("tcf17")["last"]["stop"] == "user",
+      "Stop: closed as it stands even when the round failed the floor (no put back, no rerun)")
+
+set_bench(-50.0)   # every version beats the benchmark
+ledger("b6" * 8, "basic", 1)
+tc_backtest("tcf18", "# c0\n")
+tc_backtest("tcf18", "# c1\n", scale=0.5)
+rr = tc_state("tcf18")["open"]["rounds"]
+cur18 = strategy.load_index("tcf18")["current"]
+out18 = finish_out("tcf18")
+check(rr[1].get("kept") is False and strategy.load_index("tcf18")["current"] == cur18 != rr[0]["n"] and "put back" not in out18,
+      "basic Type C, floor True and not better beyond noise → kept as adopted, no put back (§11)", (rr, out18))
+check(f"final version v{cur18}" in out18, "finish names the version the file actually holds (not the best round)", out18)
 
 print()
 print("ALL PASS" if not fails else f"{fails} FAILED")

@@ -300,4 +300,169 @@ except SystemExit:
     _exited = True
 check(_exited and not os.path.exists(os.path.join(_d2, "wf.json")), "跑的期間 strategy.py 變了:拒寫、不留 wf.json")
 
+
+# ── time limit inside an agent turn (spec typec-iterate-return-floor-2026-11-27 §9.4(a), §9.5) ──
+import contextlib, io, time
+import lib.walk_forward as _wfm
+import lib.strategy as _S
+import lib.progress as _prog
+
+_TWS = tempfile.mkdtemp(prefix="wf-turn-", dir=os.environ.get("SCRATCHPAD") or None)
+_S._REPO_ROOT = __import__("pathlib").Path(_TWS)
+_CLK = [0.0]
+_wfm_clock0 = getattr(_wfm, "_clock", None)
+_wfm._clock = lambda: _CLK[0]
+_ws0 = _wfm._window_stats
+ROWS12 = [round(-0.01 + 0.002 * k, 10) for k in range(12)]
+COLS10 = [round(-0.01 + 0.002 * k, 10) for k in range(10)]
+_n = [0]
+
+
+def turn_ledger(started_ago=0.0, write=True):
+    tid = "f" * 16
+    d = os.path.join(_TWS, "state", "iterate")
+    os.makedirs(d, exist_ok=True)
+    pth = os.path.join(d, tid + ".json")
+    if write:
+        with open(pth, "w") as f:
+            json.dump({"v": 1, "turn": tid, "tier": "full", "started": time.time() - started_ago, "deadline": None,
+                       "max_rounds": 10, "user_asked": False, "pid": None, "strategies": []}, f)
+    elif os.path.exists(pth):
+        os.remove(pth)
+    os.environ["BLAVE_TURN_ID"] = tid
+
+
+def timed_run(rows, cols, sig_s=1.0, win_s=0.0, turn=True, started_ago=0.0, ledger=True, old_wf=False, **kw):
+    """run_walk_forward on a fake clock: each compute_signals call costs sig_s, each _window_stats win_s.
+    Returns (doc or the exception, stdout, compute_signals calls)."""
+    _n[0] += 1
+    out_dir = os.path.join(_TWS, "strategies", f"wft{_n[0]}")
+    os.makedirs(out_dir, exist_ok=True)
+    if old_wf:
+        with open(os.path.join(out_dir, "wf.json"), "w") as f:
+            f.write('{"old": 1}')
+    if turn:
+        turn_ledger(started_ago, ledger)
+    else:
+        os.environ.pop("BLAVE_TURN_ID", None)
+    _CLK[0] = time.time()
+    calls = [0]
+
+    def cs(d, entry_th=0.0, exit_th=0.0):
+        calls[0] += 1
+        _CLK[0] += sig_s
+        return compute_signals(d, entry_th, exit_th)
+
+    def ws(*a):
+        _CLK[0] += win_s
+        return _ws0(*a)
+
+    _wfm._window_stats = ws
+    kw.setdefault("valid_fn", lambda r, c: True)
+    buf = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(buf):
+            p = run_walk_forward(df, cs, rows, cols, out_dir, row_param="ENTRY_TH", col_param="EXIT_TH", fee=0.0005,
+                                 lookback_days=LOOKBACK, step_days=STEP, warmup=WARMUP, **kw)
+        res = json.load(open(p))
+    except BaseException as e:   # SystemExit included: the skip
+        res = e
+    finally:
+        _wfm._window_stats = _ws0
+        os.environ.pop("BLAVE_TURN_ID", None)
+    return res, buf.getvalue(), calls[0], out_dir
+
+
+def shape(res):
+    return (len(res["row_vals"]), len(res["col_vals"])) if isinstance(res, dict) else None
+
+
+# 1. inside a turn, estimate over 300 s → thinned, current kept, ≥ 5 per axis
+cur = (ROWS12[3], COLS10[7])
+res, out, _, _ = timed_run(ROWS12, COLS10, sig_s=3.0, current=cur)
+check(isinstance(res, dict) and shape(res) != (12, 10) and min(shape(res)) >= 5
+      and cur[0] in res["row_vals"] and cur[1] in res["col_vals"]
+      and "Walk-forward grid thinned" in out and "Walk-forward estimate" in out,
+      f"回合內估計超過 300 秒:格子抽稀、current 留著、每軸 ≥ 5、印了說明 → {shape(res)} {res if not isinstance(res, dict) else ''}")
+# 2. coarsest still over → skipped, nothing written, the old wf.json untouched
+res, out, _, od = timed_run(ROWS12, COLS10, sig_s=20.0, old_wf=True)
+check(isinstance(res, SystemExit) and "❌ Walk-forward skipped" in str(res)
+      and open(os.path.join(od, "wf.json")).read() == '{"old": 1}',
+      f"最粗還超過:❌ skipped、不寫、舊的 wf.json 不動 → {res!r}")
+# 3. max_seconds=None, estimate over 300 but inside the turn's time → full grid
+res, out, _, _ = timed_run(ROWS12, COLS10, sig_s=3.0, max_seconds=None)
+check(shape(res) == (12, 10), f"用戶要求(None)、估計 < 回合剩餘:不抽稀 → {shape(res)} {res if not isinstance(res, dict) else ''}")
+# 4. max_seconds=None over the turn's time → skipped with the estimate; one whole turn too short → says so
+res, out, _, od = timed_run(ROWS12, COLS10, sig_s=3.0, max_seconds=None, started_ago=1500, old_wf=True)
+check(isinstance(res, SystemExit) and "this turn has" in str(res) and "usually fits" in str(res)
+      and open(os.path.join(od, "wf.json")).read() == '{"old": 1}',
+      f"用戶要求(None)、估計 > 回合剩餘:不抽稀、不寫、講估計(新一則通常跑得完)→ {res!r}")
+res, out, _, _ = timed_run(ROWS12, COLS10, sig_s=20.0, max_seconds=None)
+check(isinstance(res, SystemExit) and "does not fit in one turn" in str(res), f"一整個回合都跑不完 → 那句 → {res!r}")
+# 5. outside a turn: no limit
+res, out, _, _ = timed_run(ROWS12, COLS10, sig_s=20.0, turn=False)
+check(shape(res) == (12, 10), f"回合外:估計再大也不抽稀、不跳過 → {shape(res)}")
+# 6. cut to the turn's remaining time
+res_a, _, _, _ = timed_run(ROWS12, COLS10, sig_s=1.5, started_ago=1750)
+res_b, _, _, _ = timed_run(ROWS12, COLS10, sig_s=1.5, started_ago=0)
+check(isinstance(res_a, dict) and shape(res_a) != (12, 10) and shape(res_b) == (12, 10),
+      f"上限被回合剩餘時間截短(剩 100 秒抽稀、剛開始不抽)→ {shape(res_a)} / {shape(res_b)}")
+# 7. a turn id without a ledger: None is 300 s
+res, _, _, _ = timed_run(ROWS12, COLS10, sig_s=3.0, max_seconds=None, ledger=False)
+check(isinstance(res, dict) and shape(res) != (12, 10), f"ledger 讀不到:None 當 300 秒 → {shape(res)}")
+# 8. an axis with ≤ 5 values is neither thinned nor padded
+ROWS4 = [0.0, 0.002, 0.004, 0.006]
+COLS12 = [round(-0.012 + 0.001 * k, 10) for k in range(12)]
+res, _, _, _ = timed_run(ROWS4, COLS12, sig_s=6.0)
+check(isinstance(res, dict) and shape(res)[0] == 4 and 5 <= shape(res)[1] < 12,
+      f"≤ 5 個值的軸不抽不補,只抽另一軸 → {shape(res)}")
+res, _, _, _ = timed_run(ROWS12, [0], sig_s=20.0)
+check(isinstance(res, dict) and shape(res)[1] == 1 and 5 <= shape(res)[0] < 12, f"單常數的一格第二軸不補 → {shape(res)}")
+# 9. current None / off the axis: not forced in, no error
+res_n, _, _, _ = timed_run(ROWS12, COLS10, sig_s=3.0, current=None)
+res_o, _, _, _ = timed_run(ROWS12, COLS10, sig_s=3.0, current=(0.0031, COLS10[7]))
+check(isinstance(res_n, dict) and isinstance(res_o, dict) and 0.0031 not in res_o["row_vals"] and COLS10[7] in res_o["col_vals"]
+      and all(r["params"][0] in res_o["row_vals"] and r["params"][1] in res_o["col_vals"] for r in res_o["runs"]),
+      "current 是 None 或不在軸上:不硬塞、不報錯;挑到的參數都在新格子上")
+# 10. only valid cells count
+res_h, _, _, _ = timed_run(ROWS12, COLS10, sig_s=3.0, valid_fn=lambda r, c: ROWS12.index(r) % 2 == 0)
+check(shape(res_h) == (12, 10), f"估計只算 valid 的格:排掉一半就不用抽稀 → {shape(res_h)}")
+# 11. Progress total follows the new grid
+_seen = []
+_P0 = _prog.Progress
+
+
+class _RecP(_P0):
+    def __init__(self, label, total, *a, **k):
+        _seen.append((label, total))
+        super().__init__(label, total, *a, **k)
+
+
+_prog.Progress = _RecP
+try:
+    res, _, _, _ = timed_run(ROWS12, COLS10, sig_s=3.0)
+finally:
+    _prog.Progress = _P0
+wf_tot = [t for lbl, t in _seen if lbl == "walk-forward"]
+check(isinstance(res, dict) and wf_tot and wf_tot[-1] == shape(res)[0] * shape(res)[1],
+      f"Progress 總數 = 新格子的組數 → {wf_tot} {shape(res)}")
+# 12. Type A default: cells[0] is a corner that fails row > col — the estimate measures the first cell that runs
+ROWS_C = [round(-0.012 + 0.002 * k, 10) for k in range(14)]
+COLS_C = [round(-0.01 + 0.002 * k, 10) for k in range(12)]
+res, out, _, _ = timed_run(ROWS_C, COLS_C, sig_s=0.05, win_s=1.0, valid_fn=None)
+check(isinstance(res, dict) and shape(res) != (14, 12), f"角落那格不合 row > col:照樣量得到訓練窗的時間、抽得到稀 → {shape(res)} {res if not isinstance(res, dict) else ''}")
+# 12b. the measured cell is not recomputed
+res, _, calls, _ = timed_run(ROWS12, COLS10, sig_s=3.0)
+winners = {tuple(r["params"]) for r in res["runs"]} if isinstance(res, dict) else set()
+check(isinstance(res, dict) and calls == shape(res)[0] * shape(res)[1] + len(winners),
+      f"量過的那組在新格子上不重算:呼叫次數 = 格數 + 不同贏家數 → {calls} vs {shape(res)} + {len(winners)}")
+# 13. max_seconds must be positive or None
+bad = []
+for v in (0, -5, "300"):
+    r_, _, _, _ = timed_run(ROWS4, COLS10[:3], sig_s=0.0, max_seconds=v)
+    bad.append(isinstance(r_, ValueError))
+check(all(bad), f"max_seconds 傳 0、負數、字串 → ValueError → {bad}")
+if _wfm_clock0 is not None:
+    _wfm._clock = _wfm_clock0
+
 print("all checks passed" if not fails else f"FAILED: {fails}"); sys.exit(1 if fails else 0)
