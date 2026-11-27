@@ -456,6 +456,8 @@ from lib.data import (
 )
 ```
 
+**Daily bars for a pool of more than a few dozen stocks: `fetch_twstock_wide(stock_ids, start, end, headers, fields=('Open', 'Close'), adjust=True)`** → `{field: DataFrame(date × stock_id)}` — the batch's numbers cell for cell, without one DataFrame per stock (the whole market from 2015: about 0.85 GB at the peak for Open + Close, the batch about 2.5 GB). `fields` from `Open`, `High`, `Low`, `Close`, `Volume` (shares), `Amount` (成交金額, TWD); `adjust=False` gives the raw prices (with `fetch_twstock_price_batch`'s invalid-bar drop). `Volume` / `Amount` are the exchange's numbers as they are — 0 on a listed day with no trade, never the previous day's — and NaN where the stock has no row (not listed yet, halted all day, delisted). Columns: the ids asked, in order, that have a row in the window. Same sources, `BatchIncomplete` and live refusal as the batch; ids the CDN does not list come through the batch chain (their `Volume` is then the batch's, `Amount` NaN — a ⚠️ line says so).
+
 `fetch_twstock_foreign_shareholding_batch` 主要欄位：
 
 | 欄位 | 說明 |

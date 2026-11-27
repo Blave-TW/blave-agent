@@ -3,7 +3,7 @@
 # Universe: 台股藍籌 20 支（跨產業）
 # Signal:   60 日價格動能排名，每週選前 5 名等權配置
 # Rebalance: 每週第一個交易日(收盤定權重、隔日開盤成交)
-# Data wait: one batch call, Blave CDN first — over 40 ids it reads the whole-market year files (the first run
+# Data wait: one fetch_twstock_wide call, Blave CDN first — over 40 ids it reads the whole-market year files (the first run
 #           downloads each year since START once; they stay cached). Only when a ⚠️ line says the exchange path served
 #           them (CDN down) does each stock take ~36 s per year (TWSE, one month per request): then UNIVERSE × years
 #           since START is the wait — tell the user before running; over ~25 min, start with a later START (what is
@@ -124,25 +124,16 @@ def _rebalance_mask(idx, freq='W'):
 
 # ── fetch_data ────────────────────────────────────────────────────────────────
 def fetch_data(hdrs):
-    import pandas as pd
-    from lib.data import fetch_twstock_price_adj_batch
+    from lib.data import fetch_twstock_wide
 
     # Not caught: BatchIncomplete fails a backtest, and a live tick alerts fetch_error and
     # retries — never a ranking on a partial universe. An id no source has is simply absent.
-    price_all = fetch_twstock_price_adj_batch(UNIVERSE, START, END, hdrs)   # {sid: Open/Close}
+    w = fetch_twstock_wide(UNIVERSE, START, END, hdrs)   # {'Open': date × stock, 'Close': date × stock}
 
-    closes, opens = {}, {}
-    for sid in UNIVERSE:
-        price = price_all.get(sid)
-        if price is None or price.empty:
-            continue
-        closes[sid] = price['Close']
-        opens[sid]  = price['Open']
-
-    close_df = pd.DataFrame(closes).sort_index().dropna(how='all')
+    close_df = w['Close'].dropna(how='all')
     if close_df.empty:
         raise RuntimeError("fetch_data: no price data — check UNIVERSE, credentials, and START/END dates")
-    open_df  = pd.DataFrame(opens).reindex(close_df.index)
+    open_df  = w['Open'].reindex(close_df.index)
     return close_df, open_df
 
 

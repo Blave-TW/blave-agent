@@ -103,9 +103,13 @@ def _rebalance_mask(idx, freq='W'):
 # — never weights on a partial universe. An id no source has is simply absent: .get skips it.
 def fetch_data(hdrs):
     import pandas as pd
-    # Taiwan stocks:
-    #   from lib.data import fetch_twstock_price_adj_batch
-    #   price_all = fetch_twstock_price_adj_batch(UNIVERSE, START, END, hdrs)    # {sid: Open/Close}
+    # Taiwan stocks: one date × stock table per field, no per-stock frames (the whole market fits a
+    # 4 GB machine) — replace the loop below with
+    #   from lib.data import fetch_twstock_wide
+    #   w = fetch_twstock_wide(UNIVERSE, START, END, hdrs)                       # {'Open': df, 'Close': df}
+    #   close_df = w['Close'].dropna(how='all')
+    #   open_df  = w['Open'].reindex(close_df.index)
+    # (fetch_twstock_price_adj_batch gives the same prices as {sid: frame}; fine for a small pool)
     # Crypto (UNIVERSE as 'BTCUSDT' — the dict's keys are the normalized symbols):
     #   from lib.data import fetch_kline_batch
     #   price_all = fetch_kline_batch(UNIVERSE, INTERVAL, START, END, hdrs)     # {symbol: OHLCV}
