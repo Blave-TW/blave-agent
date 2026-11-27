@@ -589,6 +589,13 @@ ok("④ IPC:綁卡即購買只收自家頁面;記號拿到這支終態才清,並
     const s = { id: 7, purchased: false }, F = mk([{ mark: { id: 7, at: 0 }, res: res({ status: "pending" }) }], s);
     F.boughtOnLoad = true; wait(F, 7, 1e9); F.LIB.bbWait.check = true; await F.libBbPoll();
     ok("⑤ 付了舊頁(結果槽被新單佔著):回前景重拉清單、已購買就當成功收尾,不等到逾時", F.LIB.bbWait === null && F.LIB.bbRes.get(7).kind === "ok" && F.events.join() === "lib_bindbuy:ok" && F.replies.length === 0);
+    // 結果槽被佔＋清單已購買,清單說沒方案(試用沒開成的原因碼讀不到):開方案框(不帶原因碼)、不自動安裝;有方案照舊當成功並自動安裝
+    const occ = async (data) => { const N = mk([{ mark: { id: 7, at: 0 }, res: res({ status: "pending" }) }], { id: 7, purchased: false });
+      N.LIB.data = data; N.boughtOnLoad = true; wait(N, 7, 1e9); N.LIB.bbWait.check = true; await N.libBbPoll(); await new Promise((r) => setImmediate(r)); await new Promise((r) => setImmediate(r));
+      return { opened: N.opened, sent: N.sent.length, miss: N.LIB.bbRes.get(7).trialMiss }; };
+    const np = await occ({ dataAccess: "plan_required", why: "no_plan" }), inc = await occ({ dataAccess: "included", why: null });
+    ok("⑤ 結果槽被佔＋清單已購買＋沒方案 → 開方案框(from lib、不帶原因碼)、不自動安裝;有方案 → 不開框、自動安裝一次",
+      J(np) === J({ opened: [{ from: "lib", reason: null }], sent: 0, miss: true }) && J(inc) === J({ opened: [], sent: 1, miss: null }), J({ np, inc }));
     // 稽核 M1:回前景時清單已買到,但結果槽是這支的 ok＋卡用過(試用沒開):照結果走、開付第一期的框,不走「已購買就當成功」的捷徑自動安裝
     const s2 = { id: 7, purchased: false }, H = mk([{ mark: { id: 7, at: 0 }, res: res({ status: "ok", amount_twd: 1600, trial_reason_code: "TRIAL_CARD_USED" }) }], s2);
     H.boughtOnLoad = true; wait(H, 7, 1e9); H.LIB.bbWait.check = true; await H.libBbPoll(); await new Promise((r) => setImmediate(r));

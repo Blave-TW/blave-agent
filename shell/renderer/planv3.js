@@ -330,7 +330,7 @@ function p3AgentBox(m, opener, note) {
   const x = document.createDocumentFragment(), d = m.days, cu = P3.cuBox && m.kind !== "out" && m.kind !== "trial" ? P3.cuBox : null;
   if (note) x.appendChild(p3El("p", "p3-t p3-ink", t(note)));
   if (cu) x.appendChild(p3El("p", "p3-t p3-ink", t("p3.cu.lib")));
-  const title = cu ? t(cu.reason === "TRIAL_NOT_ELIGIBLE" ? "p3.cu.tAcct" : "p3.cu.tCard") : t("p3.a.title");
+  const title = cu && cu.reason ? t(cu.reason === "TRIAL_NOT_ELIGIBLE" ? "p3.cu.tAcct" : "p3.cu.tCard") : t("p3.a.title");   // 沒原因碼(結果槽被佔、清單說沒方案):不猜是卡還是帳號
   const head = p3El("div", "p3-head");
   if (m.kind === "trial") {
     const pr = p3El("div", "p3-price"), seen = [p3El("span", "big num", p3Num(m.trialDays)), p3El("span", "u", t("p3.a.trialUnit"))];

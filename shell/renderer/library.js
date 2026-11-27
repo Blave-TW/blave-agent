@@ -1623,9 +1623,10 @@ async function libBbPoll() {
   if (LIB.bbWait !== w) return;
   const out = libBbRes(r ? r.res : null, w.id);
   if (out.kind === "ok" || out.kind === "wallet" || out.kind === "failed") { libBbDone(w.id, out, w.q); return; }
-  // 結果槽沒有這支的終態(被新單佔著)、清單卻已買到:當成功。方案單不走這條:策略買到不代表方案開了(付了舊頁的方案單,結果照輪詢)
+  // 結果槽沒有這支的終態(被新單佔著)、清單卻已買到:當成功。方案單不走這條:策略買到不代表方案開了(付了舊頁的方案單,結果照輪詢)。
+  // 試用沒開成的原因碼只在結果槽:清單說沒方案就當試用沒開(不帶原因碼),先開方案框、付了才裝
   const got = libFind(w.id);
-  if (got && got.purchased && !(w.q && w.q.plan)) { libBbDone(w.id, { kind: "ok", code: null, amount: null, trialUntil: null }); return; }
+  if (got && got.purchased && !(w.q && w.q.plan)) { libBbDone(w.id, { kind: "ok", code: null, amount: null, trialUntil: null, trialMiss: LIB.data && LIB.data.why === "no_plan" ? true : null }); return; }
   if ((r && !r.mark) || Date.now() > w.until) { LIB.bbWait = null; LIB.bbRes.set(w.id, { kind: "note", key: "lib.bb.expired" }); libSync(); return; }   // 記號過期或超過付款單效期:不再等,講一句(稽核 ⑤)
   libBbPollSoon(LIB_BB_POLL_MS);
 }
@@ -1649,7 +1650,7 @@ function libBbDone(id, out, q) {
    付了接著自動安裝(同網頁 onPaid → bbNextStep),先不要就留結果句與〔開通方案〕。v3 沒開(舊制)只留結果句 */
 function libTrialMiss(s, out, opener) {
   if (!(typeof p3Live === "function" && p3Live())) return;
-  p3OpenAgent(opener, null, "lib", { reason: out.trialMiss, onPaid: () => libAutoInstall(s) });
+  p3OpenAgent(opener, null, "lib", { reason: typeof out.trialMiss === "string" ? out.trialMiss : null, onPaid: () => libAutoInstall(s) });
 }
 // 888 方案開了(planv3.js p3CuBoxPaid,不論從哪個入口付的):各支「要方案才能跑」的結果句收掉
 function libPlanPaid() {

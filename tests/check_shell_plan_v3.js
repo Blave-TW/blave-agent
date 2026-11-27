@@ -454,6 +454,8 @@ const PV = { agent: { monthly_twd: 888, annual_twd: 8880, period_days: 30, ai_cr
       ok("④ 試用沒開成的框:標題「這張卡已經試用過」、頂上「策略買好了。這支要方案才能跑。」(同網頁 bc_cu_t_card／bc_cu_lib),主鈕照舊付 888", b.title === "p3.cu.tCard" && /p3\.cu\.lib/.test(J(b.extra)) && b.ok === 'p3.a.okPay{"p":"888"}' && evs.includes('plan_box:{"from":"lib"}'));
       reset(); quoteReply = { status: 200, body: payQ }; await C.p3OpenAgent(null, null, "lib", { reason: "TRIAL_NOT_ELIGIBLE", onPaid: () => paid++ });
       ok("④ 帳號沒資格那一態標題「這個帳號不能再試用」", boxes[0].title === "p3.cu.tAcct");
+      reset(); quoteReply = { status: 200, body: payQ }; await C.p3OpenAgent(null, null, "lib", { reason: null, onPaid: () => paid++ });
+      ok("④ 沒原因碼(結果槽被佔、清單說沒方案):標題不猜卡或帳號、用方案框原標題,頂上一句照講策略買好了", boxes[0].title === "p3.a.title" && /p3\.cu\.lib/.test(J(boxes[0].extra)));
       startReply = { status: 200, body: { state: "none" } }; await C.p3AgentGo(m, null, false);
       ok("④ 框內付成功:onPaid 叫一次、策略庫結果句收掉(libPlanPaid),記號清掉", paid === 1 && libPaid === 1 && C.P3.cuBox === null);
       reset(); quoteReply = { status: 200, body: payQ }; await C.p3OpenAgent(null, null, "lib", { reason: "TRIAL_CARD_USED", onPaid: () => paid++ });
