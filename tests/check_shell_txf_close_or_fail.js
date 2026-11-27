@@ -45,7 +45,7 @@ ok("拒單 token market_closed 換 tr.err.marketClosed", /market_closed: "tr\.er
 // 部位表掛不掛(trLiveOrderErrs)與原文退路(trOrderErrRaw):列照 lib/portfolio._record_order_error 實際存進 order_errors.json 的樣子
 // (flatten 傳「close-all: [order_reject:market_closed] …」,存檔時 token 搬到最前面;rel-0155 跑一次 _record_order_error 取得)
 { const L = new Function([line(/^const TR_CAPITAL_PREFIX = .*$/m), line(/^const TR_CLOSE_ALL_RE = .*$/m),
-    ...["trCanonSym", "trCanonKey", "trCapitalCanon", "trTwFutCanon", "trMs", "trIsCloseAll", "trLiveOrderErrs", "trOrderErrRaw"].map(fn),
+    ...["trCanonSym", "trCanonKey", "trCapitalCanon", "trTwFutCanon", "trTwFutVenue", "trMs", "trIsCloseAll", "trLiveOrderErrs", "trOrderErrRaw"].map(fn),
     "return { trLiveOrderErrs, trOrderErrRaw, trIsCloseAll };"].join("\n"))();
   const STORED = [
     { ts: "2026-11-16T06:38:49.443015", symbol: "TXF", exchange: "president", error: "[order_reject:market_closed] close-all: 休市中沒有平倉，部位還在、沒有停損，開盤後要自己平" },

@@ -258,6 +258,10 @@ ok("§9.3 區順序:固定 USDT → USDC → 其他(字母序)→ TWD → 台指
 ok("§9.3 綁加密所:帳戶幣那一區第一、其他加密區跟著,台股與台指期照固定序在後;綁台灣券商:口數區第一",
   J(trZoneOrder(["TWD", "USDT", "USDC", TR_ZONE_LOTS], "binance", "USDC")) === J(["USDC", "USDT", "TWD", TR_ZONE_LOTS])
   && J(trZoneOrder(["USDT", "TWD", TR_ZONE_LOTS, TR_ZONE_UNKNOWN], "capital", TR_ZONE_LOTS)) === J([TR_ZONE_LOTS, "USDT", "TWD", TR_ZONE_UNKNOWN]));
+ok("永豐(sinopac)同群益／統一是台灣期貨券商:口數區、區排序、口數單、只算台指期策略的金額(trTwFutVenue)",
+  trMultZone("sinopac", "TWD", []) === TR_ZONE_LOTS && J(trZoneOrder(["USDT", "TWD", TR_ZONE_LOTS], "sinopac", TR_ZONE_LOTS)) === J([TR_ZONE_LOTS, "USDT", "TWD"])
+  && trOrderLots({ exchange: "sinopac", symbol: "X" })
+  && trTradableFunded({ venues: { sinopac: { credentials: true, pair: true, order: true, account: true } }, config: { amounts: { a: 100, b: 100 } }, states: { a: { symbol: "BTCUSDT" }, b: { symbol: "TXF" } } }) === 1);
 ok("§9.3 帳戶幣那一區(排序用):加密所 = 帳戶幣;OKX 回 USD、表上只有 USDT → USDT 區(平台匯率兩者同為 1);台灣券商 = 口數區(帳戶幣要是 TWD);沒綁 / 帳戶幣未知 = null",
   trMultZone("binance", "USDT", ["USDT"]) === "USDT" && trMultZone("okx", "USD", ["USDT", "TWD"]) === "USDT" && trMultZone("okx", "USD", ["USD"]) === "USD"
   && trMultZone("capital", "TWD", []) === TR_ZONE_LOTS && trMultZone("president", "USDT", []) === null && trMultZone(null, "USDT", ["USDT"]) === null && trMultZone("myex", null, ["USDT"]) === null

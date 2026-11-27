@@ -399,6 +399,8 @@ function trRouteDirty(r) {
 /* 這家能下的金額(post-connect-flow 第 1／5′ 列):金額 > 0 的策略裡,扣掉 trPickRows 同一套規則會鎖的——統一的非台指期、
    模擬交易的台股(台指期照機器支援)。回幾支。加密策略有金額、改綁統一 = 0:Z,「啟動下單」停用,原因行叫人先去策略組合。
    規則跟 runtime 存金額時的 NOT_TXF 同一條(command_listener):標的看得出來、而且確定不是台指期才不算;看不出來(清單與回報都沒有)算能下 */
+// 台灣期貨券商(群益、統一、永豐;同網頁 TW_FUT_VENUES):純邏輯區用這條,不看 SINOPAC_LOCAL_ON——永豐沒開時不會有 sinopac 的帳戶與下單紀錄
+function trTwFutVenue(id) { return id === "capital" || id === "president" || id === "sinopac"; }
 function trTradableFunded(r) {
   const a = r && r.config && r.config.amounts; if (!a || typeof a !== "object") return 0;
   const vid = trVenueIds(r)[0] || null, list = typeof TR !== "undefined" && TR && Array.isArray(TR.list) ? TR.list : [], st = r.states || {};
@@ -407,9 +409,9 @@ function trTradableFunded(r) {
     const exm = r.config && r.config.exchanges;
     if (vid && exm && typeof exm === "object" && !exm[n]) return false;   // 有綁交易所、這支卻沒有路由(解綁後重新綁定、還沒存):這家下不了它
     const x = list.find((y) => y.name === n) || {}, sym = String(x.symbol || (st[n] && st[n].symbol) || "").trim().toUpperCase();
-    if ((vid === "president" || vid === "capital") && (x.portfolio === true || !!(st[n] && st[n].weights))) return false;   // 投資組合:成分統一下不了(同網頁 pfTxfOnly)
+    if (trTwFutVenue(vid) && (x.portfolio === true || !!(st[n] && st[n].weights))) return false;   // 投資組合:成分台灣期貨券商下不了(同網頁 pfTxfOnly)
     if (!sym) return true;   // 標的看不出來:不判(同 runtime NOT_TXF 的 fail-open)
-    if (vid === "president" || vid === "capital") return !!trTxfSpec(sym);   // 群益同一條(runtime MARKET_VENUE)   // 不去 R1:runtime 存的時候 TXFR1 不算台指期
+    if (trTwFutVenue(vid)) return !!trTxfSpec(sym);   // 群益同一條(runtime MARKET_VENUE)   // 不去 R1:runtime 存的時候 TXFR1 不算台指期
     if (vid === "paper" && r.can_paper_twstock !== true) return !(x.twd === true || /^(?:TXF|MXF|TMF|\d{4,6}[A-Z]?(?:\.TWO?)?)$/.test(sym)) || !!trTxfSpec(sym);   // 同 TR_TWD_RE
     return true;
   }).length;
@@ -725,10 +727,10 @@ const TR_TWN = { names: null, busy: false, at: 0, v: 0, wanted: false }, TR_TWN_
 function trTxfPrice() { return TR_TXF.price; }
 // 口數 → 參考金額(TWD;同網頁 txfRefMoney):0 口 = 0;沒有報價 = null,呼叫端畫「—」,不拿口數硬乘出一個像金額的數
 function trTxfRefMoney(spec, lots, price) { if (!(lots > 0)) return 0; return typeof price === "number" && price > 0 ? lots * spec.cv * price : null; }
-/* 下單紀錄這一筆是不是口數單(同網頁下單紀錄 / reconciler is_lot_based):asset_spec 是 futures_contracts、交易所是群益／統一,
+/* 下單紀錄這一筆是不是口數單(同網頁下單紀錄 / reconciler is_lot_based):asset_spec 是 futures_contracts、交易所是台灣期貨券商(trTwFutVenue),
    或標的本身是台指期(TXF／MXF／TMF:舊的平倉列沒有 asset_spec,看標的不看綁哪家)——這時 signed_diff 是口數,不是錢 */
 function trOrderLots(o) {
-  return !!o && ((!!o.asset_spec && o.asset_spec.type === "futures_contracts") || o.exchange === "capital" || o.exchange === "president"
+  return !!o && ((!!o.asset_spec && o.asset_spec.type === "futures_contracts") || trTwFutVenue(o.exchange)
     || !!trTxfSpec(trCapitalCanon(o.symbol)));
 }
 /* 下單紀錄與總覽事件列的下單:只列目前連著的交易所那些——這台電腦綁了統一之後,之前模擬交易的單不混進同一張表。
@@ -876,14 +878,14 @@ function trUsPerp(r, sym, names) {
    沒綁、帳戶幣未知 = null;加密帳戶的幣是 TWD(讀帳退路錯了)也 null——TWD 區是台股,不在這個帳戶上 */
 function trMultZone(venueId, acct, keys) {
   if (!venueId) return null;
-  if (venueId === "capital" || venueId === "president") return acct === TR_TXF_CCY ? TR_ZONE_LOTS : null;
+  if (trTwFutVenue(venueId)) return acct === TR_TXF_CCY ? TR_ZONE_LOTS : null;
   if (!acct || acct === TR_TXF_CCY) return null;
   return acct === "USD" && keys.indexOf("USDT") >= 0 ? "USDT" : acct;
 }
 /* 區的順序(§9.3):固定 USDT → USDC → 其他(字母序)→ TWD → 台指期(口)→ 幣別未定;綁定的交易所交易的區移到最前面,
    帳戶幣那一區第一。台灣期貨券商只交易口數區;加密所交易台幣以外的已知區 */
 function trZoneOrder(keys, venueId, acctZone) {
-  const tw = venueId === "capital" || venueId === "president";
+  const tw = trTwFutVenue(venueId);
   const bound = (k) => !!venueId && (tw ? k === TR_ZONE_LOTS : k !== TR_TXF_CCY && k !== TR_ZONE_LOTS && k !== TR_ZONE_UNKNOWN && k !== "USD");
   const rank = (k) => (k === "USDT" ? 0 : k === "USDC" ? 1 : k === TR_TXF_CCY ? 3 : k === TR_ZONE_LOTS ? 4 : k === TR_ZONE_UNKNOWN ? 5 : 2);
   const head = (k) => (!bound(k) ? 2 : k === acctZone ? 0 : 1);
@@ -1404,12 +1406,12 @@ function trLiveOrderErrs(errs, pending, ctx) {
   const okAt = {};
   (ctx && Array.isArray(ctx.orders) ? ctx.orders : []).forEach((o) => {
     if (!o || typeof o !== "object" || !o.symbol || !(Array.isArray(o.legs) && o.legs.some((l) => l && Number(l.executed_qty) > 0))) return;
-    const tw = o.exchange === "capital" || o.exchange === "president", k = tw ? trTwFutCanon(o.symbol) : trCanonKey(o.symbol), at = trMs(o.ts) || 0;
+    const tw = trTwFutVenue(o.exchange), k = tw ? trTwFutCanon(o.symbol) : trCanonKey(o.symbol), at = trMs(o.ts) || 0;
     if (!okAt[k] || at > okAt[k]) okAt[k] = at;
   });
   errs.forEach((e) => {
     if (!e || typeof e !== "object" || e.released === true) return;   // 已解除的停車單(lib/portfolio.mark_park_released)不是現況
-    const closeAll = trIsCloseAll(e.error), tw = e.exchange === "capital" || e.exchange === "president";
+    const closeAll = trIsCloseAll(e.error), tw = trTwFutVenue(e.exchange);
     const k = tw && (closeAll || e.exchange !== "capital") ? trTwFutCanon(e.symbol) : trCanonKey(e.symbol);
     if (closeAll) {
       if (!ctx || ctx.running) return;
@@ -1900,7 +1902,7 @@ function trReport() { return (TR.st && TR.st.report) || null; }
 /* 主機存的換合約設定(只列跟 SYMBOL 不同的);舊 runtime 沒這欄 = 照 SYMBOL */
 function trContracts() { const c = ((trReport() || {}).config || {}).contracts; return c && typeof c === "object" && !Array.isArray(c) ? c : null; }
 function trVenueId() { return trVenueIds(trReport())[0] || null; }
-function trTwBroker(id) { return id === "capital" || id === "president" || (id === "sinopac" && SINOPAC_LOCAL_ON); }   // 台灣期貨券商(同 trOrderLots 認的那兩家)
+function trTwBroker(id) { return id === "capital" || id === "president" || (id === "sinopac" && SINOPAC_LOCAL_ON); }   // 台灣期貨券商(同 trOrderLots 認的那幾家;永豐看旗標)
 // 給人看的交易所名:這一版只有模擬交易;其餘 id 首字大寫(同雲端 venueLabel 的退路)
 function trVenueLabel(id, short) {
   if (!id) return "";
@@ -5094,7 +5096,7 @@ function poSigTable(r, stored, states, mode) {
 function trPosDetail(r) {
   const out = {}, dup = {}, F = ["entry_price", "unrealized_pnl", "margin", "leverage"];
   trVenueIds(r).forEach((id) => { const e = trLiveEntry(r, id); if (!e || !e.ok || !e.positions) return;
-    Object.keys(e.positions).forEach((s) => { const k = id === "capital" || id === "president" ? trTwFutCanon(s) : trCanonSym(s); if (k in out) dup[k] = true;
+    Object.keys(e.positions).forEach((s) => { const k = trTwBroker(id) ? trTwFutCanon(s) : trCanonSym(s); if (k in out) dup[k] = true;
       const p = e.positions[s] || {}, d = {}; F.forEach((f) => { if (typeof p[f] === "number" && isFinite(p[f])) d[f] = p[f]; }); out[k] = d; }); });
   Object.keys(dup).forEach((k) => { out[k] = {}; });
   return out;
