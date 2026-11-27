@@ -131,7 +131,7 @@ ok("② 完成列不帶 meta(Wei 10-21);①② 點了就地展開(aria-expanded)
     trackFeature() {}, onbEnv: () => "local", wcDetail() {}, wcUse() {} };
   vm.createContext(C);
   const blk = lib.slice(lib.indexOf("/* ── 純邏輯("), lib.indexOf("/* ── 純邏輯到此"));
-  vm.runInContext(blk.replace(/^const /gm, "var ") + "\n" + cutFn(src, "wcCard"), C);
+  vm.runInContext(blk.replace(/^const /gm, "var ") + "\n" + cutFn(src, "wcCard") + "\n" + cutFn(src, "wcSince"), C);
   const rep = { annual_return: 12.3, total_return: 40, sharpe: 1.234, max_drawdown: -18.5, equity_from: "2020-01-01", equity_to: "2026-06-30" };
   const walk = (n, out) => { out.push(n); (n.kids || []).forEach((k) => typeof k === "object" && walk(k, out)); return out; };
   const c1 = walk(C.wcCard({ id: 7, title: "A", report: rep }, true), []), c2 = walk(C.wcCard({ id: 8, title: "B", report: rep }, false), []);
@@ -161,11 +161,33 @@ ok("② 完成列不帶 meta(Wei 10-21);①② 點了就地展開(aria-expanded)
     && /\.ln-arrow::before \{ content: ""; position: absolute; left: 0; right: 0; top: -6px; bottom: -6px; \}/.test(css) && /min-height: 32px/.test(css.slice(css.indexOf(".ln-arrow {")))
     && !/\.st-row|\.tag\b/.test(css.replace(/\/\*[\s\S]*?\*\//g, "")));
   // 骨架→真卡不跳版:骨架拿樣板策略走 wcCard 原樣建(同斷行),字換透明條;真卡的名字區只在一行排(≥640)先留名字一行＋meta 兩行(兩排時不留,設計稽核 D2)
-  ok("② 骨架由 wcCard(樣板策略)建、每段字包進 .skt、整張 aria-hidden + inert;.info 只在 ≥640 先留名字一行＋meta 兩行的高度;wcBusySync 不碰骨架",
+  ok("② 骨架由 wcCard(樣板策略)建、每段字包進 .skt、整張 aria-hidden + inert;.info 只在 ≥640 先留名字一行＋meta 兩行(有上架以來那一行再多一行)的高度;wcBusySync 不碰骨架",
     /const c = wcCard\(WC_SKEL, false\)/.test(cutFn(src, "wcSkel")) && /k = wdEl\("span", "skt"\)/.test(cutFn(src, "wcSkel")) && /c\.setAttribute\("aria-hidden", "true"\); c\.inert = true;/.test(cutFn(src, "wcSkel"))
-    && /@container \(min-width: 640px\) \{ \.wc-card \.info \{ min-height: calc\(13px \* 1\.45 \+ var\(--space-2\) \+ 2 \* 12px \* 1\.5\); \} \}/.test(css)
-    && (css.match(/min-height: calc\(13px \* 1\.45/g) || []).length === 1 && /\.wc-card\.is-skel \.skt \{ color: transparent;/.test(css)
+    && /@container \(min-width: 640px\) \{ \.wc-card \.info \{ min-height: calc\(13px \* 1\.45 \+ var\(--space-2\) \+ 2 \* 12px \* 1\.5\); \} \.wc-card \.info:has\(\.wc-since\) \{/.test(css)
+    && /\.wc-card \.info:has\(\.wc-since\) \{ min-height: calc\(13px \* 1\.45 \+ 2 \* var\(--space-2\) \+ 3 \* 12px \* 1\.5\); \} \}/.test(css)
+    && (css.match(/min-height: calc\(13px \* 1\.45/g) || []).length === 2 && /\.wc-card\.is-skel \.skt \{ color: transparent;/.test(css)
     && /querySelectorAll\("\.wc-card:not\(\.is-skel\) \.ln-arrow"\)/.test(cutFn(src, "wcBusySync"))); }
+// ── ② 卡上「上架以來 N 天＋報酬」(library-oos SPEC-v3 §4.4、§5 精選卡那格;同 web marketplace sinceLine)──
+{ const css = read(path.join(R, "welcome.css")), lib = read(path.join(R, "library.js"));
+  const mkEl = (tag, cls, txt) => ({ tag, className: cls || "", textContent: txt == null ? "" : String(txt), kids: [], attrs: {}, dataset: {}, on: {}, id: "",
+    append(...xs) { xs.forEach((x) => this.kids.push(x)); }, appendChild(x) { this.kids.push(x); return x; }, setAttribute(k, v) { this.attrs[k] = v; }, addEventListener(k, f) { this.on[k] = f; } });
+  const C = { wdEl: mkEl, t: (k) => "<" + k + ">", WC: { tip: 0 }, libSymbolNodes: () => ["BTC/USDT"], libRich: (k, v) => { const e = mkEl("frag", "", k); e.vars = v; return e; }, libMono: (x) => mkEl("span", "mono", x),
+    trackFeature() {}, onbEnv: () => "local", wcDetail() {}, wcUse() {} };
+  vm.createContext(C);
+  vm.runInContext(lib.slice(lib.indexOf("/* ── 純邏輯("), lib.indexOf("/* ── 純邏輯到此")).replace(/^const /gm, "var ") + "\n" + cutFn(src, "wcCard") + "\n" + cutFn(src, "wcSince"), C);
+  const base = { annual_return: 12.3, sharpe: 1.2, max_drawdown: -18.5, equity_from: "2020-01-01", equity_to: "2026-06-30" };
+  const line = (extra) => { const c = C.wcCard({ id: 7, title: "A", report: Object.assign({}, base, extra) }, false), info = c.kids.find((k) => k.className === "info");
+    const p = info.kids.find((k) => k.className === "wc-since"); if (!p) return null;
+    return p.kids.map((k) => k.className + "=" + (k.kids[0] && k.kids[0].tag === "frag" ? k.kids[0].textContent + ":" + k.kids[0].vars.n.textContent : k.textContent)).join("|"); };
+  const r = { days: line({ listed_at: "2026-07-13", since_listing: { days: 135, return: 6.21 } }), neg: line({ listed_at: "2026-07-13", since_listing: { days: 3, return: -1.5 } }),
+    today: line({ listed_at: C.libTaipeiDate(Date.now()), since_listing: { days: 0, return: null } }), empty: line({ listed_at: "2026-07-13", since_listing: { days: null, return: null } }),
+    none: line({}), paid: line({ listed_at: "2026-07-13" }) };
+  ok("② 卡上那一行:N 天＋報酬依正負上色;上架當天只寫今天上架;官方但沒有上架後的日子寫「上架以來 —」灰字;沒有 since_listing(付費、舊 api)不畫",
+    JSON.stringify(r) === JSON.stringify({ days: "k=lib.since.line:135|v mono up=+6.21%", neg: "k=lib.since.line:3|v mono down=−1.50%", today: "k=<lib.since.today>", empty: "k=<lib.since.title>|v mono na=—", none: null, paid: null }), JSON.stringify(r));
+  ok("② 那一行掛在名字區(.info)最後;骨架樣板帶上架以來欄位(骨架與真卡同高);≥640 有那一行時名字區多留一行;字 12px、數字上色同 .wc-stat、缺值 --ink-disabled",
+    /info\.append\(nm, meta\);\n  const sn = libSince\(s, null\);\n  if \(sn\) info\.appendChild\(wcSince\(sn\)\);/.test(cutFn(src, "wcCard")) && /since_listing: \{ days: 120, return: 4\.18 \}/.test(src)
+    && /\.wc-since \{ display: flex; align-items: baseline; gap: var\(--space-6\); margin: 0; font-size: 12px;/.test(css) && /\.wc-since \.v\.na \{ color: var\(--ink-disabled\); \}/.test(css)
+    && /\.wc-since \.v\.up \{ color: var\(--color-greenText\); \}/.test(css) && /\.wc-since \.v\.down \{ color: var\(--color-redText\); \}/.test(css)); }
 // ── en Title Case(設計稽核 P2-5)──
 { const S = {}; vm.createContext(S); vm.runInContext(read(path.join(R, "strings.js")).replace(/^const STRINGS/m, "var STRINGS"), S);
   ok("② en:tr.pick／tr.pick.title = Pick Strategies、po.goAmounts = Set Amounts(同一位置的兩種字一起 Title Case);zh 選擇策略／設定金額",

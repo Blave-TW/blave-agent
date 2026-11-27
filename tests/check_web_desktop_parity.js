@@ -748,6 +748,17 @@ for (const lang of ["zh", "en"]) {
       .map(([n, s, rep, exp]) => n + ":電腦版 " + call(D.since, s, rep) + " / 網頁 " + call(BL.since, s, rep) + " / fixture " + JSON.stringify(exp));
     ok("上架以來判斷兩邊同一個答案(網頁 fixture " + CASES.length + " 組含兩組 /report;libSince ↔ since、libCurveEnd ↔ curveEnd,也對 fixture 的 expect)", !parts.includes(null) && CASES.length > 2 && bad.length === 0, bad.join(";"));
   } }
+// 精選卡「上架以來 N 天＋報酬」那一行(SPEC-v3 §5 表面表那格;參照面 web marketplace 精選卡 sinceLine):web 精選卡畫它、電腦版歡迎頁卡(wcCard → wcSince)也畫;
+// 三態同一套:有天數 → 「上架以來 N 天」＋報酬、上架當天 → 「今天上架」、其餘 → 「上架以來」＋「—」;字串逐字比在上面那段
+{ const mp = path.join(webDir, "app", "main", "templates", "agent", "marketplace.html"), wsrc = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "welcome.js"), "utf8");
+  const cut = (txt, n) => { const a = txt.indexOf("function " + n + "("); if (a < 0) return ""; let i = txt.indexOf("{", a), d = 0; for (; i < txt.length; i++) { if (txt[i] === "{") d++; else if (txt[i] === "}" && --d === 0) break; } return txt.slice(a, i + 1); };
+  if (!fs.existsSync(mp)) console.log("SKIP  精選卡上架以來那一行(旁邊沒有 web 的 marketplace.html;設 BLAVE_WEB_DIR)");
+  else {
+    const w = fs.readFileSync(mp, "utf8"), wl = cut(w, "sinceLine"), wf = cut(w, "buildFeatured"), dl = cut(wsrc, "wcSince"), dc = cut(wsrc, "wcCard");
+    const webShape = /if \(sn\.days !== null\)[\s\S]*T\.sinceLine[\s\S]*\} else if \(sn\.today\)[^\n]*T\.sinceToday[\s\S]*else \{[\s\S]*T\.sinceTitle[\s\S]*"—"/.test(wl) && /const sn = L\.since\(s\);\s*if \(sn\) card\.appendChild\(sinceLine\(sn\)\);/.test(wf);
+    const deskShape = /if \(sn\.days !== null\)[\s\S]*"lib\.since\.line"[\s\S]*\} else if \(sn\.today\)[^\n]*"lib\.since\.today"[\s\S]*else \{[^\n]*"lib\.since\.title"[^\n]*"—"/.test(dl) && /const sn = libSince\(s, null\);\s*if \(sn\) info\.appendChild\(wcSince\(sn\)\);/.test(dc);
+    ok("精選卡上架以來那一行:web 精選卡(sinceLine)與電腦版歡迎頁卡(wcSince)都畫、三態同一套(N 天＋報酬／今天上架／上架以來 —)、沒有上架以來就不畫", webShape && deskShape, JSON.stringify({ webShape, deskShape }));
+  } }
 // ── 側欄策略資料夾(spec strategy-sidebar-folders §10 信任邊界:清單的每一份副本——api、main.js、renderer、web——同一份,改動同 commit)──
 {
   const apiDir = process.env.BLAVE_API_DIR || path.join(__dirname, "..", "..", "api"), apiPy = path.join(apiDir, "openclaw", "agent_strategies.py");

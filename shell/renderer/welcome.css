@@ -57,7 +57,7 @@ button.onb-h:focus-visible { outline-offset: -2px; }
 .wc-card .info { grid-area: info; min-width: 0; display: flex; flex-direction: column; gap: var(--space-2); }
 /* 一行排(≥640)時名字欄窄,meta 會不會折行看內容長短:先留名字一行＋meta 兩行,三張卡一樣高、骨架(wcSkel)對得上真卡。
    兩排(<640)時 meta 有整列寬、幾乎不折,留高度只會在名字組與數字之間多一塊空白(組內間距大過卡距),不留(設計稽核 D2) */
-@container (min-width: 640px) { .wc-card .info { min-height: calc(13px * 1.45 + var(--space-2) + 2 * 12px * 1.5); } }
+@container (min-width: 640px) { .wc-card .info { min-height: calc(13px * 1.45 + var(--space-2) + 2 * 12px * 1.5); } .wc-card .info:has(.wc-since) { min-height: calc(13px * 1.45 + 2 * var(--space-2) + 3 * 12px * 1.5); } }
 .wc-card .t { display: block; align-self: flex-start; max-width: 100%; padding: 0; font-size: 13px; font-weight: 600; line-height: 1.45; color: var(--ink); text-align: left; }
 /* 最多兩行截在裡面那層 span:WebKit 不吃 <button> 上的 -webkit-line-clamp(設計稽核 W2,同 web .wc-name-t) */
 .wc-card .t .tn { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
@@ -71,6 +71,12 @@ button.onb-h:focus-visible { outline-offset: -2px; }
 .wc-stat .k .mp-tip { font-size: inherit; }
 .wc-stat .k .tip { width: max-content; }
 .wc-stat .v { min-width: 7ch; font-size: 14px; line-height: 1.5; color: var(--ink); white-space: nowrap; }   /* 數字欄寬不隨值長短變,三張卡的數字區對齊(稽核 W3) */
+/* 上架以來那一行(同 web .mp-since-line):12px、標籤 --ink-3、數字 mono 依正負上色,缺值灰 */
+.wc-since { display: flex; align-items: baseline; gap: var(--space-6); margin: 0; font-size: 12px; line-height: 1.5; color: var(--ink-3); }
+.wc-since .v { color: var(--ink); white-space: nowrap; }
+.wc-since .v.up { color: var(--color-greenText); }
+.wc-since .v.down { color: var(--color-redText); }
+.wc-since .v.na { color: var(--ink-disabled); }
 .wc-stat .v.up { color: var(--color-greenText); }
 .wc-stat .v.down { color: var(--color-redText); }
 .wc-card .act { grid-area: act; }

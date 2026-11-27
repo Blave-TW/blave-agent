@@ -266,7 +266,8 @@ function wcAlert(cloud) {
 }
 /* 骨架卡:拿一支樣板策略走 wcCard 原樣建 DOM(同字型、同 mono、同斷行),字換成透明的條。卡高跟著每個寬度級距自己算,
    meta 在窄欄折兩行時骨架也折兩行,讀到時版面不跳。樣板取最常見的形狀(永續合約 × 週期 × 多年樣本) */
-const WC_SKEL = { id: 0, title: "BTC Channel Momentum", report: { symbol: "BTCUSDT", interval: "4h", annual_return: 24.61, sharpe: 1.62, max_drawdown: -20.96, equity_from: "2020-01-01", equity_to: "2026-06-30" } };
+const WC_SKEL = { id: 0, title: "BTC Channel Momentum", report: { symbol: "BTCUSDT", interval: "4h", annual_return: 24.61, sharpe: 1.62, max_drawdown: -20.96, equity_from: "2020-01-01", equity_to: "2026-06-30",
+  listed_at: "2026-06-30", since_listing: { days: 120, return: 4.18 } } };
 function wcSkel() {
   const c = wcCard(WC_SKEL, false), texts = [];
   const walk = (n) => n.childNodes.forEach((k) => (k.nodeType === 3 ? k.nodeValue.trim() && texts.push(k) : walk(k)));
@@ -293,6 +294,8 @@ function wcCard(s, first) {
   });
   if (y1 && y2) seg(libRich("workspace_lib_bt_span", { span: libMono(y1 === y2 ? y1 : y1 + "–" + y2) }));
   info.append(nm, meta);
+  const sn = libSince(s, null);
+  if (sn) info.appendChild(wcSince(sn));
   // 第一格:樣本未滿 1 年講總報酬;最大回撤一律紅、Sharpe 不上色。gloss 只掛第一張卡(首次出現),重用回測頁同一句
   const tot = wcFirstKv(s) === "total", v1 = tot ? r.total_return : r.annual_return, mdd = typeof r.max_drawdown === "number" ? -Math.abs(r.max_drawdown) : null;
   const stats = wdEl("div", "wc-stats");
@@ -314,6 +317,16 @@ function wcCard(s, first) {
   act.appendChild(a);
   c.append(info, stats, act);
   return c;
+}
+// 卡上那一行「上架以來 N 天＋報酬」(library-oos SPEC-v3 §4.4;同 web marketplace sinceLine):上架當天只講今天上架;還沒有上架後的日子寫「—」
+function wcSince(sn) {
+  const p = wdEl("p", "wc-since"), k = wdEl("span", "k");
+  if (sn.days !== null) {
+    k.appendChild(libRich("lib.since.line", { n: libMono(String(sn.days)) }));
+    p.append(k, wdEl("span", "v mono" + (sn.ret > 0 ? " up" : sn.ret < 0 ? " down" : ""), libPct(sn.ret)));
+  } else if (sn.today) { k.textContent = t("lib.since.today"); p.appendChild(k); }
+  else { k.textContent = t("lib.since.title"); p.append(k, wdEl("span", "v mono na", "—")); }
+  return p;
 }
 /* 「安裝並回測 →」:不是一鍵,走策略庫同一個確認框(libAsk from welcome)。先擋回合中與代下載中——別支在代下載時這張的 libCtaOf 仍是 free,
    不先擋的話 libAsk 會靜默 return、畫面沒反應。狀態不是 free(沒登入、剛登出)只開詳情,閘門與原因句由詳情講 */
