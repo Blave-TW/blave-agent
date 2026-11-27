@@ -103,7 +103,7 @@ TRAITS = {
         # that has had futures reads a lost snapshot as an error and close-all reports 永豐 failed
         "bound_marker": "state/sinopac_futures_enabled.json",
         "reference": "references/sinopac-broker.md",
-        "label": "永豐金",
+        "label": "永豐期貨",
         # the lowercase names odd-lot machines were bound with (web CX_VENUES) are locked; an
         # unbind drops all six, the CA password (often the national id) included
         "cred_env": {

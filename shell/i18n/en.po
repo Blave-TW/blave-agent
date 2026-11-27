@@ -4548,6 +4548,9 @@ msgstr "Capital"
 msgid "tr.ov.brokerPresident"
 msgstr "President"
 
+msgid "tr.ov.brokerSinopac"
+msgstr "SinoPac"
+
 msgid "tr.ov.brokerOther"
 msgstr "your broker"
 

@@ -102,6 +102,8 @@ check(venue_traits.venues("native_units") == {"capital", "sinopac", "president"}
 check(venue_traits.venues("windows_identity") == {"capital"}, "windows_identity venues")
 check(all(venue_traits.get(v, "label") for v in venue_traits.venues("auto_wire", False)),
       "every TW broker has a label for user-facing messages (flatten never says 群益 for another broker)")
+check(venue_traits.get("sinopac", "label") == "永豐期貨",
+      "sinopac label is 永豐期貨 (the futures firm the user opened, not 永豐金)", venue_traits.get("sinopac", "label"))
 check(venue_traits.hand_wired_routed(["binance", "capital"]) == "capital"
       and venue_traits.hand_wired_routed(["binance", ""]) is None
       and venue_traits.hand_wired_routed(["Capital"]) is None,

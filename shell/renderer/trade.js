@@ -151,7 +151,7 @@ function trCloseDeferred(e, cloud) {
   if (!e || typeof e !== "object") return null;
   const cancel = e.kind === "close_deferred_cancelled" || (e.kind == null && TR_DEFER_CANCEL_RE.test(String(e.error || "")));
   if (!cancel && e.kind !== "market_closed_deferred") return null;
-  const fut = e.exchange === "capital" || e.exchange === "president" || TR_TWFUT_RE.test(trCanonSym(String(e.symbol || "").split(",")[0]));
+  const fut = e.exchange === "capital" || e.exchange === "president" || e.exchange === "sinopac" || TR_TWFUT_RE.test(trCanonSym(String(e.symbol || "").split(",")[0]));
   const note = cancel ? "tr.ov.evDeferCancelNote" : e.clock === "unmeasured" ? (cloud ? "tr.cloud.ov.evDeferClockNote" : "tr.ov.evDeferClockNote")
     : e.clock === "far" ? (cloud ? "tr.cloud.ov.evDeferClockFarNote" : "tr.ov.evDeferClockFarNote") : "tr.ov.evDeferNote";
   return { cancel, title: cancel ? (fut ? "tr.ov.evDeferCancelFut" : "tr.ov.evDeferCancelStock") : (fut ? "tr.ov.evDeferFut" : "tr.ov.evDeferStock"), note, rowNote: note };
@@ -6124,7 +6124,7 @@ function trSpStopNote(reason) {
   const k = TR_SP_REASON[String(reason || "")] || TR_SP_REASON.UNKNOWN;
   return t("sp.ev.stoppedNote", { reason: t(k).replace(/[。.]\s*$/, "") });
 }
-const TR_BROKER_KEY = { capital: "tr.ov.brokerCapital", president: "tr.ov.brokerPresident" };
+const TR_BROKER_KEY = { capital: "tr.ov.brokerCapital", president: "tr.ov.brokerPresident", sinopac: "tr.ov.brokerSinopac" };
 /* strategy_failed 的 error 是 manager/alert_failure 收的輸出尾段(500 字);lib.data 的 DataAccessError = 外殼這輪沒給 Blave 資料 key。
    事件沒帶原因(signed_out／no_card…只寫進 perf_refresh.json),外殼手上的 data_access 是「現在」不是出事當下,所以只分這一種 */
 function trStrategyFailedNoteKey(d) {
@@ -6249,7 +6249,7 @@ function trEventText(type, d, strat) {
   if (type === "machine_restart_stopped") return out(t("tr.ov.evRestartStopped"));
   if (type === "machine_restart_stop_failed") return out(t("tr.ov.evRestartStopFailed"), t("tr.ov.evRestartStopFailedNote"));
   // 全部平倉跳過這家、部位還開著:symbols 是逗號分隔的帳本 key,讀不到快照時是空字串 → 只講那一句、不帶標的。
-  // reason snapshot_lag(群益、統一):部位快照還沒跟上剛送的單,一分鐘後再按就平得掉——講「沒替哪家平倉」(券商名照固定對照表,
+  // reason snapshot_lag(群益、統一、永豐):部位快照還沒跟上剛送的單,一分鐘後再按就平得掉——講「沒替哪家平倉」(券商名照固定對照表,
   // 不讀 payload 原文;同 api notify.py _VENUE_NAMES 的短名)。其他(群益的執行身分登不進 API)沿用原句
   if (type === "manual_close_required") {
     const syms = String(d.symbols || "").split(",").map((x) => x.trim()).filter(Boolean).join(", ");

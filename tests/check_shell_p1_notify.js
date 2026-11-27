@@ -142,6 +142,8 @@ t("stuck 那則有自己的標題與內文", src.includes("ev_order_unconfirmed_
   t("manual_close_required:群益 queued／identity(或沒帶)、統一 snapshot_lag 都叫自己的型別,payload 帶 reason 與 until",
     q.type === "manual_close_required" && q.payload.reason === "queued" && q.payload.until === 1793899200
     && id.type === "manual_close_required" && id.payload.reason === "identity" && lag.payload.reason === "snapshot_lag");
+  t("manual_close_required:永豐 snapshot_lag 也叫自己的型別(同 api agent_overview);永豐沒有身分問題那種",
+    pick(MC({ exchange: "sinopac", reason: "snapshot_lag" })).type === "manual_close_required" && pick(MC({ exchange: "sinopac", reason: "identity" })).type === "order_error");
   t("manual_close_required:認不得的組合照舊當拒單(統一沒有身分問題、新 reason)",
     pick(MC({ exchange: "president", reason: "identity" })).type === "order_error" && pick(MC({ reason: "new_one" })).type === "order_error");
   t("本機通知的標題與內文按 reason 換,queued 講幾點後再按(台灣時間)",

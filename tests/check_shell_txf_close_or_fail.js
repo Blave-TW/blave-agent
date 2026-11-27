@@ -24,6 +24,8 @@ const line = (re) => { const m = re.exec(trade); if (!m) throw new Error("找不
     const d = (clock, cloud) => M.trCloseDeferred({ symbol: "TXF", exchange: "president", kind: "market_closed_deferred", clock }, cloud);
     return d("far").title === "tr.ov.evDeferFut" && d("far").note === "tr.ov.evDeferClockFarNote" && d("far").rowNote === d("far").note
       && d("unmeasured", true).note === "tr.cloud.ov.evDeferClockNote" && d("far", true).note === "tr.cloud.ov.evDeferClockFarNote" && d(undefined, true).note === "tr.ov.evDeferNote"; })());
+  ok("永豐(只做期貨)的延後與取消列是台指期那組標題", M.trCloseDeferred({ symbol: "X", exchange: "sinopac", kind: "market_closed_deferred" }).title === "tr.ov.evDeferFut"
+    && M.trCloseDeferred({ symbol: "X", exchange: "sinopac", kind: "close_deferred_cancelled" }).title === "tr.ov.evDeferCancelFut");
   ok("新機器的拒單列不會被認成延後或取消", M.trCloseDeferred({ symbol: "TXF", exchange: "president",
     error: "[order_reject:market_closed] close-all: 休市中沒有平倉，部位還在、沒有停損，開盤後要自己平" }) === null
     && M.trCloseDeferred({ symbol: "TXF", exchange: "president", error: "close-all: 更新後取消等開盤的平倉，部位還在、沒有停損，要自己平" }) === null); }

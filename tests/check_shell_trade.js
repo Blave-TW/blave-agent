@@ -1298,13 +1298,17 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     // snapshot_lag(api cf3ce179 起群益、統一都分流成 manual_close_required):講「沒替哪家平倉」,不再說群益;券商名照對照表
     const lagC = trEventText("manual_close_required", { exchange: "capital", symbols: "TMF", reason: "snapshot_lag" }),
       lagP = trEventText("manual_close_required", { exchange: "president", symbols: "", reason: "snapshot_lag" }),
+      lagS = trEventText("manual_close_required", { exchange: "sinopac", symbols: "TXF", reason: "snapshot_lag" }), fbS = trEventText("tw_feed_fallback", { venue: "sinopac" }),
       lagX = trEventText("manual_close_required", { exchange: "constructor", reason: "snapshot_lag" }), idC = trEventText("manual_close_required", { exchange: "capital", symbols: "TMF", reason: "identity" });
     const SZ = new Function(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8") + "; return STRINGS;")();
+    ok("永豐(sinopac)的快照落後與行情改用 Blave 照對照表寫永豐,不是「這家券商」",
+      lagS[0] === 'tr.ov.evManualCloseLag{"broker":"tr.ov.brokerSinopac"}' && fbS[0] === 'tr.ov.evFeedFallback{"broker":"tr.ov.brokerSinopac"}'
+      && SZ.zh["tr.ov.brokerSinopac"] === "永豐" && SZ.en["tr.ov.brokerSinopac"] === "SinoPac");
     ok("manual_close_required snapshot_lag:整句「沒替{券商}平倉：…」(不拆說明);群益／統一照對照表,表外(含 constructor 這種原型名)= 這家券商;身分問題沿用原句",
       lagC[0] === 'tr.ov.evManualCloseLag{"broker":"tr.ov.brokerCapital"}' && lagC[1] === null && lagC[4] === "TMF"
       && lagP[0] === 'tr.ov.evManualCloseLag{"broker":"tr.ov.brokerPresident"}' && !lagP[4] && lagX[0] === 'tr.ov.evManualCloseLag{"broker":"tr.ov.brokerOther"}'
       && idC[0] === "tr.ov.evManualClose" && idC[1] === "tr.ov.evManualCloseNote"
-      && /const TR_BROKER_KEY = \{ capital: "tr\.ov\.brokerCapital", president: "tr\.ov\.brokerPresident" \};/.test(src) 
+      && /const TR_BROKER_KEY = \{ capital: "tr\.ov\.brokerCapital", president: "tr\.ov\.brokerPresident", sinopac: "tr\.ov\.brokerSinopac" \};/.test(src) 
       && /Object\.prototype\.hasOwnProperty\.call\(TR_BROKER_KEY, d\.exchange\) \? TR_BROKER_KEY\[d\.exchange\] : "tr\.ov\.brokerOther"/.test(src));
     ok("…整句與 api notify.py _MANUAL_CLOSE_SNAPSHOT_LAG 逐字同(去掉 🚨、{broker_zh} → {broker});券商短名同 _VENUE_NAMES",
       SZ.zh["tr.ov.evManualCloseLag"] === "沒替{broker}平倉：部位資料還沒跟上剛送的單。一分鐘後再按「暫停並關閉部位」，或到券商平倉。"

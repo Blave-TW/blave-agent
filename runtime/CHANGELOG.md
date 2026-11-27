@@ -9,6 +9,7 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 ## Unreleased
 
 - **`fetch_twstock_wide` 認成台股日線價格來源(`strategy_reporter._PRICE_FETCHERS` → `tw_stock`、`portfolio_reporter._TW_STOCK_DAILY_FETCHERS`;workspace 的 `manager/wait_for_bar`、`lib/portfolio` 同步)**:lib 新增的全市場寬表(spec typec-iterate-return-floor §8.4(a))。沒有這兩條,用它的策略 `strategy_market` 是 None:綁加密交易所不會被拒、台股交易日曆與醒來保持不套用。**這版 runtime 要先 promote 全機隊(電腦版跟它一起打包),範本／範例／references 才能改用 `fetch_twstock_wide`**(那顆另一個 commit)。測試 `tests/check_price_fetchers.py`、`tests/check_tw_stock_bar_calendar.py`。
+- **永豐的平倉訊息改叫「永豐期貨」(`venue_traits` `sinopac.label`,lib 與 runtime 兩份同改)**:原本寫「永豐金」(銀行集團名,用戶開的是永豐期貨),全部平倉「平倉未確認成交」那句會講錯。workspace 那份隨根 VERSION 2026-11-27-g(佔位)。電腦版(0.1.65)同批:事件券商短名 `TR_BROKER_KEY` 補 `sinopac` →「永豐」/SinoPac(新 key `tr.ov.brokerSinopac`,同 api notify.py `_VENUE_NAMES`),`tw_feed_fallback` 與 `manual_close_required` snapshot_lag 不再寫「這家券商」;`trCloseDeferred` 台指期判斷認 sinopac;主行程 `p1ManualClose` 認永豐 snapshot_lag(同 api agent_overview)。測試 `tests/check_venue_traits.py`、`check_shell_trade.js`、`check_shell_p1_notify.js`、`check_shell_txf_close_or_fail.js`、`check_data_gap_alerts.py`、`check_web_desktop_parity.js`。
 
 ## 1.1.175 — 2026-11-27(desktop 0.1.64:永豐連接中寬限 195 秒、雲端更新遇永豐忙也自動重試)
 

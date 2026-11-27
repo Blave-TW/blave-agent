@@ -137,7 +137,7 @@ for (const lang of ["zh", "en"]) {
 // 全部平倉快照落後(manual_close_required reason snapshot_lag;api 1aed82a8 起群益、統一都走這個型別):整句與券商短名兩邊逐字同。
 // 網頁這幾個 key 還沒上(同步改中):網頁沒有就只記一筆 NOTE,有了就必須逐字一致
 const LAG_PAIRS = { "tr.ov.evManualCloseLag": "workspace_ov_ev_manual_close_lag", "tr.ov.brokerCapital": "workspace_ov_broker_capital",
-  "tr.ov.brokerPresident": "workspace_ov_broker_president", "tr.ov.brokerOther": "workspace_ov_broker_other" };
+  "tr.ov.brokerPresident": "workspace_ov_broker_president", "tr.ov.brokerSinopac": "workspace_ov_broker_sinopac", "tr.ov.brokerOther": "workspace_ov_broker_other" };
 for (const lang of ["zh", "en"]) {
   const dp = poMap(path.join(__dirname, "..", "shell", "i18n", lang + ".po")), wp = poMap(path.join(webDir, "app", "translations", lang, "LC_MESSAGES", "messages.po"));
   const absent = Object.values(LAG_PAIRS).filter((w) => typeof wp[w] !== "string");
@@ -145,6 +145,11 @@ for (const lang of ["zh", "en"]) {
   const bad = Object.entries(LAG_PAIRS).filter(([d, w]) => typeof dp[d] !== "string" || (typeof wp[w] === "string" && dp[d].replace("{broker}", "%(broker)s") !== wp[w] && dp[d] !== wp[w]));
   ok(`全部平倉快照落後 ${lang}:電腦版有這幾句,網頁有的那幾句逐字一致(${Object.keys(LAG_PAIRS).length} 句)`, bad.length === 0, bad.map(([d, w]) => d + "「" + dp[d] + "」 vs " + w + "「" + wp[w] + "」").join(";"));
 }
+// 永豐的事件短名與台指期判斷(App 同批):電腦版對照表有 sinopac,網頁兩處券商名與全部平倉延後的台指期判斷也認 sinopac
+ok("永豐:電腦版 TR_BROKER_KEY 與 trCloseDeferred 認 sinopac,網頁 manual_close／tw_feed_fallback 的券商名與 close_all_deferred 也認",
+  /const TR_BROKER_KEY = \{[^}]*\bsinopac: "tr\.ov\.brokerSinopac"/.test(desk) && /const fut = [^;]*e\.exchange === "sinopac"/.test(desk)
+  && /data\.exchange === "sinopac" \? I18N\.ovBrokerSinopac/.test(web) && /data\.venue === "sinopac" \? I18N\.ovBrokerSinopac/.test(web)
+  && /const fut = [^;]*data\.exchange === "sinopac"/.test(web));
 // 全部平倉沒替群益送單、上一筆平倉還在等回報(manager/flatten reason queued):有 until／沒 until 兩句,兩邊逐字同;
 // 網頁少了也算紅(上線同批,不是同步中)
 const QUEUED_PAIRS = { "tr.ov.evManualCloseQueued": "workspace_ov_ev_manual_close_queued",

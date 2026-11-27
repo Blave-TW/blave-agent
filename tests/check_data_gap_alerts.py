@@ -473,6 +473,20 @@ if os.path.isfile(wpo):
 else:
     print("SKIP  web workspace broker name (set BLAVE_WEB_DIR)")
 check(set(names.values()) == {"群益"}, f"F venue=capital reads 群益 on every layer ({names})")
+# venue=sinopac: the event short name is 永豐 on desktop, api and web (the lib label 永豐期貨 is the long form)
+sp = {"desktop trade.js": None}
+sm = re.search(r'msgid "tr\.ov\.brokerSinopac"\nmsgstr "([^"]*)"', po)
+if 'sinopac: "tr.ov.brokerSinopac"' in tr and sm:
+    sp["desktop trade.js"] = sm.group(1)
+if os.path.isfile(os.path.join(api, "openclaw", "notify.py")):
+    with open(os.path.join(api, "openclaw", "notify.py"), encoding="utf-8") as fh:
+        am = re.search(r'"sinopac": \("([^"]*)", "([^"]*)"\)', fh.read())
+    sp["api notify"] = am.group(2).strip() if am else None
+if os.path.isfile(wpo):
+    with open(wpo, encoding="utf-8") as fh:
+        wm = re.search(r'msgid "workspace_ov_broker_sinopac"\nmsgstr "([^"]*)"', fh.read())
+    sp["web workspace"] = wm.group(1) if wm and 'data.venue === "sinopac" ? I18N.ovBrokerSinopac' in wh else None
+check(set(sp.values()) == {"永豐"}, f"F venue=sinopac reads 永豐 on every layer ({sp})")
 
 shutil.rmtree(BASE, ignore_errors=True)
 print("ALL OK" if not fails else f"{fails} FAILED")

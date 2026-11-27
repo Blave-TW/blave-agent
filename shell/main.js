@@ -5628,7 +5628,7 @@ const p1Quiet = (e) => e.kind === "broker_session_closed" && e.exchange === "pre
 function p1ManualClose(e) {
   if (!e || e.kind !== "manual_close_required") return null;
   const r = e.reason == null ? "identity" : e.reason;
-  if (!((e.exchange === "capital" && ["identity", "snapshot_lag", "queued"].indexOf(r) >= 0) || (e.exchange === "president" && r === "snapshot_lag"))) return null;
+  if (!((e.exchange === "capital" && ["identity", "snapshot_lag", "queued"].indexOf(r) >= 0) || ((e.exchange === "president" || e.exchange === "sinopac") && r === "snapshot_lag"))) return null;
   return { reason: r, until: typeof e.until === "number" && isFinite(e.until) && e.until > 0 ? e.until : null };
 }
 function p1TwClock(sec) { return new Date(sec * 1000).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Taipei" }); }

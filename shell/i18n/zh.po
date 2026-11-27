@@ -4569,6 +4569,9 @@ msgstr "群益"
 msgid "tr.ov.brokerPresident"
 msgstr "統一"
 
+msgid "tr.ov.brokerSinopac"
+msgstr "永豐"
+
 msgid "tr.ov.brokerOther"
 msgstr "這家券商"
 
