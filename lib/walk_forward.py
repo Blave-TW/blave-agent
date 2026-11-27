@@ -16,13 +16,18 @@ Writes `strategies/<name>/wf.json` — the web workspace's 樣本外驗證 tab r
 a run that skips it is invisible to a web user. Rolling windows only (the training
 window slides forward by one step each run); anchored windows are not offered.
 
-Two passes, so the whole thing costs about one parameter scan:
+Two passes, so the whole thing costs about one parameter scan (the signals dominate):
 
-  pass 1  every combo's signals are computed ONCE on the full history, then each
-          run's training slice is priced from that one signal pass → a
-          runs × rows × cols Sharpe grid. No position matrix is kept: one combo's
-          arrays live at a time (a 400-combo × full-history float64 matrix would
-          not fit a 2C/4GB Starter).
+  pass 1  every combo's signals are computed ONCE on the full history and priced
+          ONCE over it (_price_once); each run's training numbers are cut out of
+          that one priced series (_window_stats) → a runs × rows × cols Sharpe grid.
+          A training window therefore starts with whatever the combo held coming
+          in — no entry cost on its first bar, its first bars' returns count —
+          exactly as a user running those parameters all along would have been.
+          (Before 2026-11 each window was re-priced from flat: 108 windows of ~750
+          bars cost ~28 full histories, the whole-market cost of the run.) No
+          position matrix is kept: one combo's arrays live at a time (a 400-combo ×
+          full-history float64 matrix would not fit a 2C/4GB Starter).
   pass 2  only the run winners (≤ n_runs combos, usually fewer) are recomputed;
           each run's test slice is cut from its own winner's position series and
           the slices are concatenated into ONE series, priced by a single
@@ -225,21 +230,37 @@ def _price_pnl(pos, exec_raw, close_v, open_v, fee):
     return pf_ret, delta_w
 
 
-def _window_stats(pos, exec_raw, close_v, open_v, index, a, b, fee):
-    """(sharpe, ann_ret, mdd, trades) for bars [a, b), or None when the combo never
-    traded in that window — a do-nothing window's Sharpe 0.0 would otherwise beat
-    every losing combo and win the plateau in a bear stretch (same rule as
-    scan_grid)."""
-    from lib.analysis import compute_stats, count_trades
+def _price_once(pos, exec_raw, close_v, open_v, fee):
+    """One combo priced ONCE over the whole history, ready to be cut into windows: (pf_ret, cumulative
+    count of bars that traded or held a position, cumulative trade count), the counts with a leading 0
+    so a window [a, b) is cum[b] − cum[a]. Per-bar counts, not the 2-D Δw: cutting 108 windows out
+    of a whole-market Δw matrix costs more than the pricing itself."""
+    pf_ret, delta_w = _price_pnl(pos, exec_raw, close_v, open_v, fee)
+    dw = np.nan_to_num(delta_w)
+    held = np.zeros(len(pos), dtype=bool)   # w_curr: the position going into each bar
+    if pos.ndim > 1:
+        held[1:] = np.any(np.nan_to_num(pos[:-1]) != 0, axis=1)
+        changed, trades = np.any(dw != 0, axis=1), np.count_nonzero(np.round(dw, 4), axis=1)
+    else:
+        held[1:] = np.nan_to_num(pos[:-1]) != 0
+        changed, trades = dw != 0, (np.round(dw, 4) != 0).astype(int)
+    active = np.concatenate([[0], np.cumsum(changed | held)])
+    return pf_ret, active, np.concatenate([[0], np.cumsum(trades)])
 
-    pf_ret, delta_w = _price_pnl(pos[a:b], exec_raw[a:b], close_v[a:b], open_v[a:b], fee)
-    # The "never traded" exclusion keeps its raw any-change rule (same as scan_grid) so
-    # plateau picks don't move; only the reported count uses the trade definition.
-    if not np.count_nonzero(np.nan_to_num(delta_w)):
+
+def _window_stats(priced, index, a, b):
+    """(sharpe, ann_ret, mdd, trades) for bars [a, b) cut out of _price_once, or None when the combo
+    neither traded nor held a position in that window — a do-nothing window's Sharpe 0.0 would
+    otherwise beat every losing combo and win the plateau in a bear stretch (same rule as
+    scan_grid). The window starts with whatever the combo held coming in: no entry cost on its
+    first bar, the first bars' returns count (before 2026-11 each window was priced from flat)."""
+    from lib.analysis import compute_stats
+
+    pf_ret, active, trades = priced
+    if active[b] - active[a] == 0:
         return None
-    trades = count_trades(delta_w)
-    sharpe, _, _, mdd, ann_ret = compute_stats(pf_ret, index[a:b])
-    return sharpe, ann_ret, mdd, trades
+    sharpe, _, _, mdd, ann_ret = compute_stats(pf_ret[a:b], index[a:b])
+    return sharpe, ann_ret, mdd, int(trades[b] - trades[a])
 
 
 def _oos_curve(index, pf_ret):
@@ -457,8 +478,10 @@ def run_walk_forward(data, compute_signals_fn, row_vals, col_vals, output_dir,
 
     def price_cell(i, j, result):
         pos, exec_raw, close_v, open_v, _ = _unpack(result, data)
+        priced = _price_once(pos, exec_raw, close_v, open_v, fee)
+        pos = exec_raw = None
         for k, (t0, t1, _t2) in enumerate(windows):
-            st = _window_stats(pos, exec_raw, close_v, open_v, index, t0 + warmup, t1, fee)
+            st = _window_stats(priced, index, t0 + warmup, t1)
             if st is None:
                 continue
             g_sharpe[k, i, j], g_ann[k, i, j], g_mdd[k, i, j], g_trades[k, i, j] = st

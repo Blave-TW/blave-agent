@@ -20,7 +20,7 @@ import numpy as np
 import pandas as pd
 from lib.param_scan import find_plateau
 from lib.walk_forward import (run_walk_forward, default_windows, _run_windows, _stitch,
-                              _split_runs, _wfe, _unpack, _window_stats,
+                              _split_runs, _wfe, _unpack, _window_stats, _price_once,
                               WF_MIN_DENOM, WF_MIN_RUNS)
 
 fails = 0
@@ -148,7 +148,7 @@ wins_a, _tail, _total = _run_windows(df.index, LOOKBACK, STEP, WARMUP)
 r1 = doc["runs"][0]
 pos, exec_raw, cl, op, _ = _unpack(compute_signals(df, entry_th=r1["params"][0], exit_th=r1["params"][1]), df)
 t0, t1, _t2 = wins_a[0]
-cell = _window_stats(pos, exec_raw, cl, op, df.index, t0 + WARMUP, t1, 0.0005)
+cell = _window_stats(_price_once(pos, exec_raw, cl, op, 0.0005), df.index, t0 + WARMUP, t1)
 check(cell is not None and abs(cell[0] - r1["train_sharpe"]) < 5e-4,
       f"train_sharpe = 選中格自己的 Sharpe(重算對得上)→ {r1['train_sharpe']} vs {cell[0]:.4f}")
 
@@ -159,7 +159,7 @@ for gi, ev in enumerate(ENTRY_VALS):
         if not ev > xv:
             continue
         p2, e2, c2, o2, _ = _unpack(compute_signals(df, entry_th=ev, exit_th=xv), df)
-        st = _window_stats(p2, e2, c2, o2, df.index, t0 + WARMUP, t1, 0.0005)
+        st = _window_stats(_price_once(p2, e2, c2, o2, 0.0005), df.index, t0 + WARMUP, t1)
         if st:
             grid1[gi, gj] = st[0]
 best1, nbr1, _br, _bc, _ns = find_plateau(grid1, ENTRY_VALS, EXIT_VALS)
@@ -171,7 +171,7 @@ check(abs(nbr1[best1] - r1["train_sharpe"]) > 1e-6,
 # ── warmup 逐輪套用:第一輪訓練切片有被裁掉開頭 ────────────────────────────────
 check(r1["train_start"] == df.index[WARMUP].strftime("%Y-%m-%d") != df.index[0].strftime("%Y-%m-%d"),
       f"第 1 輪訓練窗從第 {WARMUP} 根起算(開頭被裁掉)→ {r1['train_start']}")
-untrimmed = _window_stats(pos, exec_raw, cl, op, df.index, t0, t1, 0.0005)
+untrimmed = _window_stats(_price_once(pos, exec_raw, cl, op, 0.0005), df.index, t0, t1)
 check(untrimmed is not None and abs(untrimmed[0] - cell[0]) > 1e-6,
       f"沒裁 warmup 的訓練 Sharpe 不一樣({untrimmed[0]:.4f} vs {cell[0]:.4f})→ 裁切確實有作用")
 check(all(r["train_start"] > p["train_start"] and r["train_end"] > p["train_end"]
@@ -181,6 +181,48 @@ check(max(spans) - min(spans) <= 1, f"每輪訓練窗等長(warmup 逐輪套用�
 check([r["test_start"] for r in doc["runs"][1:]] == [
       (pd.Timestamp(r["test_end"]) + pd.Timedelta(days=1)).strftime("%Y-%m-%d") for r in doc["runs"][:-1]],
       "測試窗首尾相接、不重疊(所以能接成一條)")
+
+# ── pass 1 計價一次再切片(spec typec-iterate-return-floor §9.4(b)、§9.5 第 14 條) ──────────
+# 每組參數對整段歷史只計價一次;訓練窗的數字從那一條切出來,窗開頭帶著前面的部位進來
+from lib.walk_forward import _price_pnl
+from lib.analysis import compute_stats as _cstats, count_trades as _ctrades
+pf_full, dw_full = _price_pnl(pos, exec_raw, cl, op, 0.0005)
+a1, b1 = t0 + WARMUP, t1
+hand = _cstats(pf_full[a1:b1], df.index[a1:b1])[0]
+diffs, moved = [], 0
+for (w0, w1, _w2), rr in zip(wins_a, doc["runs"]):
+    pk, ek, ck, ok_, _ = _unpack(compute_signals(df, entry_th=rr["params"][0], exit_th=rr["params"][1]), df)
+    full_k = _price_pnl(pk, ek, ck, ok_, 0.0005)[0]
+    h = _cstats(full_k[w0 + WARMUP:w1], df.index[w0 + WARMUP:w1])[0]
+    from_flat = _price_pnl(pk[w0 + WARMUP:w1], ek[w0 + WARMUP:w1], ck[w0 + WARMUP:w1], ok_[w0 + WARMUP:w1], 0.0005)[0]
+    moved += abs(_cstats(from_flat, df.index[w0 + WARMUP:w1])[0] - h) > 5e-4
+    diffs.append(abs(h - rr["train_sharpe"]))
+check(max(diffs) < 5e-4 and moved > 0,
+      f"每輪 train_sharpe = 整段計價一次後切出那個訓練窗的 Sharpe(手算,最大差 {max(diffs):.5f});"
+      f"{moved} 輪跟「窗內從空手計價」不同,所以這條分得出新舊")
+if True:
+    priced = _price_once(pos, exec_raw, cl, op, 0.0005)
+    st = _window_stats(priced, df.index, a1, b1)
+    check(st is not None and abs(st[0] - hand) < 1e-12 and st[3] == _ctrades(dw_full[a1:b1]),
+          f"_window_stats(切片)= 手算的 Sharpe 與那一段的交易筆數 → {st and st[3]} vs {_ctrades(dw_full[a1:b1])}")
+    n = len(df)
+    hold = np.ones(n)                       # 第一根就進場、之後一直抱著:窗內沒有交易但有部位
+    flat = np.zeros(n)                      # 從頭到尾空手
+    late = np.zeros(n); late[n - 50:] = 1.0  # 只在最後 50 根有部位:前面的窗什麼都沒做
+    nox = np.zeros(n, dtype=bool)
+    sh = _window_stats(_price_once(hold, nox, cl, op, 0.0005), df.index, 300, 500)
+    sf = _window_stats(_price_once(flat, nox, cl, op, 0.0005), df.index, 300, 500)
+    sl = _window_stats(_price_once(late, nox, cl, op, 0.0005), df.index, 300, 500)
+    check(sh is not None and sh[3] == 0 and sh[0] != 0.0,
+          f"窗內一直抱著、沒交易:照算(有報酬),交易筆數 0 → {sh}")
+    check(sf is None and sl is None, "窗內沒部位也沒交易:排除(跟舊規則一樣,做什麼都沒做的窗不參與選參)")
+    W = np.zeros((n, 2)); W[100:, 0] = 0.5; W[400:, 1] = 0.5   # Type C:2 欄權重
+    C2 = np.column_stack([cl, cl * 1.01]); O2 = np.column_stack([op, op * 1.01])
+    pf2, dw2 = _price_pnl(W, nox, C2, O2, 0.0005)
+    s2 = _window_stats(_price_once(W, nox, C2, O2, 0.0005), df.index, 350, 450)
+    check(s2 is not None and abs(s2[0] - _cstats(pf2[350:450], df.index[350:450])[0]) < 1e-12
+          and s2[3] == _ctrades(dw2[350:450]) == 1,
+          f"Type C 2-D 權重:同樣切片,交易筆數只算窗內那一筆 → {s2 and s2[3]}")
 
 # ── 兩條分母護欄的 e2e:手續費吃掉每一輪 → 每輪訓練 Sharpe ≤ 0 ─────────────────
 path_b = run_walk_forward(make_df(drift=-0.0004, seed=11), compute_signals, ENTRY_VALS, EXIT_VALS,
