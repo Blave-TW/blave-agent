@@ -656,7 +656,7 @@ async function p3CuCheck() {
   cu.busy = false;
   if (P3.cu !== cu || !r || r.status !== 200 || !r.body) return;
   P3.q = r.body;
-  if (r.body.agent_offer.kind === "active") p3CuPaid();
+  if ((r.body.agent_offer || {}).kind === "active") p3CuPaid();
 }
 function p3CuPaid() {
   const cu = P3.cu; P3.cu = null;
