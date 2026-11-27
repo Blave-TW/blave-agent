@@ -3171,7 +3171,11 @@ def _tw_blave_tail(frames, ids, end, adjust, fetch):
     hour it ran. A tail day is Blave's raw bar × the CDN frame's factor on its last day
     (attrs['tw_factor']) × any event Blave's adjusted series shows since — on a day with no event,
     the very number the CDN publishes. fetch(ids, start, adjust) → {id: Blave frame}; it may raise.
-    An id Blave has no bars for, or no adjusted day to read an event from, is left as it was."""
+
+    attrs['asof'] becomes the tail's last day, or the latest final when Blave has that day for
+    some id of the same request (an id without it did not trade). An id Blave has no bar for on
+    the CDN's last day (nothing to join on), or no adjusted day to read an event from, is left
+    as it was — _tw_cdn_refuse_behind then sees it short."""
     cap = min(end, _tw_official_expected_day()) if end else _tw_official_expected_day()
     groups = {}
     for sid in ids:
@@ -3179,9 +3183,10 @@ def _tw_blave_tail(frames, ids, end, adjust, fetch):
     for asof, group in groups.items():
         raw = fetch(group, asof, False)
         adj = fetch(group, asof, True) if adjust else {}
+        tails = {}
         for sid in group:
             df, r = frames[sid], raw.get(sid)
-            if r is None or r.empty or (adjust and 'tw_factor' not in df.attrs):
+            if r is None or pd.Timestamp(asof) not in r.index or (adjust and 'tw_factor' not in df.attrs):
                 continue
             r = r[(r.index >= pd.Timestamp(asof)) & (r.index <= pd.Timestamp(cap))]
             tail = r[r.index > pd.Timestamp(asof)].reindex(columns=df.columns)
@@ -3192,8 +3197,18 @@ def _tw_blave_tail(frames, ids, end, adjust, fetch):
                     continue
                 cols = [c for c in ('Open', 'High', 'Low', 'Close') if c in tail.columns]
                 tail[cols] = tail[cols].mul(ev * df.attrs['tw_factor'], axis=0).round(2)
+            tails[sid] = tail
+        reached = any(not t.empty and t.index[-1] == pd.Timestamp(cap) for t in tails.values())
+        for sid, tail in tails.items():
+            df = frames[sid]
+            if reached:
+                upto = cap
+            elif not tail.empty:
+                upto = str(tail.index[-1].date())
+            else:
+                continue
             out = pd.concat([df, tail]) if not tail.empty else df.copy()
-            out.attrs = {**df.attrs, 'asof': cap, 'tail_via': 'Blave',
+            out.attrs = {**df.attrs, 'asof': upto, 'tail_via': 'Blave',
                          'tail_from': str(tail.index[0].date()) if not tail.empty else None}
             frames[sid] = out
 
@@ -3453,7 +3468,8 @@ def _tw_daily_note(frames, start):
     JSON line per Taiwan daily request counting its frames by where they came from — 'cdn',
     'cdn+blave_tail', 'blave' (an id the CDN does not list, a start before it), 'blave_not_cdn' (an
     id the CDN lists, served by Blave because the CDN failed: another adjustment base) or
-    'exchange' — so a run can tell whether its history is the CDN's. Unset: nothing."""
+    'exchange' (an exchange path, or the empty frame of a window not begun yet) — so a run can
+    tell whether its history is the CDN's. Unset: nothing."""
     path = os.environ.get('BLAVE_TW_DAILY_NOTE')
     if not path:
         return
@@ -3466,7 +3482,7 @@ def _tw_daily_note(frames, start):
     for sid, df in frames.items():
         if df.attrs.get('via') == 'Blave CDN':
             k = 'cdn+blave_tail' if df.attrs.get('tail_via') else 'cdn'
-        elif df.attrs.get('source') in ('TWSE', 'TPEx', 'FinMind'):
+        elif df.attrs.get('source') in ('TWSE', 'TPEx', 'TWSE/TPEx', 'FinMind'):
             k = 'exchange'
         else:
             k = 'blave_not_cdn' if listed is None or sid in listed else 'blave'
